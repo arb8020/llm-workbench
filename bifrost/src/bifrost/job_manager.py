@@ -140,17 +140,17 @@ fi
         """Start tmux session for detached job execution."""
         
         tmux_session = f"bifrost_{job_id}"
-        wrapper_cmd = f"~/.bifrost/scripts/job_wrapper.sh {job_id} '{command}'"
+        
+        # Build the command - use double quotes to avoid nested single quote issues
+        wrapper_cmd = f'~/.bifrost/scripts/job_wrapper.sh {job_id} "{command}"'
         
         # Add environment variables if provided
         if env_vars:
             env_setup = " && ".join(f"export {var}" for var in env_vars)
             wrapper_cmd = f"{env_setup} && {wrapper_cmd}"
         
-        # Start tmux session - escape the command properly to avoid quote issues
-        # Use double quotes for outer and escape inner single quotes
-        escaped_wrapper_cmd = wrapper_cmd.replace("'", "\\'")
-        tmux_cmd = f'tmux new-session -d -s {tmux_session} "{escaped_wrapper_cmd}"'
+        # Start tmux session - use single quotes to wrap the entire command
+        tmux_cmd = f"tmux new-session -d -s {tmux_session} '{wrapper_cmd}'"
         
         console.print(f"🖥️  Starting tmux session: {tmux_session}")
         stdin, stdout, stderr = client.exec_command(tmux_cmd)
