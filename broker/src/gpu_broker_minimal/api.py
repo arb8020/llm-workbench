@@ -2,7 +2,7 @@
 Main functional API for GPU cloud operations
 """
 
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Callable, Any
 import logging
 
 from .types import GPUOffer, GPUInstance, ProvisionRequest
@@ -20,7 +20,7 @@ def search(
     provider: Optional[str] = None,
     cuda_version: Optional[str] = None,
     # New sorting parameters
-    sort: Optional[callable] = None,
+    sort: Optional[Callable[[Any], Any]] = None,
     reverse: bool = False
 ) -> List[GPUOffer]:
     """
@@ -114,7 +114,7 @@ def create(
     max_price_per_hour: Optional[float] = None,
     provider: Optional[str] = None,
     cuda_version: Optional[str] = None,
-    sort: Optional[callable] = None,
+    sort: Optional[Callable[[Any], Any]] = None,
     reverse: bool = False,
     # Retry parameters
     max_attempts: int = 3,

@@ -63,14 +63,39 @@ def set_ssh_key_path(path: str):
     """Set SSH key path for default client"""
     _get_default_client().set_ssh_key_path(path)
 
-# Legacy query interface - delegates to default client
+def get_ssh_key_path() -> str:
+    """Get SSH key path from default client"""
+    return _get_default_client().get_ssh_key_path()
+
+# Legacy query interface - simplified to avoid complex type inference
 class _LegacyQueryProperty:
-    def __init__(self, name):
+    def __init__(self, name: str):
         self.name = name
     
-    def __getattr__(self, attr):
-        # Lazy evaluation - only create client when actually used
-        return getattr(getattr(_get_default_client(), self.name), attr)
+    # Explicitly define the methods that are actually used
+    def contains(self, value: str):
+        """For gpu_type.contains() usage"""
+        return getattr(_get_default_client(), self.name).contains(value)
+    
+    def __lt__(self, other):
+        """For price_per_hour < X usage"""  
+        return getattr(_get_default_client(), self.name).__lt__(other)
+    
+    def __gt__(self, other):
+        """For price_per_hour > X usage"""
+        return getattr(_get_default_client(), self.name).__gt__(other)
+    
+    def __eq__(self, other):
+        """For cloud_type == X usage"""
+        return getattr(_get_default_client(), self.name).__eq__(other)
+    
+    def __le__(self, other):
+        """For price_per_hour <= X usage"""
+        return getattr(_get_default_client(), self.name).__le__(other)
+    
+    def __ge__(self, other):
+        """For price_per_hour >= X usage"""
+        return getattr(_get_default_client(), self.name).__ge__(other)
 
 # Expose query fields at module level for backward compatibility  
 gpu_type = _LegacyQueryProperty('gpu_type')
@@ -82,6 +107,6 @@ cuda_version = _LegacyQueryProperty('cuda_version')
 
 __all__ = [
     "GPUClient",  # Main client interface
-    "search", "create", "get_instance", "terminate_instance", "list_instances", "set_ssh_key_path",  # Legacy
+    "search", "create", "get_instance", "terminate_instance", "list_instances", "set_ssh_key_path", "get_ssh_key_path",  # Legacy
     "gpu_type", "price_per_hour", "memory_gb", "cloud_type", "provider", "cuda_version"  # Legacy query
 ]

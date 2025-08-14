@@ -40,7 +40,7 @@ def get_api_key() -> str:
     
     raise ValueError("RUNPOD_API_KEY not found in environment or .env file")
 
-def make_graphql_request(query: str, variables: Dict[str, Any] = None) -> Dict[str, Any]:
+def make_graphql_request(query: str, variables: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Make a GraphQL request to RunPod API"""
     api_key = get_api_key()
     

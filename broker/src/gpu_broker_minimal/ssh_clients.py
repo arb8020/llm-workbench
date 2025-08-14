@@ -16,14 +16,14 @@ try:
     PARAMIKO_AVAILABLE = True
 except ImportError:
     PARAMIKO_AVAILABLE = False
-    paramiko = None
+    # Don't set paramiko = None to avoid type inference issues
 
 try:
     import asyncssh
     ASYNCSSH_AVAILABLE = True
 except ImportError:
     ASYNCSSH_AVAILABLE = False
-    asyncssh = None
+    # Don't set asyncssh = None to avoid type inference issues
 
 from .types import GPUInstance
 
@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 class SSHMethod(Enum):
     """SSH connection methods - minimal version only supports direct SSH"""
     DIRECT = "direct"  # ssh root@{ip} -p {port}
+    PROXY = "proxy"    # ssh through proxy (not supported in minimal version)
 
 
 class SSHClient(Enum):
@@ -66,7 +67,7 @@ class ParamikoSSHClient:
             raise ImportError("paramiko is not installed. Install with: pip install paramiko")
         self.client = None
     
-    def connect(self, hostname: str, port: int, username: str, private_key: str = None, timeout: int = 30) -> bool:
+    def connect(self, hostname: str, port: int, username: str, private_key: Optional[str] = None, timeout: int = 30) -> bool:
         """Connect using paramiko with SSH agent support"""
         try:
             self.client = paramiko.SSHClient()
@@ -122,7 +123,7 @@ class ParamikoSSHClient:
             logger.error(f"❌ Paramiko connection failed: {e}")
             return False
     
-    def execute(self, command: str, timeout: int = 30) -> Tuple[bool, str, str]:
+    def run_command(self, command: str, timeout: int = 30) -> Tuple[bool, str, str]:
         """Execute command via paramiko - simplified approach (non-streaming)"""
         if not self.client:
             return False, "", "No SSH connection"
@@ -228,7 +229,7 @@ class AsyncSSHClient:
             raise ImportError("asyncssh is not installed. Install with: pip install asyncssh")
         self.conn = None
     
-    async def connect(self, hostname: str, port: int, username: str, private_key: str = None, timeout: int = 30) -> bool:
+    async def connect(self, hostname: str, port: int, username: str, private_key: Optional[str] = None, timeout: int = 30) -> bool:
         """Connect using asyncssh with SSH agent support (like Paramiko)"""
         try:
             if private_key:
@@ -275,7 +276,7 @@ class AsyncSSHClient:
             logger.error(f"❌ AsyncSSH connection failed: {e}")
             return False
     
-    async def execute(self, command: str, timeout: int = 30) -> Tuple[bool, str, str]:
+    async def run_command(self, command: str, timeout: int = 30) -> Tuple[bool, str, str]:
         """Execute command via asyncssh - simplified approach"""
         if not self.conn:
             return False, "", "No SSH connection"
@@ -305,7 +306,7 @@ class AsyncSSHClient:
             self.conn = None
 
 
-def test_ssh_connection(instance: GPUInstance, private_key: str, 
+def test_ssh_connection(instance: GPUInstance, private_key: Optional[str], 
                        method: SSHMethod, client_type: SSHClient,
                        timeout: int = 30) -> Tuple[bool, str]:
     """
@@ -331,7 +332,7 @@ def test_ssh_connection(instance: GPUInstance, private_key: str,
 
 
 def _test_paramiko_connection(hostname: str, port: int, username: str, 
-                            private_key: str, timeout: int) -> Tuple[bool, str]:
+                            private_key: Optional[str], timeout: int) -> Tuple[bool, str]:
     """Test paramiko connection"""
     client = ParamikoSSHClient()
     
@@ -340,7 +341,7 @@ def _test_paramiko_connection(hostname: str, port: int, username: str,
             return False, "Connection failed"
         
         # Test basic command
-        success, stdout, stderr = client.execute("echo 'SSH_TEST_SUCCESS'", timeout=10)
+        success, stdout, stderr = client.run_command("echo 'SSH_TEST_SUCCESS'", timeout=10)
         if success and "SSH_TEST_SUCCESS" in stdout:
             return True, "Paramiko connection successful"
         elif success:  # Command ran but no expected output (still success)
@@ -359,7 +360,7 @@ def _test_paramiko_connection(hostname: str, port: int, username: str,
 
 
 def _test_asyncssh_connection(hostname: str, port: int, username: str, 
-                            private_key: str, timeout: int) -> Tuple[bool, str]:
+                            private_key: Optional[str], timeout: int) -> Tuple[bool, str]:
     """Test asyncssh connection"""
     async def _async_test():
         client = AsyncSSHClient()
@@ -369,7 +370,7 @@ def _test_asyncssh_connection(hostname: str, port: int, username: str,
                 return False, "Connection failed"
             
             # Test basic command
-            success, stdout, stderr = await client.execute("echo 'SSH_TEST_SUCCESS'", timeout=10)
+            success, stdout, stderr = await client.run_command("echo 'SSH_TEST_SUCCESS'", timeout=10)
             if success and "SSH_TEST_SUCCESS" in stdout:
                 return True, "AsyncSSH connection successful"
             elif success:  # Command ran but no expected output (still success)
@@ -389,8 +390,8 @@ def _test_asyncssh_connection(hostname: str, port: int, username: str,
         return False, str(e)
 
 
-async def execute_command_async(instance: GPUInstance, private_key: str, command: str,
-                               method: SSHMethod = None, timeout: int = 30) -> Tuple[bool, str, str]:
+async def execute_command_async(instance: GPUInstance, private_key: Optional[str], command: str,
+                               method: Optional[SSHMethod] = None, timeout: int = 30) -> Tuple[bool, str, str]:
     """
     Execute command asynchronously with automatic method selection
     """
@@ -405,15 +406,15 @@ async def execute_command_async(instance: GPUInstance, private_key: str, command
     client = AsyncSSHClient()
     try:
         if await client.connect(hostname, port, username, private_key, timeout):
-            return await client.execute(command, timeout)
+            return await client.run_command(command, timeout)
         else:
             return False, "", "Connection failed"
     finally:
         await client.close()
 
 
-def execute_command_sync(instance: GPUInstance, private_key: str = None, command: str = None,
-                        method: SSHMethod = None, timeout: int = 30) -> Tuple[bool, str, str]:
+def execute_command_sync(instance: GPUInstance, private_key: Optional[str] = None, command: Optional[str] = None,
+                        method: Optional[SSHMethod] = None, timeout: int = 30) -> Tuple[bool, str, str]:
     """
     Execute command synchronously with automatic method selection
     
@@ -435,14 +436,14 @@ def execute_command_sync(instance: GPUInstance, private_key: str = None, command
     client = ParamikoSSHClient()
     try:
         if client.connect(hostname, port, username, private_key, timeout):
-            return client.execute(command, timeout)
+            return client.run_command(command, timeout)
         else:
             return False, "", "Connection failed"
     finally:
         client.close()
 
 
-def start_interactive_ssh_session(instance: GPUInstance, private_key: str = None, method: SSHMethod = None):
+def start_interactive_ssh_session(instance: GPUInstance, private_key: Optional[str] = None, method: Optional[SSHMethod] = None):
     """
     Start an interactive SSH session using the system's SSH client
     
@@ -488,8 +489,8 @@ def start_interactive_ssh_session(instance: GPUInstance, private_key: str = None
         raise
 
 
-def execute_command_streaming(instance: GPUInstance, command: str, private_key: str = None, 
-                            method: SSHMethod = None, timeout: int = 300):
+def execute_command_streaming(instance: GPUInstance, command: str, private_key: Optional[str] = None, 
+                            method: Optional[SSHMethod] = None, timeout: int = 300):
     """
     Execute command with real-time output streaming using paramiko
     

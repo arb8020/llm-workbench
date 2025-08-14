@@ -67,35 +67,34 @@ class GPUInstance:
     ssh_username: Optional[str] = None
     raw_data: Optional[Dict[str, Any]] = None
     
-    def exec(self, command: str, ssh_key_path: str = None, timeout: int = 30) -> 'SSHResult':
+    def exec(self, command: str, ssh_key_path: Optional[str] = None, timeout: int = 30) -> 'SSHResult':
         """Execute command via SSH using configured key"""
         from .ssh_clients import execute_command_sync, SSHMethod
-        from . import get_ssh_key_path
         import os
         
         if not self.public_ip or not self.ssh_username:
             raise ValueError("Instance SSH details not available - may not be running yet")
         
-        # Auto-detect SSH method
-        ssh_method = SSHMethod.DIRECT if self.public_ip != "ssh.runpod.io" else SSHMethod.PROXY
+        # Auto-detect SSH method (only DIRECT supported in minimal version)
+        ssh_method = SSHMethod.DIRECT
         
         # Determine which SSH key to use
+        key_path = None
         if ssh_key_path:
             # Use provided key path
             key_path = os.path.expanduser(ssh_key_path)
-        else:
-            # Use configured key path
-            key_path = get_ssh_key_path()
         
-        # Load private key
-        try:
-            with open(key_path, 'r') as f:
-                private_key = f.read()
-        except Exception as e:
-            raise ValueError(f"Failed to load SSH key from {key_path}: {e}")
+        # Load private key if path provided
+        private_key_content = None
+        if key_path:
+            try:
+                with open(key_path, 'r') as f:
+                    private_key_content = f.read()
+            except Exception as e:
+                raise ValueError(f"Failed to load SSH key from {key_path}: {e}")
         
         success, stdout, stderr = execute_command_sync(
-            self, private_key, command, ssh_method, timeout=timeout
+            self, private_key_content, command, ssh_method, timeout=timeout
         )
         
         return SSHResult(

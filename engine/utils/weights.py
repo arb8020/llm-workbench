@@ -1,7 +1,7 @@
 # weights.py
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional, Union
 import pathlib
 import numpy as np
 
@@ -98,7 +98,7 @@ def load_gpt2_weights(model_dir: str | pathlib.Path) -> GPT2Weights:
 # Helper to download from HuggingFace
 # -----------------------------
 
-def download_gpt2_weights(model_name: str = "gpt2", cache_dir: str | pathlib.Path = None) -> pathlib.Path:
+def download_gpt2_weights(model_name: str = "gpt2", cache_dir: Optional[Union[str, pathlib.Path]] = None) -> pathlib.Path:
     """
     Download GPT-2 model weights from HuggingFace.
     Returns path to directory containing model weights.

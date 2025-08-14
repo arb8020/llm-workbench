@@ -97,7 +97,7 @@ query {
 }
 """
 
-def get_working_pod_input(gpu_type_id: str, startup_script: str = None) -> dict:
+def get_working_pod_input(gpu_type_id: str, startup_script: Optional[str] = None) -> dict:
     """
     Get working pod input configuration with all required fields.
     

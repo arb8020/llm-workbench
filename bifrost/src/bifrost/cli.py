@@ -143,6 +143,165 @@ def logs(
         sys.exit(1)
 
 
+@app.command()
+def copy(
+    source: str = typer.Argument(..., help="Source path in format user@host:port:remote_path"),
+    destination: str = typer.Argument(..., help="Local destination path"),
+    recursive: bool = typer.Option(False, "-r", "--recursive", help="Copy directories recursively"),
+):
+    """Copy files from remote instance to local machine (like scp)."""
+    try:
+        _copy_files(source, destination, recursive)
+    except Exception as e:
+        console.print(f"❌ Copy failed: {e}", style="red")
+        sys.exit(1)
+
+
+def _copy_files(source: str, destination: str, recursive: bool):
+    """Copy files from remote to local using SCP-like syntax."""
+    # Parse source: user@host:port:remote_path
+    if ':' not in source:
+        raise ValueError("Source must be in format: user@host:port:remote_path")
+    
+    # Split on the last colon to separate path from connection info
+    connection_part, remote_path = source.rsplit(':', 1)
+    
+    if '@' not in connection_part or ':' not in connection_part:
+        raise ValueError("Invalid source format. Use: user@host:port:remote_path")
+    
+    # Parse connection info
+    user, host_port = connection_part.split('@', 1)
+    host, port_str = host_port.rsplit(':', 1)
+    
+    try:
+        port = int(port_str)
+    except ValueError:
+        raise ValueError(f"Invalid port: {port_str}")
+    
+    console.print(f"📁 Copying from {user}@{host}:{port}:{remote_path}")
+    console.print(f"📂 Destination: {destination}")
+    
+    # Connect to remote instance
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    
+    try:
+        console.print("🔗 Connecting...")
+        client.connect(hostname=host, port=port, username=user, timeout=30)
+        
+        # Check if source exists and is file or directory
+        stdin, stdout, stderr = client.exec_command(f"test -e '{remote_path}'")
+        if stdout.channel.recv_exit_status() != 0:
+            console.print(f"❌ Remote path not found: {remote_path}", style="red")
+            return
+        
+        # Check if source is directory
+        stdin, stdout, stderr = client.exec_command(f"test -d '{remote_path}'")
+        is_directory = stdout.channel.recv_exit_status() == 0
+        
+        if is_directory and not recursive:
+            console.print(f"❌ {remote_path} is a directory. Use -r/--recursive flag", style="red")
+            return
+        
+        # Create SFTP client for file transfer
+        sftp = client.open_sftp()
+        
+        if is_directory:
+            _copy_directory(sftp, client, remote_path, destination)
+        else:
+            _copy_file(sftp, remote_path, destination)
+        
+        console.print("✅ Copy completed successfully", style="green")
+        
+    except Exception as e:
+        console.print(f"❌ Failed to connect or copy: {e}", style="red")
+        raise
+    finally:
+        try:
+            sftp.close()
+        except:
+            pass
+        client.close()
+
+
+def _copy_file(sftp, remote_path: str, local_path: str):
+    """Copy a single file via SFTP."""
+    import os
+    from pathlib import Path
+    
+    # Get remote file size for progress reporting
+    try:
+        remote_stat = sftp.stat(remote_path)
+        file_size = remote_stat.st_size
+        console.print(f"📄 File size: {file_size:,} bytes")
+    except:
+        file_size = 0
+    
+    # Ensure local directory exists
+    local_dir = Path(local_path).parent
+    local_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Copy file with progress
+    console.print(f"⬇️  Downloading: {remote_path} -> {local_path}")
+    
+    # Simple progress callback
+    def progress_callback(transferred, total):
+        if total > 0:
+            percent = (transferred / total) * 100
+            console.print(f"   Progress: {transferred:,} / {total:,} bytes ({percent:.1f}%)")
+    
+    # Use progress callback for large files (>1MB)
+    if file_size > 1024 * 1024:
+        sftp.get(remote_path, local_path, callback=progress_callback)
+    else:
+        sftp.get(remote_path, local_path)
+    
+    console.print(f"✅ Downloaded: {local_path}")
+
+
+def _copy_directory(sftp, client, remote_path: str, local_path: str):
+    """Copy a directory recursively via SFTP."""
+    import os
+    from pathlib import Path
+    
+    console.print(f"📁 Copying directory: {remote_path}")
+    
+    # Get directory listing
+    stdin, stdout, stderr = client.exec_command(f"find '{remote_path}' -type f")
+    if stdout.channel.recv_exit_status() != 0:
+        error = stderr.read().decode()
+        raise RuntimeError(f"Failed to list directory contents: {error}")
+    
+    file_list = stdout.read().decode().strip().split('\n')
+    file_list = [f for f in file_list if f.strip()]  # Remove empty lines
+    
+    if not file_list:
+        console.print(f"📭 Directory is empty: {remote_path}")
+        return
+    
+    console.print(f"📊 Found {len(file_list)} files to copy")
+    
+    # Copy each file
+    for i, remote_file in enumerate(file_list, 1):
+        # Calculate relative path
+        rel_path = os.path.relpath(remote_file, remote_path)
+        local_file = os.path.join(local_path, rel_path)
+        
+        console.print(f"[{i}/{len(file_list)}] {rel_path}")
+        
+        # Ensure local directory exists
+        local_dir = Path(local_file).parent
+        local_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Copy file
+        try:
+            sftp.get(remote_file, local_file)
+        except Exception as e:
+            console.print(f"⚠️  Failed to copy {rel_path}: {e}", style="yellow")
+    
+    console.print(f"📁 Directory copy complete: {local_path}")
+
+
 def _show_job_logs(user: str, host: str, port: int, job_id: str, follow: bool, lines: int):
     """Show logs for a specific job."""
     console.print(f"📄 Getting logs for job {job_id} on {user}@{host}:{port}")

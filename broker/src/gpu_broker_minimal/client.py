@@ -3,7 +3,7 @@ GPU Broker Client - Main interface for GPU operations
 """
 
 import os
-from typing import List, Optional, Union, Dict, Any
+from typing import List, Optional, Union, Dict, Any, Callable
 from .types import GPUOffer, GPUInstance, CloudType
 from .query import GPUQuery, QueryType
 from . import api
@@ -176,7 +176,7 @@ class GPUClient:
         provider: Optional[str] = None,
         cuda_version: Optional[str] = None,
         # Sorting
-        sort: Optional[callable] = None,
+        sort: Optional[Callable[[Any], Any]] = None,
         reverse: bool = False
     ) -> List[GPUOffer]:
         """Search for GPU offers
@@ -209,7 +209,7 @@ class GPUClient:
         max_price_per_hour: Optional[float] = None,
         provider: Optional[str] = None,
         cuda_version: Optional[str] = None,
-        sort: Optional[callable] = None,
+        sort: Optional[Callable[[Any], Any]] = None,
         reverse: bool = False,
         # Retry parameters
         max_attempts: int = 3,
@@ -270,14 +270,14 @@ class ClientGPUInstance:
         """Delegate attribute access to wrapped instance"""
         return getattr(self._instance, name)
     
-    def exec(self, command: str, ssh_key_path: str = None, timeout: int = 30):
+    def exec(self, command: str, ssh_key_path: Optional[str] = None, timeout: int = 30):
         """Execute command using client's SSH configuration (non-streaming)"""
         if ssh_key_path is None:
             ssh_key_path = self._client.get_ssh_key_path()
         
         return self._instance.exec(command, ssh_key_path, timeout)
     
-    def exec_streaming(self, command: str, output_callback=None, ssh_key_path: str = None, timeout: int = 30):
+    def exec_streaming(self, command: str, output_callback=None, ssh_key_path: Optional[str] = None, timeout: int = 30):
         """Execute command with real-time output streaming
         
         Args:

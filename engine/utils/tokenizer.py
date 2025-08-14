@@ -1,7 +1,7 @@
 # tokenizer.py
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Optional, Union
 import json, re, unicodedata, pathlib
 
 # -----------------------------
@@ -148,7 +148,7 @@ def decode(tokenizer: GPT2Tokenizer, ids: List[int]) -> str:
 # Helper to download from HuggingFace
 # -----------------------------
 
-def download_gpt2_assets(model_name: str = "gpt2", cache_dir: str | pathlib.Path = None) -> pathlib.Path:
+def download_gpt2_assets(model_name: str = "gpt2", cache_dir: Optional[Union[str, pathlib.Path]] = None) -> pathlib.Path:
     """
     Download GPT-2 tokenizer files using HuggingFace Hub.
     Returns path to directory containing vocab.json and merges.txt.
