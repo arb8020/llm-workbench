@@ -1,0 +1,21 @@
+[project]
+name = "bifrost"
+version = "0.1.0"
+description = "Remote GPU execution tool - deploys and runs code on remote instances"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "paramiko>=3.0.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0.0"]
+
+[project.scripts]
+bifrost = "bifrost.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
