@@ -2,7 +2,6 @@
 name = "gpu-broker-minimal"
 version = "0.1.0"
 description = "Minimal GPU cloud broker with RunPod SSH output capture fix"
-readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
     "requests>=2.28.0",
