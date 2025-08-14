@@ -22,6 +22,27 @@ class GitDeployment:
         self.ssh_host = ssh_host
         self.ssh_port = ssh_port
         self.job_id = job_id or str(uuid.uuid4())[:8]  # Use provided job_id or generate one
+    
+    def detect_bootstrap_command(self, client: paramiko.SSHClient, worktree_path: str) -> str:
+        """Detect Python dependency files and return appropriate bootstrap command."""
+        
+        # Check for dependency files in order of preference
+        dep_files = [
+            ("uv.lock", "pip install uv && uv sync"),
+            ("pyproject.toml", "pip install uv && uv sync"), 
+            ("requirements.txt", "pip install -r requirements.txt")
+        ]
+        
+        for dep_file, bootstrap_cmd in dep_files:
+            # Check if file exists in worktree
+            stdin, stdout, stderr = client.exec_command(f"test -f {worktree_path}/{dep_file}")
+            if stdout.channel.recv_exit_status() == 0:
+                console.print(f"📦 Detected {dep_file}, adding bootstrap: {bootstrap_cmd}")
+                return f"{bootstrap_cmd} && "
+        
+        # No dependency files found
+        console.print("📦 No Python dependency files detected, skipping bootstrap")
+        return ""
         
     def detect_git_repo(self) -> Tuple[str, str]:
         """Detect git repository and get repo name and current commit."""
@@ -182,6 +203,9 @@ class GitDeployment:
             # Create worktree
             worktree_path = self.create_worktree(client, repo_name)
             
+            # Detect and add bootstrap command
+            bootstrap_cmd = self.detect_bootstrap_command(client, worktree_path)
+            
             # Build command with environment and working directory
             full_command = f"cd {worktree_path}"
             
@@ -189,7 +213,8 @@ class GitDeployment:
                 env_setup = " && ".join(f"export {var}" for var in env_vars)
                 full_command += f" && {env_setup}"
             
-            full_command += f" && {command}"
+            # Add bootstrap if detected, then user command
+            full_command += f" && {bootstrap_cmd}{command}"
             
             # Execute command
             console.print(f"🔄 Executing in worktree: {command}")
@@ -252,16 +277,20 @@ class GitDeployment:
             # Create worktree
             worktree_path = self.create_worktree(client, repo_name)
             
+            # Detect and add bootstrap command
+            bootstrap_cmd = self.detect_bootstrap_command(client, worktree_path)
+            full_command = f"{bootstrap_cmd}{command}"
+            
             # Create job metadata
             job_manager.create_job_metadata(
-                client, job_id, command, worktree_path, commit_hash, repo_name
+                client, job_id, full_command, worktree_path, commit_hash, repo_name
             )
             
             # Upload job wrapper script (if not already present)
             job_manager.upload_job_wrapper_script(client)
             
             # Start tmux session for detached execution
-            tmux_session = job_manager.start_tmux_session(client, job_id, command, env_vars)
+            tmux_session = job_manager.start_tmux_session(client, job_id, full_command, env_vars)
             
             console.print(f"🚀 Job {job_id} started in session {tmux_session}")
             console.print("💡 Use 'bifrost logs {job_id}' to monitor progress (coming in Phase 2)")
