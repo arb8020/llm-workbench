@@ -496,9 +496,15 @@ class BifrostClient:
         files_copied = 0
         total_bytes = 0
         
+        # Convert remote_path to absolute form for proper relative path calculation
+        if remote_path.startswith('~/'):
+            abs_remote_path = remote_path.replace('~', '/root', 1)
+        else:
+            abs_remote_path = remote_path
+            
         for remote_file in file_list:
             # Calculate relative path and local destination
-            rel_path = os.path.relpath(remote_file, remote_path)
+            rel_path = os.path.relpath(remote_file, abs_remote_path)
             local_file = os.path.join(local_path, rel_path)
             
             # Copy file
