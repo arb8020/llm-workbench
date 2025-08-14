@@ -158,21 +158,40 @@ fi
             error = stderr.read().decode()
             raise RuntimeError(f"Failed to start tmux session: {error}")
         
-        # Verify tmux session started
-        verify_cmd = f"tmux list-sessions | grep {tmux_session}"
-        stdin, stdout, stderr = client.exec_command(verify_cmd)
-        exit_code = stdout.channel.recv_exit_status()
+        # For fast-completing jobs, we don't need to verify the tmux session is still running
+        # Instead, we verify the job was started by checking the job metadata was created
+        job_dir = f"~/.bifrost/jobs/{job_id}"
         
-        if exit_code != 0:
-            # Session might not show up immediately, give it a moment
-            time.sleep(1)
+        # Give the job a moment to start and create its status file
+        time.sleep(1)
+        
+        # Check if job started by looking for the status file created by the wrapper
+        status_check_cmd = f"test -f {job_dir}/status || test -f {job_dir}/job.log"
+        stdin, stdout, stderr = client.exec_command(status_check_cmd)
+        status_exists = stdout.channel.recv_exit_status() == 0
+        
+        if not status_exists:
+            # Job hasn't started yet, wait a bit more
+            console.print(f"⏳ Job files not found immediately, waiting...")
+            time.sleep(2)
+            stdin, stdout, stderr = client.exec_command(status_check_cmd)
+            status_exists = stdout.channel.recv_exit_status() == 0
+        
+        if not status_exists:
+            # Check tmux sessions to see what's available for debugging
+            verify_cmd = f"tmux list-sessions 2>/dev/null || echo 'No sessions'"
             stdin, stdout, stderr = client.exec_command(verify_cmd)
-            exit_code = stdout.channel.recv_exit_status()
+            sessions_output = stdout.read().decode()
+            console.print(f"🐛 Debug - tmux sessions: {sessions_output}")
             
-            if exit_code != 0:
-                raise RuntimeError(f"tmux session {tmux_session} failed to start properly")
+            # Also check if the job directory was created
+            stdin, stdout, stderr = client.exec_command(f"ls -la {job_dir}/ 2>/dev/null || echo 'Job dir not found'")
+            job_dir_output = stdout.read().decode()
+            console.print(f"🐛 Debug - job directory: {job_dir_output}")
+            
+            raise RuntimeError(f"Job {job_id} failed to start. No job status or log files were created.")
         
-        console.print(f"✅ tmux session {tmux_session} started successfully")
+        console.print(f"✅ Job {job_id} started successfully in tmux session {tmux_session}")
         return tmux_session
     
     def check_job_running(self, client: paramiko.SSHClient, job_id: str) -> bool:
