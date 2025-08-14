@@ -104,6 +104,37 @@ class GPUClient:
             "  Or ensure you have a key at ~/.ssh/id_ed25519"
         )
     
+    def validate_configuration(self) -> Dict[str, str]:
+        """Validate configuration and return status report
+        
+        Returns:
+            Dict with validation results for API key and SSH key
+        """
+        results = {}
+        
+        # Validate API key
+        if self._api_key and self._api_key != "your_runpod_api_key_here":
+            if self._api_key.startswith("rpa_") and len(self._api_key) > 20:
+                results["api_key"] = "✅ Valid RunPod API key format"
+            else:
+                results["api_key"] = "⚠️  API key format may be invalid"
+        else:
+            results["api_key"] = "❌ No valid API key (check .env file)"
+        
+        # Validate SSH key
+        if self._ssh_key_path and os.path.exists(self._ssh_key_path):
+            # Check key permissions (should be 600 or 400)
+            import stat
+            perms = oct(os.stat(self._ssh_key_path).st_mode)[-3:]
+            if perms in ["600", "400"]:
+                results["ssh_key"] = f"✅ SSH key found with secure permissions ({perms})"
+            else:
+                results["ssh_key"] = f"⚠️  SSH key found but permissions too open ({perms}). Run: chmod 600 {self._ssh_key_path}"
+        else:
+            results["ssh_key"] = "❌ No SSH key found"
+        
+        return results
+    
     # Query interface - expose as properties
     @property
     def gpu_type(self):

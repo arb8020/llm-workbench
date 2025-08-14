@@ -17,38 +17,12 @@ app = typer.Typer(help="Bifrost - Remote GPU execution tool")
 console = Console()
 
 
-@app.callback(invoke_without_command=True)
+@app.callback()
 def main(
     ctx: typer.Context,
-    ssh_info: Optional[str] = typer.Argument(None, help="SSH connection string (user@host:port)"),
-    command: Optional[str] = typer.Argument(None, help="Command to execute remotely"),
-    env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables (KEY=VALUE)"),
-    no_deploy: bool = typer.Option(False, "--no-deploy", help="Skip git deployment (legacy mode)"),
-    detach: bool = typer.Option(False, "--detach", help="Run job in background (detached mode)"),
 ):
     """Bifrost - Remote GPU execution with automatic code deployment."""
-    
-    if ctx.invoked_subcommand is not None:
-        # A subcommand was called, let it handle
-        return
-    
-    if ssh_info is None or command is None:
-        # No arguments provided, show help
-        console.print("🌈 [bold blue]Bifrost[/bold blue] - Remote GPU execution tool")
-        console.print("\n[bold]Usage:[/bold]")
-        console.print("  bifrost [user@host:port] \"[command]\" [OPTIONS]")
-        console.print("\n[bold]Examples:[/bold]")
-        console.print("  bifrost root@1.2.3.4:22 \"python train.py\"")
-        console.print("  bifrost root@gpu.example.com:2222 \"nvidia-smi\" --no-deploy")
-        console.print("\n[bold]Options:[/bold]")
-        console.print("  --env KEY=VALUE    Environment variables")
-        console.print("  --no-deploy        Skip git deployment")  
-        console.print("  --detach           Run job in background")
-        console.print("  --help            Show this message")
-        return
-    
-    # Execute the command (same as launch)
-    _execute_command(ssh_info, command, env, no_deploy, detach)
+    pass
 
 
 def _execute_command(ssh_info: str, command: str, env: Optional[List[str]], no_deploy: bool, detach: bool = False):
@@ -105,6 +79,17 @@ def parse_ssh_info(ssh_info: str):
     return user, host, port
 
 @app.command()
+def run(
+    ssh_info: str = typer.Argument(..., help="SSH connection string (user@host:port)"),
+    command: str = typer.Argument(..., help="Command to execute remotely"),
+    env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables (KEY=VALUE)"),
+    no_deploy: bool = typer.Option(False, "--no-deploy", help="Skip git deployment (legacy mode)"),
+    detach: bool = typer.Option(False, "--detach", help="Run job in background (detached mode)"),
+):
+    """Run a command on remote GPU instance with automatic code deployment."""
+    _execute_command(ssh_info, command, env, no_deploy, detach)
+
+@app.command()
 def launch(
     ssh_info: str = typer.Argument(..., help="SSH connection string (user@host:port)"),
     command: str = typer.Argument(..., help="Command to execute remotely"),
@@ -112,7 +97,7 @@ def launch(
     no_deploy: bool = typer.Option(False, "--no-deploy", help="Skip git deployment (legacy mode)"),
     detach: bool = typer.Option(False, "--detach", help="Run job in background (detached mode)"),
 ):
-    """Launch a command on remote GPU instance with automatic code deployment."""
+    """Launch a command on remote GPU instance with automatic code deployment (alias for run)."""
     _execute_command(ssh_info, command, env, no_deploy, detach)
 
 

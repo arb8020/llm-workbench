@@ -10,7 +10,6 @@ from typing import Optional
 from . import search, get_instance, terminate_instance, create, list_instances
 from .types import CloudType
 from .ssh_clients import start_interactive_ssh_session, execute_command_streaming
-import gpu_broker_minimal as gpus
 
 app = typer.Typer(help="GPU cloud broker CLI")
 console = Console()
@@ -102,7 +101,7 @@ def show_availability_analysis():
     """Show detailed availability analysis by cloud type"""
     console.print("🔍 [bold]GPU Availability Analysis by Cloud Type[/bold]\n")
     
-    all_offers = gpus.search()
+    all_offers = search()
     secure_offers = [o for o in all_offers if o.cloud_type == CloudType.SECURE]
     community_offers = [o for o in all_offers if o.cloud_type == CloudType.COMMUNITY]
     
@@ -392,6 +391,35 @@ def exec(instance_id: str, command: str):
     except Exception as e:
         console.print(f"❌ Command execution failed: {e}")
 
+
+@app.command()
+def config():
+    """Check configuration and validate setup"""
+    console.print("🔧 [bold]GPU Broker Configuration Check[/bold]\n")
+    
+    try:
+        from .client import GPUClient
+        client = GPUClient()
+        
+        validation_results = client.validate_configuration()
+        
+        for component, status in validation_results.items():
+            console.print(f"**{component.replace('_', ' ').title()}**: {status}")
+            
+        # Test API connection
+        console.print("\n🌐 **Connection Test**:")
+        try:
+            offers = search()
+            console.print(f"✅ RunPod API connection successful ({len(offers)} GPU offers available)")
+        except Exception as e:
+            console.print(f"❌ RunPod API connection failed: {e}")
+            
+    except Exception as e:
+        console.print(f"❌ Configuration error: {e}")
+        console.print("\n💡 **Setup Help:**")
+        console.print("   1. Copy `.env.example` to `.env` and add your RunPod API key")
+        console.print("   2. Ensure SSH key exists at `~/.ssh/id_ed25519` or set GPU_BROKER_SSH_KEY")
+        console.print("   3. Upload your SSH public key to RunPod dashboard")
 
 def main():
     app()
