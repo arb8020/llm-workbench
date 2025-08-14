@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Tuple, Optional
 import paramiko
 from rich.console import Console
+from .job_manager import JobManager, generate_job_id
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -207,4 +208,62 @@ class GitDeployment:
                 except Exception as e:
                     logger.warning(f"Failed to cleanup: {e}")
             
+            client.close()
+    
+    def deploy_and_execute_detached(self, command: str, env_vars: Optional[list] = None) -> str:
+        """Deploy code and execute command in detached mode, return job ID."""
+        
+        # Generate unique job ID
+        job_id = generate_job_id()
+        console.print(f"🆔 Generated job ID: {job_id}")
+        
+        # Detect git repo
+        repo_name, commit_hash = self.detect_git_repo()
+        
+        # Create SSH client
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        
+        # Create job manager
+        job_manager = JobManager(self.ssh_user, self.ssh_host, self.ssh_port)
+        
+        try:
+            # Connect to remote
+            console.print(f"🔗 Connecting to {self.ssh_user}@{self.ssh_host}:{self.ssh_port}")
+            client.connect(hostname=self.ssh_host, port=self.ssh_port, username=self.ssh_user)
+            
+            # Set up remote structure
+            bare_repo_path = self.setup_remote_structure(client, repo_name)
+            
+            # Push code
+            self.push_code(repo_name, commit_hash, bare_repo_path)
+            
+            # Create worktree
+            worktree_path = self.create_worktree(client, repo_name)
+            
+            # Create job metadata
+            job_manager.create_job_metadata(
+                client, job_id, command, worktree_path, commit_hash, repo_name
+            )
+            
+            # Upload job wrapper script (if not already present)
+            job_manager.upload_job_wrapper_script(client)
+            
+            # Start tmux session for detached execution
+            tmux_session = job_manager.start_tmux_session(client, job_id, command, env_vars)
+            
+            console.print(f"🚀 Job {job_id} started in session {tmux_session}")
+            console.print("💡 Use 'bifrost logs {job_id}' to monitor progress (coming in Phase 2)")
+            
+            return job_id
+            
+        except Exception as e:
+            console.print(f"❌ Failed to start detached job: {e}")
+            # Attempt cleanup
+            try:
+                job_manager.cleanup_job(client, job_id, keep_worktree=False)
+            except:
+                pass  # Cleanup failed, but original error is more important
+            raise
+        finally:
             client.close()

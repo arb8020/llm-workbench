@@ -19,6 +19,7 @@ def main(
     command: Optional[str] = typer.Argument(None, help="Command to execute remotely"),
     env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables (KEY=VALUE)"),
     no_deploy: bool = typer.Option(False, "--no-deploy", help="Skip git deployment (legacy mode)"),
+    detach: bool = typer.Option(False, "--detach", help="Run job in background (detached mode)"),
 ):
     """Bifrost - Remote GPU execution with automatic code deployment."""
     
@@ -36,15 +37,16 @@ def main(
         console.print("  bifrost root@gpu.example.com:2222 \"nvidia-smi\" --no-deploy")
         console.print("\n[bold]Options:[/bold]")
         console.print("  --env KEY=VALUE    Environment variables")
-        console.print("  --no-deploy        Skip git deployment")
+        console.print("  --no-deploy        Skip git deployment")  
+        console.print("  --detach           Run job in background")
         console.print("  --help            Show this message")
         return
     
     # Execute the command (same as launch)
-    _execute_command(ssh_info, command, env, no_deploy)
+    _execute_command(ssh_info, command, env, no_deploy, detach)
 
 
-def _execute_command(ssh_info: str, command: str, env: Optional[List[str]], no_deploy: bool):
+def _execute_command(ssh_info: str, command: str, env: Optional[List[str]], no_deploy: bool, detach: bool = False):
     """Execute command with or without deployment."""
     console.print(f"🌈 Launching command on {ssh_info}")
     console.print(f"Command: {command}")
@@ -56,18 +58,31 @@ def _execute_command(ssh_info: str, command: str, env: Optional[List[str]], no_d
         if no_deploy:
             # Legacy mode - just execute command without deployment
             console.print("⚠️  Legacy mode: skipping code deployment")
+            if detach:
+                console.print("❌ --detach not supported in legacy mode (--no-deploy)")
+                sys.exit(1)
             _execute_legacy(user, host, port, command, env)
         else:
-            # New mode - deploy code then execute
+            # Git deployment mode
             console.print("📦 Git deployment mode enabled")
             deployment = GitDeployment(user, host, port)
-            exit_code = deployment.deploy_and_execute(command, env)
             
-            if exit_code == 0:
-                console.print("✅ Command completed successfully")
+            if detach:
+                # Detached execution - start job and return
+                console.print("🔄 Starting detached job...")
+                job_id = deployment.deploy_and_execute_detached(command, env)
+                console.print(f"✅ Job {job_id} started successfully")
+                console.print(f"💡 Job will continue running even if SSH disconnects")
+                return  # Don't wait for completion
             else:
-                console.print(f"❌ Command failed with exit code {exit_code}", style="red")
-                sys.exit(exit_code)
+                # Immediate execution
+                exit_code = deployment.deploy_and_execute(command, env)
+                
+                if exit_code == 0:
+                    console.print("✅ Command completed successfully")
+                else:
+                    console.print(f"❌ Command failed with exit code {exit_code}", style="red")
+                    sys.exit(exit_code)
             
     except Exception as e:
         console.print(f"❌ Execution failed: {e}", style="red")
@@ -90,9 +105,10 @@ def launch(
     command: str = typer.Argument(..., help="Command to execute remotely"),
     env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables (KEY=VALUE)"),
     no_deploy: bool = typer.Option(False, "--no-deploy", help="Skip git deployment (legacy mode)"),
+    detach: bool = typer.Option(False, "--detach", help="Run job in background (detached mode)"),
 ):
     """Launch a command on remote GPU instance with automatic code deployment."""
-    _execute_command(ssh_info, command, env, no_deploy)
+    _execute_command(ssh_info, command, env, no_deploy, detach)
 
 
 def _execute_legacy(user: str, host: str, port: int, command: str, env: Optional[List[str]]):

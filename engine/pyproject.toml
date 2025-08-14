@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inference"
+version = "0.1.0"
+description = "Multi-framework inference utilities for GPT-2 and other models"
+authors = [{name = "Your Name", email = "your.email@example.com"}]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "huggingface-hub>=0.34.4",
+    "numpy>=2.0.0",
+    "pathlib",
+]
+
+[project.optional-dependencies]
+# Weight loading support
+weights = [
+    "safetensors>=0.3.0",
+    "torch>=2.0.0",
+]
+
+# JAX backend
+jax = [
+    "jax[cpu]>=0.4.0",
+    "jaxlib>=0.4.0",
+]
+
+# Development setup
+dev = [
+    "safetensors>=0.3.0",
+    "pytest>=7.0.0",
+]
+
+# All optional dependencies
+all = [
+    "safetensors>=0.3.0",
+    "torch>=2.0.0",
+    "jax[cpu]>=0.4.0",
+    "jaxlib>=0.4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/inference"
+Repository = "https://github.com/yourusername/inference"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["jax*", "utils*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.py"]
