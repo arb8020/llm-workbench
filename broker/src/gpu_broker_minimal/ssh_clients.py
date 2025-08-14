@@ -123,21 +123,14 @@ class ParamikoSSHClient:
             return False
     
     def execute(self, command: str, timeout: int = 30) -> Tuple[bool, str, str]:
-        """Execute command via paramiko using RunPod SDK approach"""
+        """Execute command via paramiko - simplified approach"""
         if not self.client:
             return False, "", "No SSH connection"
         
         try:
-            # Use RunPod SDK approach: complex command chaining for proper environment setup
-            full_command = " && ".join([
-                "source /root/.bashrc",
-                "source /etc/rp_environment", 
-                "while IFS= read -r -d '' line; do export \"$line\"; done < /proc/1/environ",
-                command,
-            ])
-            
-            # No PTY needed for direct connections (RunPod SDK approach)
-            stdin, stdout, stderr = self.client.exec_command(full_command, timeout=timeout, get_pty=False)
+            # Direct command execution - testing showed complex environment sourcing is unnecessary
+            # for basic GPU operations like nvidia-smi, python, etc.
+            stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout, get_pty=False)
             
             stdout_data = stdout.read().decode('utf-8')
             stderr_data = stderr.read().decode('utf-8')
@@ -212,22 +205,15 @@ class AsyncSSHClient:
             return False
     
     async def execute(self, command: str, timeout: int = 30) -> Tuple[bool, str, str]:
-        """Execute command via asyncssh using RunPod SDK approach"""
+        """Execute command via asyncssh - simplified approach"""
         if not self.conn:
             return False, "", "No SSH connection"
         
         try:
-            # Use RunPod SDK approach: complex command chaining for proper environment setup
-            full_command = " && ".join([
-                "source /root/.bashrc",
-                "source /etc/rp_environment", 
-                "while IFS= read -r -d '' line; do export \"$line\"; done < /proc/1/environ",
-                command,
-            ])
-            
-            # No PTY needed for direct connections (RunPod SDK approach)
+            # Direct command execution - testing showed complex environment sourcing is unnecessary
+            # for basic GPU operations like nvidia-smi, python, etc.
             result = await asyncio.wait_for(
-                self.conn.run(full_command),
+                self.conn.run(command),
                 timeout=timeout
             )
             
@@ -457,16 +443,9 @@ def execute_command_streaming(instance: GPUInstance, command: str, private_key: 
             print(f"❌ Failed to connect to {username}@{hostname}:{port}")
             return False
         
-        # Execute command with environment setup
-        full_command = " && ".join([
-            "source /root/.bashrc",
-            "source /etc/rp_environment", 
-            "while IFS= read -r -d '' line; do export \"$line\"; done < /proc/1/environ",
-            command,
-        ])
-        
+        # Execute command directly - simplified approach
         print(f"🔄 Executing: {command}")
-        stdin, stdout, stderr = client.client.exec_command(full_command, timeout=timeout, get_pty=True)
+        stdin, stdout, stderr = client.client.exec_command(command, timeout=timeout, get_pty=True)
         
         # Stream output in real-time
         import select

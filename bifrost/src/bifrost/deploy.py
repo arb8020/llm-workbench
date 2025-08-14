@@ -17,11 +17,11 @@ console = Console()
 class GitDeployment:
     """Handles git-based code deployment to remote instances."""
     
-    def __init__(self, ssh_user: str, ssh_host: str, ssh_port: int):
+    def __init__(self, ssh_user: str, ssh_host: str, ssh_port: int, job_id: Optional[str] = None):
         self.ssh_user = ssh_user
         self.ssh_host = ssh_host
         self.ssh_port = ssh_port
-        self.job_id = str(uuid.uuid4())[:8]  # Short job ID
+        self.job_id = job_id or str(uuid.uuid4())[:8]  # Use provided job_id or generate one
         
     def detect_git_repo(self) -> Tuple[str, str]:
         """Detect git repository and get repo name and current commit."""
@@ -215,6 +215,7 @@ class GitDeployment:
         
         # Generate unique job ID
         job_id = generate_job_id()
+        self.job_id = job_id  # Update instance job_id to match
         console.print(f"🆔 Generated job ID: {job_id}")
         
         # Detect git repo
@@ -259,11 +260,7 @@ class GitDeployment:
             
         except Exception as e:
             console.print(f"❌ Failed to start detached job: {e}")
-            # Attempt cleanup
-            try:
-                job_manager.cleanup_job(client, job_id, keep_worktree=False)
-            except:
-                pass  # Cleanup failed, but original error is more important
+            console.print(f"🔍 Job data preserved for debugging: ~/.bifrost/jobs/{job_id}")
             raise
         finally:
             client.close()
