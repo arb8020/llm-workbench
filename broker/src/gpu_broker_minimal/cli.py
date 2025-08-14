@@ -2,6 +2,7 @@
 Command-line interface for GPU cloud operations
 """
 
+import sys
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -163,7 +164,8 @@ def create_instance(
     image: str = typer.Option("runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04", "--image", help="Docker image"),
     name: Optional[str] = typer.Option(None, "--name", help="Instance name"),
     sort_by: Optional[str] = typer.Option("price", "--sort", help="Sort by: 'price', 'memory', 'value' (memory/price)"),
-    max_attempts: int = typer.Option(3, "--max-attempts", help="Try up to N offers before giving up")
+    max_attempts: int = typer.Option(3, "--max-attempts", help="Try up to N offers before giving up"),
+    print_ssh: bool = typer.Option(False, "--print-ssh", help="Print SSH connection string when ready (for piping to bifrost)")
 ):
     """Provision a new GPU instance using pandas-style search"""
     console.print("🚀 Provisioning GPU instance...")
@@ -213,12 +215,43 @@ def create_instance(
         return
     
     if instance:
-        console.print(f"✅ Instance created: {instance.id}")
-        console.print(f"   Status: {instance.status}")
-        console.print(f"   GPU: {instance.gpu_type} x{instance.gpu_count}")
-        console.print(f"   Price: ${instance.price_per_hour:.3f}/hr")
+        if print_ssh:
+            # Wait for instance to be ready and print SSH connection string
+            console.print(f"✅ Instance created: {instance.id}", err=True)
+            console.print(f"⏳ Waiting for SSH to be ready...", err=True)
+            
+            import time
+            max_wait = 300  # 5 minutes
+            waited = 0
+            
+            while waited < max_wait:
+                # Re-fetch instance status
+                current_instance = get_instance(instance.id)
+                if current_instance and current_instance.public_ip and current_instance.ssh_port:
+                    from .types import InstanceStatus
+                    if current_instance.status == InstanceStatus.RUNNING:
+                        # Print SSH connection string to stdout for piping
+                        print(f"{current_instance.ssh_username}@{current_instance.public_ip}:{current_instance.ssh_port}")
+                        return
+                
+                time.sleep(10)
+                waited += 10
+                if waited % 30 == 0:  # Progress update every 30 seconds
+                    console.print(f"   Still waiting... ({waited}s elapsed)", err=True)
+            
+            console.print("❌ Timeout waiting for SSH to be ready", err=True)
+            console.print(f"   Instance ID: {instance.id}", err=True)
+            console.print("   Try: broker getssh <instance_id>", err=True)
+            sys.exit(1)
+        else:
+            # Normal output
+            console.print(f"✅ Instance created: {instance.id}")
+            console.print(f"   Status: {instance.status}")
+            console.print(f"   GPU: {instance.gpu_type} x{instance.gpu_count}")
+            console.print(f"   Price: ${instance.price_per_hour:.3f}/hr")
     else:
         console.print("❌ Failed to provision instance")
+        sys.exit(1)
 
 
 @app.command()
@@ -310,6 +343,30 @@ def list():
         )
     
     console.print(table)
+
+
+@app.command()
+def getssh(instance_id: str):
+    """Get SSH connection string for an instance (machine readable)"""
+    # Get instance details
+    instance = get_instance(instance_id)
+    if not instance:
+        console.print("❌ Instance not found", err=True)
+        sys.exit(1)
+    
+    # Check if instance is running
+    from .types import InstanceStatus
+    if instance.status != InstanceStatus.RUNNING:
+        console.print(f"❌ Instance is not running (status: {instance.status})", err=True)
+        sys.exit(1)
+    
+    # Check if SSH is available
+    if not instance.public_ip or not instance.ssh_port:
+        console.print("❌ SSH connection info not available", err=True)
+        sys.exit(1)
+    
+    # Output just the SSH connection string for piping
+    print(f"{instance.ssh_username}@{instance.public_ip}:{instance.ssh_port}")
 
 
 @app.command()
