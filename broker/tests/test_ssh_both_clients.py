@@ -27,7 +27,7 @@ async def test_both_ssh_clients():
         # Import minimal GPU broker
         import gpu_broker_minimal as gpus
         from gpu_broker_minimal.ssh_clients import (
-            execute_command_sync, execute_command_async, SSHMethod
+            execute_command_sync, execute_command_async
         )
         logger.info("✅ GPU broker imports successfully")
         
@@ -37,14 +37,14 @@ async def test_both_ssh_clients():
         logger.info(f"   Status: {instance.status}")
         logger.info(f"   Public IP: {instance.public_ip}")
         
-        # Determine SSH method
-        ssh_method = SSHMethod.DIRECT if instance.public_ip != "ssh.runpod.io" else SSHMethod.PROXY
-        logger.info(f"🎯 Using {ssh_method.value} SSH method")
+        # Check if we have direct SSH (only supported method)
+        if instance.public_ip == "ssh.runpod.io":
+            logger.error("❌ Instance has proxy SSH - only direct SSH is supported")
+            return False
         
-        if ssh_method == SSHMethod.DIRECT:
-            logger.info("   Expected: Real output capture")
-        else:
-            logger.info("   Expected: Limited to exit codes (PTY error)")
+        logger.info("🎯 Using direct SSH method")
+        
+        logger.info("   Expected: Real output capture")
         
         results = {}
         
@@ -55,7 +55,7 @@ async def test_both_ssh_clients():
         
         try:
             success, stdout, stderr = execute_command_sync(
-                instance, None, "nvidia-smi --version", ssh_method, timeout=20
+                instance, None, "nvidia-smi --version", timeout=20
             )
             
             logger.info(f"Command executed: {success}")
@@ -87,7 +87,7 @@ async def test_both_ssh_clients():
         
         try:
             success, stdout, stderr = await execute_command_async(
-                instance, None, "nvidia-smi --version", ssh_method, timeout=20
+                instance, None, "nvidia-smi --version", timeout=20
             )
             
             logger.info(f"Command executed: {success}")

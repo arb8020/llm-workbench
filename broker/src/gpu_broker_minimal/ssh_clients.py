@@ -33,7 +33,6 @@ logger = logging.getLogger(__name__)
 class SSHMethod(Enum):
     """SSH connection methods - minimal version only supports direct SSH"""
     DIRECT = "direct"  # ssh root@{ip} -p {port}
-    PROXY = "proxy"    # ssh through proxy (not supported in minimal version)
 
 
 class SSHClient(Enum):
@@ -42,21 +41,17 @@ class SSHClient(Enum):
     ASYNCSSH = "asyncssh"  # Async client
 
 
-def get_ssh_connection_info(instance: GPUInstance, method: SSHMethod) -> Tuple[str, int, str]:
+def get_ssh_connection_info(instance: GPUInstance) -> Tuple[str, int, str]:
     """
-    Get SSH connection details for the specified method
+    Get SSH connection details for direct SSH
     
     Returns:
         Tuple of (hostname, port, username)
     """
-    if method == SSHMethod.DIRECT:
-        # Direct SSH: ssh root@{public_ip} -p {ssh_port}
-        if instance.public_ip == "ssh.runpod.io":
-            raise ValueError("Direct SSH not available - only proxy SSH found")
-        return instance.public_ip, instance.ssh_port, "root"
-    
-    else:
-        raise ValueError(f"Unsupported SSH method: {method}. This minimal version only supports direct SSH.")
+    # Direct SSH: ssh root@{public_ip} -p {ssh_port}
+    if instance.public_ip == "ssh.runpod.io":
+        raise ValueError("Direct SSH not available - only proxy SSH found")
+    return instance.public_ip, instance.ssh_port, "root"
 
 
 class ParamikoSSHClient:
@@ -307,17 +302,20 @@ class AsyncSSHClient:
 
 
 def test_ssh_connection(instance: GPUInstance, private_key: Optional[str], 
-                       method: SSHMethod, client_type: SSHClient,
-                       timeout: int = 30) -> Tuple[bool, str]:
+                       client_type: SSHClient, timeout: int = 30) -> Tuple[bool, str]:
     """
-    Test SSH connection with specified method and client
+    Test SSH connection with specified client type (direct SSH only)
     
     Returns:
         Tuple of (success, message)
     """
     try:
-        hostname, port, username = get_ssh_connection_info(instance, method)
-        logger.info(f"🔗 Testing {method.value} SSH with {client_type.value}")
+        # Only support direct SSH - check for proxy and reject  
+        if instance.public_ip == "ssh.runpod.io":
+            return False, "Proxy SSH not supported - only direct SSH connections are supported"
+            
+        hostname, port, username = get_ssh_connection_info(instance)
+        logger.info(f"🔗 Testing direct SSH with {client_type.value}")
         logger.info(f"   Connection: {username}@{hostname}:{port}")
         
         if client_type == SSHClient.PARAMIKO:
@@ -391,17 +389,15 @@ def _test_asyncssh_connection(hostname: str, port: int, username: str,
 
 
 async def execute_command_async(instance: GPUInstance, private_key: Optional[str], command: str,
-                               method: Optional[SSHMethod] = None, timeout: int = 30) -> Tuple[bool, str, str]:
+                               timeout: int = 30) -> Tuple[bool, str, str]:
     """
-    Execute command asynchronously with automatic method selection
+    Execute command asynchronously using direct SSH
     """
-    if method is None:
-        # Only support direct SSH in minimal version
-        if instance.public_ip == "ssh.runpod.io":
-            raise ValueError("Proxy SSH not supported in minimal version. Only direct SSH connections with real output capture are supported.")
-        method = SSHMethod.DIRECT
+    # Only support direct SSH - check for proxy and reject
+    if instance.public_ip == "ssh.runpod.io":
+        raise ValueError("Proxy SSH not supported in minimal version. Only direct SSH connections with real output capture are supported.")
     
-    hostname, port, username = get_ssh_connection_info(instance, method)
+    hostname, port, username = get_ssh_connection_info(instance)
     
     client = AsyncSSHClient()
     try:
@@ -414,24 +410,21 @@ async def execute_command_async(instance: GPUInstance, private_key: Optional[str
 
 
 def execute_command_sync(instance: GPUInstance, private_key: Optional[str] = None, command: Optional[str] = None,
-                        method: Optional[SSHMethod] = None, timeout: int = 30) -> Tuple[bool, str, str]:
+                        timeout: int = 30) -> Tuple[bool, str, str]:
     """
-    Execute command synchronously with automatic method selection
+    Execute command synchronously using direct SSH
     
     Args:
         instance: GPU instance to connect to
         private_key: Optional private key (if None, uses SSH agent/default keys)
         command: Command to execute
-        method: SSH method (auto-detected if None)
         timeout: Connection/command timeout
     """
-    if method is None:
-        # Only support direct SSH in minimal version
-        if instance.public_ip == "ssh.runpod.io":
-            raise ValueError("Proxy SSH not supported in minimal version. Only direct SSH connections with real output capture are supported.")
-        method = SSHMethod.DIRECT
+    # Only support direct SSH - check for proxy and reject
+    if instance.public_ip == "ssh.runpod.io":
+        raise ValueError("Proxy SSH not supported in minimal version. Only direct SSH connections with real output capture are supported.")
     
-    hostname, port, username = get_ssh_connection_info(instance, method)
+    hostname, port, username = get_ssh_connection_info(instance)
     
     client = ParamikoSSHClient()
     try:
@@ -443,22 +436,19 @@ def execute_command_sync(instance: GPUInstance, private_key: Optional[str] = Non
         client.close()
 
 
-def start_interactive_ssh_session(instance: GPUInstance, private_key: Optional[str] = None, method: Optional[SSHMethod] = None):
+def start_interactive_ssh_session(instance: GPUInstance, private_key: Optional[str] = None):
     """
     Start an interactive SSH session using the system's SSH client
     
     Args:
         instance: GPU instance to connect to
         private_key: Optional private key path (if None, uses SSH agent/default keys)
-        method: SSH method (auto-detected if None)
     """
-    if method is None:
-        # Only support direct SSH in minimal version
-        if instance.public_ip == "ssh.runpod.io":
-            raise ValueError("Proxy SSH not supported in minimal version. Only direct SSH connections are supported.")
-        method = SSHMethod.DIRECT
+    # Only support direct SSH - check for proxy and reject
+    if instance.public_ip == "ssh.runpod.io":
+        raise ValueError("Proxy SSH not supported in minimal version. Only direct SSH connections are supported.")
     
-    hostname, port, username = get_ssh_connection_info(instance, method)
+    hostname, port, username = get_ssh_connection_info(instance)
     
     # Build SSH command
     ssh_cmd = ["ssh", f"{username}@{hostname}", "-p", str(port)]
@@ -490,7 +480,7 @@ def start_interactive_ssh_session(instance: GPUInstance, private_key: Optional[s
 
 
 def execute_command_streaming(instance: GPUInstance, command: str, private_key: Optional[str] = None, 
-                            method: Optional[SSHMethod] = None, timeout: int = 300):
+                            timeout: int = 300):
     """
     Execute command with real-time output streaming using paramiko
     
@@ -498,16 +488,13 @@ def execute_command_streaming(instance: GPUInstance, command: str, private_key: 
         instance: GPU instance to connect to
         command: Command to execute
         private_key: Optional private key (if None, uses SSH agent/default keys)
-        method: SSH method (auto-detected if None)
         timeout: Command timeout
     """
-    if method is None:
-        # Only support direct SSH in minimal version
-        if instance.public_ip == "ssh.runpod.io":
-            raise ValueError("Proxy SSH not supported in minimal version. Only direct SSH connections are supported.")
-        method = SSHMethod.DIRECT
+    # Only support direct SSH - check for proxy and reject
+    if instance.public_ip == "ssh.runpod.io":
+        raise ValueError("Proxy SSH not supported in minimal version. Only direct SSH connections are supported.")
     
-    hostname, port, username = get_ssh_connection_info(instance, method)
+    hostname, port, username = get_ssh_connection_info(instance)
     
     client = ParamikoSSHClient()
     try:

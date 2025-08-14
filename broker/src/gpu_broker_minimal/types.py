@@ -69,14 +69,11 @@ class GPUInstance:
     
     def exec(self, command: str, ssh_key_path: Optional[str] = None, timeout: int = 30) -> 'SSHResult':
         """Execute command via SSH using configured key"""
-        from .ssh_clients import execute_command_sync, SSHMethod
+        from .ssh_clients import execute_command_sync
         import os
         
         if not self.public_ip or not self.ssh_username:
             raise ValueError("Instance SSH details not available - may not be running yet")
-        
-        # Auto-detect SSH method (only DIRECT supported in minimal version)
-        ssh_method = SSHMethod.DIRECT
         
         # Determine which SSH key to use
         key_path = None
@@ -94,7 +91,7 @@ class GPUInstance:
                 raise ValueError(f"Failed to load SSH key from {key_path}: {e}")
         
         success, stdout, stderr = execute_command_sync(
-            self, private_key_content, command, ssh_method, timeout=timeout
+            self, private_key_content, command, timeout=timeout
         )
         
         return SSHResult(

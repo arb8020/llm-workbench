@@ -51,6 +51,16 @@ class GitDeployment:
     def setup_remote_structure(self, client: paramiko.SSHClient, repo_name: str) -> str:
         """Set up ~/.bifrost directory structure on remote."""
         
+        # Ensure tmux is installed for detached job functionality
+        console.print("🔧 Ensuring tmux is installed for detached jobs...")
+        tmux_check_cmd = "which tmux || (apt-get update && apt-get install -y tmux)"
+        stdin, stdout, stderr = client.exec_command(tmux_check_cmd)
+        exit_code = stdout.channel.recv_exit_status()
+        if exit_code != 0:
+            console.print("⚠️  Warning: tmux installation may have failed, but continuing...")
+        else:
+            console.print("✅ tmux is available")
+        
         # Create directory structure
         commands = [
             "mkdir -p ~/.bifrost/repos ~/.bifrost/worktrees ~/.bifrost/jobs",
