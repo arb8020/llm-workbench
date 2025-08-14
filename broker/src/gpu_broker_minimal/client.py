@@ -271,11 +271,48 @@ class ClientGPUInstance:
         return getattr(self._instance, name)
     
     def exec(self, command: str, ssh_key_path: str = None, timeout: int = 30):
-        """Execute command using client's SSH configuration"""
+        """Execute command using client's SSH configuration (non-streaming)"""
         if ssh_key_path is None:
             ssh_key_path = self._client.get_ssh_key_path()
         
         return self._instance.exec(command, ssh_key_path, timeout)
+    
+    def exec_streaming(self, command: str, output_callback=None, ssh_key_path: str = None, timeout: int = 30):
+        """Execute command with real-time output streaming
+        
+        Args:
+            command: Command to execute
+            output_callback: Optional callback function(line, is_stderr) for real-time output
+            ssh_key_path: SSH private key path (uses client's if not provided)
+            timeout: Command timeout in seconds
+        
+        Returns:
+            Tuple of (success, stdout, stderr)
+        
+        Example:
+            def print_output(line, is_stderr):
+                prefix = "ERR" if is_stderr else "OUT"
+                print(f"[{prefix}] {line}")
+            
+            success, stdout, stderr = instance.exec_streaming("nvidia-smi", print_output)
+        """
+        if ssh_key_path is None:
+            ssh_key_path = self._client.get_ssh_key_path()
+        
+        # Use the streaming SSH client directly
+        from .ssh_clients import ParamikoSSHClient, get_ssh_connection_info, SSHMethod
+        
+        try:
+            hostname, port, username = get_ssh_connection_info(self._instance, SSHMethod.DIRECT)
+            client = ParamikoSSHClient()
+            
+            if client.connect(hostname, port, username, ssh_key_path, timeout):
+                return client.execute_streaming(command, timeout, output_callback)
+            else:
+                return False, "", "SSH connection failed"
+                
+        except Exception as e:
+            return False, "", f"Streaming execution failed: {e}"
     
     def wait_until_ready(self, timeout: int = 300) -> bool:
         """Wait until instance is running"""

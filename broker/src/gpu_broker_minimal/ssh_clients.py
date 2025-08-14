@@ -123,7 +123,7 @@ class ParamikoSSHClient:
             return False
     
     def execute(self, command: str, timeout: int = 30) -> Tuple[bool, str, str]:
-        """Execute command via paramiko - simplified approach"""
+        """Execute command via paramiko - simplified approach (non-streaming)"""
         if not self.client:
             return False, "", "No SSH connection"
         
@@ -138,6 +138,77 @@ class ParamikoSSHClient:
             
             success = exit_code == 0
             return success, stdout_data, stderr_data
+            
+        except Exception as e:
+            return False, "", str(e)
+    
+    def execute_streaming(self, command: str, timeout: int = 30, output_callback=None) -> Tuple[bool, str, str]:
+        """Execute command with real-time output streaming
+        
+        Args:
+            command: Command to execute
+            timeout: Command timeout in seconds
+            output_callback: Optional callback function(line, is_stderr) for real-time output
+        
+        Returns:
+            Tuple of (success, stdout, stderr) - accumulated output
+        """
+        if not self.client:
+            return False, "", "No SSH connection"
+        
+        try:
+            stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout, get_pty=True)
+            
+            stdout_lines = []
+            stderr_lines = []
+            
+            # Stream output in real-time
+            while True:
+                # Check if command is finished
+                if stdout.channel.exit_status_ready():
+                    break
+                
+                # Check for available data
+                if stdout.channel.recv_ready():
+                    data = stdout.channel.recv(4096).decode('utf-8', errors='ignore')
+                    stdout_lines.append(data)
+                    if output_callback:
+                        for line in data.splitlines(keepends=True):
+                            output_callback(line.rstrip(), False)
+                
+                if stderr.channel.recv_stderr_ready():
+                    data = stderr.channel.recv_stderr(4096).decode('utf-8', errors='ignore')
+                    stderr_lines.append(data)
+                    if output_callback:
+                        for line in data.splitlines(keepends=True):
+                            output_callback(line.rstrip(), True)
+                
+                time.sleep(0.1)
+            
+            # Get final output
+            remaining_stdout = stdout.read().decode('utf-8', errors='ignore')
+            remaining_stderr = stderr.read().decode('utf-8', errors='ignore')
+            
+            if remaining_stdout:
+                stdout_lines.append(remaining_stdout)
+                if output_callback:
+                    for line in remaining_stdout.splitlines():
+                        output_callback(line, False)
+                        
+            if remaining_stderr:
+                stderr_lines.append(remaining_stderr)
+                if output_callback:
+                    for line in remaining_stderr.splitlines():
+                        output_callback(line, True)
+            
+            exit_code = stdout.channel.recv_exit_status()
+            success = exit_code == 0
+            
+            # Combine all output
+            full_stdout = ''.join(stdout_lines)
+            full_stderr = ''.join(stderr_lines)
+            
+            return success, full_stdout, full_stderr
             
         except Exception as e:
             return False, "", str(e)
