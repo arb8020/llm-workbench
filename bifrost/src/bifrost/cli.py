@@ -565,13 +565,14 @@ def _execute_legacy(user: str, host: str, port: int, command: str, env: Optional
         for line in stdout:
             print(line.rstrip())
         
-        # Check for errors
+        # Get exit code first
+        exit_code = stdout.channel.recv_exit_status()
+        
+        # Only show errors if command failed (non-zero exit code)
         stderr_output = stderr.read().decode()
-        if stderr_output:
+        if stderr_output and exit_code != 0:
             console.print(f"\n--- Remote Errors ---", style="red")
             console.print(stderr_output, style="red")
-        
-        exit_code = stdout.channel.recv_exit_status()
         
         if exit_code == 0:
             console.print("✅ Command completed successfully")
