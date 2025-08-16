@@ -9,7 +9,7 @@ import os
 # Add the broker package to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-import gpu_broker_minimal as gpus
+import broker as gpus
 
 
 def streaming_callback(line, is_stderr):
@@ -55,7 +55,7 @@ def main():
                 print("✅ SSH is ready")
                 
                 # Create SSH client for streaming demo
-                from gpu_broker_minimal.ssh_clients import ParamikoSSHClient, get_ssh_connection_info, SSHMethod
+                from broker.ssh_clients import ParamikoSSHClient, get_ssh_connection_info, SSHMethod
                 
                 hostname, port, username = get_ssh_connection_info(instance, SSHMethod.DIRECT)
                 client = ParamikoSSHClient()

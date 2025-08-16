@@ -5,8 +5,8 @@ GPU Broker Minimal - Client Interface Example
 Shows the new client-based approach (recommended)
 """
 
-from gpu_broker_minimal import GPUClient
-from gpu_broker_minimal.types import CloudType
+from broker import GPUClient
+from broker.types import CloudType
 
 # Step 1: Create configured client
 client = GPUClient(

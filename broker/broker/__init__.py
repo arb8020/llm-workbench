@@ -9,7 +9,7 @@ Two usage patterns:
    instance = client.create(offers[:3])
 
 2. Global interface (legacy):
-   import gpu_broker_minimal as gpus
+   import broker as gpus
    offers = gpus.search(gpus.gpu_type.contains("A100"))
    instance = gpus.create(offers[:3])
 """

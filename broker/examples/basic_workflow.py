@@ -12,7 +12,7 @@ This example shows the complete lifecycle:
 This is the fundamental workflow that most users will follow.
 """
 
-import gpu_broker_minimal as gpus
+import broker as gpus
 import asyncio
 import time
 

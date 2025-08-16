@@ -1,5 +1,5 @@
 [project]
-name = "gpu-broker-minimal"
+name = "broker"
 version = "0.1.0"
 description = "Minimal GPU cloud broker with RunPod SSH output capture fix"
 requires-python = ">=3.8"
@@ -16,7 +16,7 @@ dependencies = [
 dev = ["pytest>=7.0.0", "pytest-asyncio>=0.21.0"]
 
 [project.scripts]
-broker = "gpu_broker_minimal.cli:app"
+broker = "broker.cli:app"
 
 [build-system]
 requires = ["hatchling"]

@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 async def wait_for_public_ip(instance_id: str, max_wait_seconds: int = 300):
     """Wait for instance to have a public IP"""
-    import gpu_broker_minimal as gpus
+    import broker as gpus
     
     logger.info(f"⏳ Waiting for public IP on instance {instance_id}...")
     start_time = time.time()
@@ -45,7 +45,7 @@ async def wait_for_public_ip(instance_id: str, max_wait_seconds: int = 300):
 
 async def test_ssh_connectivity(instance, ssh_method_hint=None):
     """Test actual SSH connectivity and output capture"""
-    from gpu_broker_minimal.ssh_clients import execute_command_sync, execute_command_async, SSHMethod
+    from broker.ssh_clients import execute_command_sync, execute_command_async, SSHMethod
     
     logger.info(f"🔗 Testing SSH connectivity to {instance.public_ip}:{instance.ssh_port}")
     
@@ -170,8 +170,8 @@ async def smoke_test():
     
     try:
         # Import GPU broker
-        import gpu_broker_minimal as gpus
-        from gpu_broker_minimal.types import CloudType
+        import broker as gpus
+        from broker.types import CloudType
         
         logger.info("✅ GPU broker imports successful")
         

@@ -25,8 +25,8 @@ async def test_both_ssh_clients():
     
     try:
         # Import minimal GPU broker
-        import gpu_broker_minimal as gpus
-        from gpu_broker_minimal.ssh_clients import (
+        import broker as gpus
+        from broker.ssh_clients import (
             execute_command_sync, execute_command_async
         )
         logger.info("✅ GPU broker imports successfully")
@@ -160,7 +160,7 @@ async def test_both_ssh_clients():
         logger.info(f"\n📊 Summary:")
         logger.info(f"   Real output: {real_count}/{total} clients")
         logger.info(f"   Working: {working_count}/{total} clients")
-        logger.info(f"   SSH method: {ssh_method.value}")
+        logger.info(f"   SSH method: direct")
         
         if real_count >= 2:
             logger.info("\n🎉 EXCELLENT: Multiple clients capturing real output!")

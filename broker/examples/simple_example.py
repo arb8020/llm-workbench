@@ -9,9 +9,9 @@ The fastest way to get started:
 4. Clean up
 """
 
-import gpu_broker_minimal as gpus
+import broker as gpus
 import time
-from gpu_broker_minimal.types import CloudType
+from broker.types import CloudType
 
 # Step 1: Find best value GPU under $0.40/hr in secure cloud
 # Secure cloud has better availability and direct SSH

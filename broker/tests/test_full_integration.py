@@ -26,9 +26,9 @@ async def test_full_integration():
     
     try:
         # Import minimal GPU broker
-        import gpu_broker_minimal as gpus
-        from gpu_broker_minimal.ssh_clients import SSHMethod, execute_command_sync, execute_command_async
-        from gpu_broker_minimal.types import CloudType
+        import broker as gpus
+        from broker.ssh_clients import SSHMethod, execute_command_sync, execute_command_async
+        from broker.types import CloudType
         
         logger.info("✅ GPU broker imports successfully")
         
