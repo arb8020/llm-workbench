@@ -136,7 +136,6 @@ class GPUInstance:
     def wait_until_ssh_ready(self, timeout: int = 300) -> bool:
         """Wait until instance is running AND SSH is ready for connections"""
         import time
-        from . import get_instance
         
         start_time = time.time()
         
@@ -144,30 +143,56 @@ class GPUInstance:
         if not self.wait_until_ready(timeout=min(timeout, 300)):
             return False
         
-        # Wait for direct SSH to be assigned (public_ip != "ssh.runpod.io")
-        print("Waiting for direct SSH to be assigned...")
-        while time.time() - start_time < timeout:
-            self.refresh()  # Update instance details
-            
-            if self.public_ip and self.ssh_port:
-                if self.public_ip != "ssh.runpod.io":
-                    print(f"✅ Direct SSH assigned: {self.public_ip}:{self.ssh_port}")
-                    break
-                else:
-                    print("   Still waiting for direct SSH (currently proxy)...")
-            else:
-                print("   Still waiting for SSH details...")
-            
-            time.sleep(10)
-        else:
-            print("Timeout waiting for direct SSH")
+        # Wait for direct SSH assignment
+        if not self._wait_for_direct_ssh_assignment(start_time, timeout):
             return False
         
-        # We have direct SSH - wait for SSH daemon to be ready
-        print(f"✅ Got direct SSH! Waiting for SSH daemon to initialize...")
+        # Test SSH connectivity
+        return self._test_ssh_connectivity()
+    
+    def _wait_for_direct_ssh_assignment(self, start_time: float, timeout: int) -> bool:
+        """Wait for direct SSH to be assigned (not proxy)."""
+        import time
+        
+        print("Waiting for direct SSH to be assigned...")
+        while time.time() - start_time < timeout:
+            self.refresh()
+            
+            if self._has_direct_ssh_details():
+                print(f"✅ Direct SSH assigned: {self.public_ip}:{self.ssh_port}")
+                return True
+            
+            self._print_ssh_wait_status()
+            time.sleep(10)
+        
+        print("Timeout waiting for direct SSH")
+        return False
+    
+    def _has_direct_ssh_details(self) -> bool:
+        """Check if instance has direct SSH details (not proxy)."""
+        return (
+            self.public_ip and 
+            self.ssh_port and 
+            self.public_ip != "ssh.runpod.io"
+        )
+    
+    def _print_ssh_wait_status(self) -> None:
+        """Print current SSH wait status."""
+        if self.public_ip and self.ssh_port:
+            if self.public_ip == "ssh.runpod.io":
+                print("   Still waiting for direct SSH (currently proxy)...")
+            else:
+                print("   SSH details available but not recognized as direct...")
+        else:
+            print("   Still waiting for SSH details...")
+    
+    def _test_ssh_connectivity(self) -> bool:
+        """Test SSH connectivity with a simple command."""
+        import time
+        
+        print("✅ Got direct SSH! Waiting for SSH daemon to initialize...")
         time.sleep(30)  # SSH daemons typically need time to start
         
-        # Test SSH connectivity with a simple command
         try:
             result = self.exec("echo 'ssh_ready'", timeout=30)
             if result.success and "ssh_ready" in result.stdout:

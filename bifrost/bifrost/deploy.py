@@ -33,8 +33,8 @@ def wrap_with_env_loader(user_command: str) -> str:
     # set -a: automatically export all subsequently defined variables
     # . /dev/stdin: source environment variables from stdin
     # set +a: turn off automatic export
-    # exec: replace shell with user command
-    return f"set -a; . /dev/stdin; set +a; exec {user_command}"
+    # Use bash -c instead of exec to handle shell builtins like cd
+    return f"set -a; . /dev/stdin; set +a; bash -c {shlex.quote(user_command)}"
 
 def execute_with_env_injection(
     client: paramiko.SSHClient, 
@@ -298,58 +298,71 @@ class GitDeployment:
     def deploy_and_execute_detached(self, command: str, env_vars: Optional[Dict[str, str]] = None) -> str:
         """Deploy code and execute command in detached mode, return job ID."""
         
-        # Generate unique job ID
-        job_id = generate_job_id()
-        self.job_id = job_id  # Update instance job_id to match
-        console.print(f"🆔 Generated job ID: {job_id}")
-        
-        # Detect git repo
+        job_id = self._prepare_detached_job()
         repo_name, commit_hash = self.detect_git_repo()
         
-        # Create SSH client
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
-        # Create job manager
+        client = self._create_ssh_client()
         job_manager = JobManager(self.ssh_user, self.ssh_host, self.ssh_port)
         
         try:
-            # Connect to remote
-            console.print(f"🔗 Connecting to {self.ssh_user}@{self.ssh_host}:{self.ssh_port}")
-            client.connect(hostname=self.ssh_host, port=self.ssh_port, username=self.ssh_user)
-            
-            # Set up remote structure
-            bare_repo_path = self.setup_remote_structure(client, repo_name)
-            
-            # Push code
-            self.push_code(repo_name, commit_hash, bare_repo_path)
-            
-            # Create worktree
-            worktree_path = self.create_worktree(client, repo_name)
-            
-            # Detect and add bootstrap command
-            bootstrap_cmd = self.detect_bootstrap_command(client, worktree_path)
-            full_command = f"{bootstrap_cmd}{command}"
-            
-            # Create job metadata
-            job_manager.create_job_metadata(
-                client, job_id, full_command, worktree_path, commit_hash, repo_name
+            return self._execute_detached_deployment(
+                client, job_manager, job_id, repo_name, commit_hash, command, env_vars
             )
-            
-            # Upload job wrapper script (if not already present)
-            job_manager.upload_job_wrapper_script(client)
-            
-            # Start tmux session for detached execution
-            tmux_session = job_manager.start_tmux_session(client, job_id, full_command, env_vars)
-            
-            console.print(f"🚀 Job {job_id} started in session {tmux_session}")
-            console.print("💡 Use 'bifrost logs {job_id}' to monitor progress (coming in Phase 2)")
-            
-            return job_id
-            
         except Exception as e:
             console.print(f"❌ Failed to start detached job: {e}")
             console.print(f"🔍 Job data preserved for debugging: ~/.bifrost/jobs/{job_id}")
             raise
         finally:
             client.close()
+    
+    def _prepare_detached_job(self) -> str:
+        """Generate job ID and update instance state."""
+        job_id = generate_job_id()
+        self.job_id = job_id
+        console.print(f"🆔 Generated job ID: {job_id}")
+        return job_id
+    
+    def _create_ssh_client(self) -> paramiko.SSHClient:
+        """Create and configure SSH client."""
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        return client
+    
+    def _execute_detached_deployment(
+        self, 
+        client: paramiko.SSHClient, 
+        job_manager: JobManager, 
+        job_id: str, 
+        repo_name: str, 
+        commit_hash: str, 
+        command: str, 
+        env_vars: Optional[Dict[str, str]]
+    ) -> str:
+        """Execute the main deployment steps for detached job."""
+        
+        # Connect to remote
+        console.print(f"🔗 Connecting to {self.ssh_user}@{self.ssh_host}:{self.ssh_port}")
+        client.connect(hostname=self.ssh_host, port=self.ssh_port, username=self.ssh_user)
+        
+        # Set up remote environment
+        bare_repo_path = self.setup_remote_structure(client, repo_name)
+        self.push_code(repo_name, commit_hash, bare_repo_path)
+        worktree_path = self.create_worktree(client, repo_name)
+        
+        # Prepare command with bootstrap
+        bootstrap_cmd = self.detect_bootstrap_command(client, worktree_path)
+        full_command = f"{bootstrap_cmd}{command}"
+        
+        # Set up job execution
+        job_manager.create_job_metadata(
+            client, job_id, full_command, worktree_path, commit_hash, repo_name
+        )
+        job_manager.upload_job_wrapper_script(client)
+        
+        # Start detached execution
+        tmux_session = job_manager.start_tmux_session(client, job_id, full_command, env_vars)
+        
+        console.print(f"🚀 Job {job_id} started in session {tmux_session}")
+        console.print("💡 Use 'bifrost logs {job_id}' to monitor progress (coming in Phase 2)")
+        
+        return job_id
