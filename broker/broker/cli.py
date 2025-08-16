@@ -175,7 +175,7 @@ def create(
     sort_by: Optional[str] = typer.Option("price", "--sort", help="Sort by: 'price', 'memory', 'value' (memory/price)"),
     max_attempts: int = typer.Option(3, "--max-attempts", help="Try up to N offers before giving up"),
     print_ssh: bool = typer.Option(False, "--print-ssh", help="Print SSH connection string when ready (for piping to bifrost)"),
-    container_disk: Optional[int] = typer.Option(None, "--container-disk", help="Container disk size in GB (default: 10GB)"),
+    container_disk: Optional[int] = typer.Option(None, "--container-disk", help="Container disk size in GB (default: 50GB)"),
     volume_disk: Optional[int] = typer.Option(None, "--volume-disk", help="Volume disk size in GB (default: 0GB)")
 ):
     """Provision a new GPU instance using pandas-style search"""

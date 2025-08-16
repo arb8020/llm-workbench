@@ -116,7 +116,7 @@ def get_working_pod_input(gpu_type_id: str, startup_script: Optional[str] = None
         "cloudType": "SECURE",  # Use SECURE for better availability
         "name": f"gpus-{gpu_type_id.replace(' ', '-')}-{int(time.time())}",
         "supportPublicIp": True,  # Required for SSH access
-        "containerDiskInGb": 10,  # Working size (5GB may cause issues)
+        "containerDiskInGb": 50,  # Default 50GB for ML workloads (10GB causes out-of-space)
         "volumeInGb": 0,          # Explicit volume setting
         "minVcpuCount": 1,        # REQUIRED (not in schema but needed!)
         "minMemoryInGb": 4,       # REQUIRED (not in schema but needed!)

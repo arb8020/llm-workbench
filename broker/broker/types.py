@@ -3,7 +3,7 @@ Core data types for GPU cloud operations
 """
 
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, Union, List
 from enum import Enum
 
 
@@ -215,6 +215,70 @@ class GPUInstance:
             return self
         else:
             raise ValueError(f"Could not refresh instance {self.id}")
+    
+    def get_proxy_urls(self, ports: Optional[List[int]] = None) -> Dict[int, str]:
+        """Get RunPod HTTP proxy URLs for exposed ports.
+        
+        Args:
+            ports: Specific ports to get URLs for. If None, returns all exposed ports.
+            
+        Returns:
+            Dict mapping port number to proxy URL
+        """
+        if self.provider != "runpod":
+            return {}
+            
+        proxy_urls = {}
+        
+        # If no specific ports requested, try to get all exposed ports from raw_data
+        if ports is None:
+            ports = self._get_exposed_ports_from_runtime()
+            
+        if not ports:
+            return {}
+            
+        for port in ports:
+            proxy_urls[port] = f"https://{self.id}-{port}.proxy.runpod.net"
+            
+        return proxy_urls
+    
+    def get_proxy_url(self, port: int) -> Optional[str]:
+        """Get RunPod HTTP proxy URL for a specific port.
+        
+        Args:
+            port: Port number (e.g., 8000 for vLLM)
+            
+        Returns:
+            Proxy URL or None if not available
+        """
+        if self.provider != "runpod":
+            return None
+            
+        return f"https://{self.id}-{port}.proxy.runpod.net"
+    
+    def _get_exposed_ports_from_runtime(self) -> List[int]:
+        """Extract exposed HTTP ports from runtime data."""
+        if not self.raw_data or not isinstance(self.raw_data, dict):
+            return []
+            
+        runtime = self.raw_data.get("runtime", {})
+        if not isinstance(runtime, dict):
+            return []
+            
+        ports_data = runtime.get("ports", [])
+        if not isinstance(ports_data, list):
+            return []
+            
+        http_ports = []
+        for port_info in ports_data:
+            if isinstance(port_info, dict):
+                private_port = port_info.get("privatePort")
+                public_port = port_info.get("publicPort") 
+                # Check if it's an HTTP proxy port (not just TCP)
+                if private_port and private_port != 22:  # Exclude SSH
+                    http_ports.append(private_port)
+                    
+        return http_ports
 
 
 @dataclass
@@ -228,8 +292,11 @@ class ProvisionRequest:
     provider: Optional[str] = None  # If None, search all providers
     spot_instance: bool = False
     ssh_startup_script: Optional[str] = None  # SSH key injection script
-    container_disk_gb: Optional[int] = None  # Container disk size in GB (default: 10)
+    container_disk_gb: Optional[int] = None  # Container disk size in GB (default: 50)
     volume_disk_gb: Optional[int] = None  # Volume disk size in GB (default: 0)
+    # Port exposure configuration
+    exposed_ports: Optional[List[int]] = None  # Ports to expose via HTTP proxy
+    enable_http_proxy: bool = True  # Enable RunPod's HTTP proxy
 
 
 @dataclass

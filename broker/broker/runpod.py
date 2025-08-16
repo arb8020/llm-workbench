@@ -16,6 +16,29 @@ logger = logging.getLogger(__name__)
 RUNPOD_API_URL = "https://api.runpod.io/graphql"
 
 
+def _build_ports_string(exposed_ports: Optional[List[int]], enable_http_proxy: bool) -> str:
+    """Build ports string for RunPod instance configuration.
+    
+    Args:
+        exposed_ports: List of ports to expose (e.g., [8000] for vLLM)
+        enable_http_proxy: Whether to enable HTTP proxy for exposed ports
+        
+    Returns:
+        Ports string in RunPod format (e.g., "22/tcp,8000/http")
+    """
+    ports = ["22/tcp"]  # Always include SSH
+    
+    if exposed_ports and enable_http_proxy:
+        for port in exposed_ports:
+            ports.append(f"{port}/http")
+    elif exposed_ports:
+        # TCP only if HTTP proxy disabled
+        for port in exposed_ports:
+            ports.append(f"{port}/tcp")
+            
+    return ",".join(ports)
+
+
 def _get_api_key() -> str:
     """Get RunPod API key from environment"""
     # Load .env file if it exists
@@ -152,11 +175,11 @@ def provision_instance(request: ProvisionRequest, ssh_startup_script: Optional[s
         "cloudType": "SECURE" if not request.spot_instance else "COMMUNITY",
         "name": request.name or f"gpus-{request.gpu_type or 'auto'}-{int(time.time())}",
         "supportPublicIp": True,  # Required for SSH access
-        "containerDiskInGb": request.container_disk_gb or 10,  # Default 10GB, configurable
+        "containerDiskInGb": request.container_disk_gb or 50,  # Default 50GB for ML workloads, configurable
         "volumeInGb": request.volume_disk_gb or 0,  # Default 0GB, configurable
         "minVcpuCount": 1,  # Required minimum CPU
         "minMemoryInGb": 4,  # Required minimum memory
-        "ports": "22/tcp",  # SSH port
+        "ports": _build_ports_string(request.exposed_ports, request.enable_http_proxy),
         "startSsh": True,  # ← MISSING! This enables SSH daemon
         "env": env_vars
     }
