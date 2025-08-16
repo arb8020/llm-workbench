@@ -152,8 +152,8 @@ def provision_instance(request: ProvisionRequest, ssh_startup_script: Optional[s
         "cloudType": "SECURE" if not request.spot_instance else "COMMUNITY",
         "name": request.name or f"gpus-{request.gpu_type or 'auto'}-{int(time.time())}",
         "supportPublicIp": True,  # Required for SSH access
-        "containerDiskInGb": 10,  # Smaller disk for better availability
-        "volumeInGb": 0,  # Explicit volume setting
+        "containerDiskInGb": request.container_disk_gb or 10,  # Default 10GB, configurable
+        "volumeInGb": request.volume_disk_gb or 0,  # Default 0GB, configurable
         "minVcpuCount": 1,  # Required minimum CPU
         "minMemoryInGb": 4,  # Required minimum memory
         "ports": "22/tcp",  # SSH port
@@ -189,6 +189,57 @@ def provision_instance(request: ProvisionRequest, ssh_startup_script: Optional[s
         
     except Exception as e:
         logger.error(f"Failed to provision RunPod instance: {e}")
+        return None
+
+
+def get_instance_details_enhanced(instance_id: str) -> Optional[dict]:
+    """Get comprehensive details of a specific instance with all available fields"""
+    query = """
+    query pod($input: PodFilter!) {
+        pod(input: $input) {
+            id
+            name
+            machineId
+            imageName
+            env
+            desiredStatus
+            lastStatusChange
+            gpuCount
+            vcpuCount
+            memoryInGb
+            costPerHr
+            containerDiskInGb
+            volumeInGb
+            ports
+            runtime {
+                uptimeInSeconds
+                ports {
+                    ip
+                    isIpPublic
+                    privatePort
+                    publicPort
+                }
+            }
+            machine {
+                podHostId
+            }
+        }
+    }
+    """
+    
+    variables = {"input": {"podId": instance_id}}
+    
+    try:
+        response = _make_graphql_request(query, variables)
+        pod_data = response.get("pod")
+        
+        if not pod_data:
+            return None
+        
+        return pod_data
+        
+    except Exception as e:
+        logger.error(f"Failed to get RunPod instance details: {e}")
         return None
 
 

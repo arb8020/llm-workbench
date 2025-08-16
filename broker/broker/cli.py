@@ -5,8 +5,12 @@ Command-line interface for GPU cloud operations
 import sys
 import json
 import typer
+import subprocess
+from datetime import datetime, timezone
 from rich.console import Console
 from rich.table import Table
+from rich.panel import Panel
+from rich import box
 from typing import Optional
 
 from . import search, get_instance, terminate_instance, create, list_instances
@@ -170,7 +174,9 @@ def create(
     name: Optional[str] = typer.Option(None, "--name", help="Instance name"),
     sort_by: Optional[str] = typer.Option("price", "--sort", help="Sort by: 'price', 'memory', 'value' (memory/price)"),
     max_attempts: int = typer.Option(3, "--max-attempts", help="Try up to N offers before giving up"),
-    print_ssh: bool = typer.Option(False, "--print-ssh", help="Print SSH connection string when ready (for piping to bifrost)")
+    print_ssh: bool = typer.Option(False, "--print-ssh", help="Print SSH connection string when ready (for piping to bifrost)"),
+    container_disk: Optional[int] = typer.Option(None, "--container-disk", help="Container disk size in GB (default: 10GB)"),
+    volume_disk: Optional[int] = typer.Option(None, "--volume-disk", help="Volume disk size in GB (default: 0GB)")
 ):
     """Provision a new GPU instance using pandas-style search"""
     if not print_ssh:
@@ -214,14 +220,28 @@ def create(
     if not print_ssh:
         console.print(f"🎯 Trying up to {max_attempts} offers sorted by {sort_by}...")
     try:
-        instance = client.create(
-            query=final_query,
-            image=image, 
-            name=name,
-            sort=sort_func,
-            reverse=(sort_by != "price"),  # Descending for memory/value, ascending for price
-            max_attempts=max_attempts
-        )
+        # Prepare disk configuration
+        create_kwargs = {
+            "query": final_query,
+            "image": image, 
+            "name": name,
+            "sort": sort_func,
+            "reverse": (sort_by != "price"),  # Descending for memory/value, ascending for price
+            "max_attempts": max_attempts
+        }
+        
+        # Add disk configuration if specified
+        if container_disk is not None:
+            create_kwargs["container_disk_gb"] = container_disk
+            if not print_ssh:
+                console.print(f"💾 Container disk: {container_disk}GB")
+        
+        if volume_disk is not None:
+            create_kwargs["volume_disk_gb"] = volume_disk
+            if not print_ssh:
+                console.print(f"💾 Volume disk: {volume_disk}GB")
+        
+        instance = client.create(**create_kwargs)
     except Exception as e:
         console.print(f"❌ Provisioning failed: {e}")
         return
@@ -294,6 +314,45 @@ def terminate(instance_id: str):
         console.print("✅ Instance terminated successfully")
     else:
         console.print("❌ Failed to terminate instance")
+
+
+@app.command()
+def info(
+    instance_id: str,
+    live_metrics: bool = typer.Option(False, "--live-metrics", help="Include real-time disk usage via SSH"),
+    json_output: bool = typer.Option(False, "--json", help="JSON output format for scripting")
+):
+    """Get comprehensive information about a specific instance"""
+    
+    if not json_output:
+        console.print(f"🔍 Getting detailed information for instance: {instance_id}")
+    
+    # Get instance details using the enhanced GraphQL query
+    from .runpod import get_instance_details_enhanced
+    
+    try:
+        instance_data = get_instance_details_enhanced(instance_id)
+        
+        if not instance_data:
+            if json_output:
+                print('{"error": "Instance not found"}')
+            else:
+                console.print("❌ Instance not found")
+            return
+        
+        if json_output:
+            import json
+            print(json.dumps(instance_data, indent=2))
+            return
+        
+        # Display comprehensive information
+        display_enhanced_instance_info(instance_data, live_metrics, instance_id)
+        
+    except Exception as e:
+        if json_output:
+            print(f'{{"error": "Failed to get instance info: {e}"}}')
+        else:
+            console.print(f"❌ Failed to get instance info: {e}")
 
 
 @app.command()
@@ -577,6 +636,116 @@ def config():
         console.print("   1. Copy `.env.example` to `.env` and add your RunPod API key")
         console.print("   2. Ensure SSH key exists at `~/.ssh/id_ed25519` or set GPU_BROKER_SSH_KEY")
         console.print("   3. Upload your SSH public key to RunPod dashboard")
+
+
+def display_enhanced_instance_info(instance_data: dict, live_metrics: bool, instance_id: str):
+    """Display comprehensive instance information in a user-friendly format"""
+    
+    # Instance header
+    name = instance_data.get('name', 'unnamed')
+    instance_id_short = instance_id[:12] + "..." if len(instance_id) > 12 else instance_id
+    
+    console.print(f"\n🚀 [bold cyan]Instance Details: {name} ({instance_id_short})[/bold cyan]\n")
+    
+    # Status & Performance section
+    runtime = instance_data.get('runtime') or {}
+    machine = instance_data.get('machine') or {}
+    
+    uptime_seconds = runtime.get('uptimeInSeconds', 0) if runtime else 0
+    uptime_str = format_uptime(uptime_seconds)
+    
+    status_info = [
+        f"Status: [green]RUNNING[/green] ({uptime_str} uptime)",
+        f"Cost: ~${(instance_data.get('costPerHr', 0) * (uptime_seconds / 3600)):.2f} ({uptime_seconds / 3600:.1f}h × ${instance_data.get('costPerHr', 0):.3f}/hr)"
+    ]
+    
+    # Add utilization if available
+    if machine:
+        cpu_util = machine.get('cpuUtilPercent', 0)
+        mem_util = machine.get('memoryUtilPercent', 0)
+        disk_util = machine.get('diskUtilPercent', 0)
+        
+        util_info = f"Real-time Utilization:\n"
+        util_info += f"• CPU: {cpu_util}% ({instance_data.get('vcpuCount', '?')} vCPUs available)\n"
+        util_info += f"• Memory: {mem_util}% ({instance_data.get('memoryInGb', '?')}GB RAM available)\n"
+        util_info += f"• Disk: {disk_util}% ({instance_data.get('containerDiskInGb', '?')}GB container)"
+        
+        # Add warning for high disk usage
+        if disk_util > 75:
+            util_info += " ⚠️ High usage!"
+        
+        status_info.append(util_info)
+    
+    console.print(Panel("\n".join(status_info), title="📊 Status & Performance", box=box.ROUNDED))
+    
+    # Hardware Configuration section
+    hardware_info = [
+        f"GPU: {instance_data.get('gpuCount', 1)} × [bold]GPU Type[/bold]", # TODO: Get GPU type from machine data
+        f"vCPU: {instance_data.get('vcpuCount', '?')} cores",
+        f"Memory: {instance_data.get('memoryInGb', '?')}GB RAM",
+        f"Container Disk: {instance_data.get('containerDiskInGb', '?')}GB",
+        f"Volume Disk: {instance_data.get('volumeInGb', 0)}GB" + (" (not mounted)" if instance_data.get('volumeInGb', 0) == 0 else "")
+    ]
+    
+    console.print(Panel("\n".join(hardware_info), title="🖥️ Hardware Configuration", box=box.ROUNDED))
+    
+    # Network & Access section
+    ports = runtime.get('ports', []) if runtime else []
+    ssh_info = None
+    
+    for port in ports:
+        if port.get('privatePort') == 22 and port.get('isIpPublic'):
+            ssh_info = f"root@{port.get('ip')}:{port.get('publicPort')}"
+            break
+    
+    # If no SSH info from runtime, this might be a new instance
+    if not ssh_info:
+        ssh_info = "Starting up... (check broker status for SSH details)"
+    
+    network_info = [
+        f"SSH: [bold]{ssh_info}[/bold]" if ssh_info else "SSH: Not available",
+        f"Direct SSH: {'✅ Available' if ssh_info and not 'ssh.runpod.io' in str(ssh_info) else '❌ Proxy only'}",
+        f"Exposed Ports: {instance_data.get('ports', 'Default')}"
+    ]
+    
+    console.print(Panel("\n".join(network_info), title="🌐 Network & Access", box=box.ROUNDED))
+    
+    # Container Details section
+    container_info = [
+        f"Image: {instance_data.get('imageName', 'Unknown')}",
+        f"Machine ID: {instance_data.get('machineId', 'Unknown')}",
+        f"Host ID: {machine.get('podHostId', 'Unknown') if machine else 'Unknown'}"
+    ]
+    
+    console.print(Panel("\n".join(container_info), title="🐳 Container Details", box=box.ROUNDED))
+    
+    # Live disk usage if requested
+    if live_metrics and ssh_info:
+        console.print(f"\n🔍 [yellow]Fetching live disk usage via SSH...[/yellow]")
+        try:
+            result = subprocess.run([
+                "bifrost", "launch", ssh_info, "df -h / && echo && du -sh /root/.cache /root/.bifrost 2>/dev/null || true"
+            ], capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                console.print(Panel(result.stdout.strip(), title="💾 Live Disk Usage", box=box.ROUNDED))
+            else:
+                console.print("[yellow]⚠️ Could not fetch live disk usage[/yellow]")
+        except Exception as e:
+            console.print(f"[yellow]⚠️ Live metrics failed: {e}[/yellow]")
+
+
+def format_uptime(seconds: int) -> str:
+    """Format uptime seconds into human readable string"""
+    if seconds < 60:
+        return f"{seconds}s"
+    elif seconds < 3600:
+        return f"{seconds // 60}m"
+    else:
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        return f"{hours}h {minutes}m"
+
 
 def main():
     app()

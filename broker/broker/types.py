@@ -203,6 +203,8 @@ class ProvisionRequest:
     provider: Optional[str] = None  # If None, search all providers
     spot_instance: bool = False
     ssh_startup_script: Optional[str] = None  # SSH key injection script
+    container_disk_gb: Optional[int] = None  # Container disk size in GB (default: 10)
+    volume_disk_gb: Optional[int] = None  # Volume disk size in GB (default: 0)
 
 
 @dataclass
