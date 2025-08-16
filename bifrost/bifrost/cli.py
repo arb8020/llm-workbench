@@ -4,12 +4,16 @@ import typer
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
-from typing import List, Optional
+from typing import List, Optional, Dict
 import paramiko
 import sys
 import re
 import json
+import os
+import shlex
 from datetime import datetime
+from pathlib import Path
+from dotenv import dotenv_values
 from .deploy import GitDeployment
 from .job_manager import JobManager
 
@@ -25,10 +29,62 @@ def main(
     pass
 
 
-def _execute_command(ssh_info: str, command: str, env: Optional[List[str]], no_deploy: bool, detach: bool = False):
+def process_env_vars(
+    env: Optional[List[str]] = None,
+    env_file: Optional[List[Path]] = None,
+    dotenv: bool = False
+) -> Dict[str, str]:
+    """Process environment variables from various sources with precedence rules."""
+    env_dict: Dict[str, str] = {}
+    
+    # 1. Load from .env if --dotenv is used
+    if dotenv and Path(".env").exists():
+        env_dict.update({k: v for k, v in dotenv_values(".env").items() if v is not None})
+        console.print(f"📄 Loaded .env from current directory")
+    
+    # 2. Load from --env-file(s) in order
+    for f in env_file or []:
+        if not f.exists():
+            raise typer.BadParameter(f"Environment file not found: {f}")
+        vals = dotenv_values(f)
+        for k, v in vals.items():
+            if v is not None:
+                env_dict[k] = v
+        console.print(f"📄 Loaded env file: {f}")
+    
+    # 3. Process --env overrides (last wins)
+    for item in env or []:
+        if "=" in item:
+            k, v = item.split("=", 1)
+        else:
+            # Allow --env KEY to pull from local environment
+            k, v = item, os.environ.get(item)
+            if v is None:
+                raise typer.BadParameter(f"Environment variable {k} not found in local environment")
+        env_dict[k] = v
+    
+    # Log keys only (never values for security)
+    if env_dict:
+        console.print(f"🔐 Environment variables: {', '.join(sorted(env_dict.keys()))}")
+    
+    return env_dict
+
+
+def _execute_command(
+    ssh_info: str, 
+    command: str, 
+    env: Optional[List[str]], 
+    env_file: Optional[List[Path]], 
+    dotenv: bool, 
+    no_deploy: bool, 
+    detach: bool = False
+):
     """Execute command with or without deployment."""
     console.print(f"🌈 Launching command on {ssh_info}")
     console.print(f"Command: {command}")
+    
+    # Process environment variables securely
+    env_dict = process_env_vars(env, env_file, dotenv)
     
     try:
         # Parse SSH connection info
@@ -40,7 +96,7 @@ def _execute_command(ssh_info: str, command: str, env: Optional[List[str]], no_d
             if detach:
                 console.print("❌ --detach not supported in legacy mode (--no-deploy)")
                 sys.exit(1)
-            _execute_legacy(user, host, port, command, env)
+            _execute_legacy(user, host, port, command, env_dict)
         else:
             # Git deployment mode
             console.print("📦 Git deployment mode enabled")
@@ -49,13 +105,13 @@ def _execute_command(ssh_info: str, command: str, env: Optional[List[str]], no_d
             if detach:
                 # Detached execution - start job and return
                 console.print("🔄 Starting detached job...")
-                job_id = deployment.deploy_and_execute_detached(command, env)
+                job_id = deployment.deploy_and_execute_detached(command, env_dict)
                 console.print(f"✅ Job {job_id} started successfully")
                 console.print(f"💡 Job will continue running even if SSH disconnects")
                 return  # Don't wait for completion
             else:
                 # Immediate execution
-                exit_code = deployment.deploy_and_execute(command, env)
+                exit_code = deployment.deploy_and_execute(command, env_dict)
                 
                 if exit_code == 0:
                     console.print("✅ Command completed successfully")
@@ -82,23 +138,27 @@ def parse_ssh_info(ssh_info: str):
 def run(
     ssh_info: str = typer.Argument(..., help="SSH connection string (user@host:port)"),
     command: str = typer.Argument(..., help="Command to execute remotely"),
-    env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables (KEY=VALUE)"),
+    env: Optional[List[str]] = typer.Option(None, "--env", "-e", help="Environment variables (KEY=VALUE) or KEY to copy from local env"),
+    env_file: Optional[List[Path]] = typer.Option(None, "--env-file", "-f", help="Read environment variables from .env file(s)"),
+    dotenv: bool = typer.Option(False, "--dotenv", help="Load .env from current working directory if present"),
     no_deploy: bool = typer.Option(False, "--no-deploy", help="Skip git deployment (legacy mode)"),
     detach: bool = typer.Option(False, "--detach", help="Run job in background (detached mode)"),
 ):
     """Run a command on remote GPU instance with automatic code deployment."""
-    _execute_command(ssh_info, command, env, no_deploy, detach)
+    _execute_command(ssh_info, command, env, env_file, dotenv, no_deploy, detach)
 
 @app.command()
 def launch(
     ssh_info: str = typer.Argument(..., help="SSH connection string (user@host:port)"),
     command: str = typer.Argument(..., help="Command to execute remotely"),
-    env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables (KEY=VALUE)"),
+    env: Optional[List[str]] = typer.Option(None, "--env", "-e", help="Environment variables (KEY=VALUE) or KEY to copy from local env"),
+    env_file: Optional[List[Path]] = typer.Option(None, "--env-file", "-f", help="Read environment variables from .env file(s)"),
+    dotenv: bool = typer.Option(False, "--dotenv", help="Load .env from current working directory if present"),
     no_deploy: bool = typer.Option(False, "--no-deploy", help="Skip git deployment (legacy mode)"),
     detach: bool = typer.Option(False, "--detach", help="Run job in background (detached mode)"),
 ):
     """Launch a command on remote GPU instance with automatic code deployment (alias for run)."""
-    _execute_command(ssh_info, command, env, no_deploy, detach)
+    _execute_command(ssh_info, command, env, env_file, dotenv, no_deploy, detach)
 
 
 @app.command()
@@ -539,40 +599,35 @@ def _format_start_time(start_time_str: str) -> str:
         return start_time_str[:8] if start_time_str else 'N/A'
 
 
-def _execute_legacy(user: str, host: str, port: int, command: str, env: Optional[List[str]]):
+def _execute_legacy(user: str, host: str, port: int, command: str, env_dict: Optional[Dict[str, str]]):
     """Legacy execution mode without git deployment."""
+    # Import the secure execution function from deploy module
+    from .deploy import execute_with_env_injection
+    
     # Create SSH client
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     
     try:
-        # Build command with environment variables
-        full_command = command
-        if env:
-            env_vars = " ".join(f"{var}" for var in env)
-            full_command = f"export {env_vars}; {command}"
-            console.print(f"Environment: {env}")
-        
         # Connect and execute
         console.print(f"Connecting to {user}@{host}:{port}")
         client.connect(hostname=host, port=port, username=user)
         
-        console.print(f"Executing: {full_command}")
-        stdin, stdout, stderr = client.exec_command(full_command)
+        # Execute with secure environment injection
+        console.print(f"Executing: {command}")
+        exit_code, stdout_content, stderr_content = execute_with_env_injection(
+            client, command, env_dict
+        )
         
         # Stream output
         console.print("\n--- Remote Output ---")
-        for line in stdout:
-            print(line.rstrip())
-        
-        # Get exit code first
-        exit_code = stdout.channel.recv_exit_status()
+        if stdout_content:
+            print(stdout_content.rstrip())
         
         # Only show errors if command failed (non-zero exit code)
-        stderr_output = stderr.read().decode()
-        if stderr_output and exit_code != 0:
+        if stderr_content and exit_code != 0:
             console.print(f"\n--- Remote Errors ---", style="red")
-            console.print(stderr_output, style="red")
+            console.print(stderr_content, style="red")
         
         if exit_code == 0:
             console.print("✅ Command completed successfully")

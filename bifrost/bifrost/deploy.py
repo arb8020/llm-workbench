@@ -4,14 +4,71 @@ import os
 import subprocess
 import uuid
 import logging
+import shlex
+import re
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict
 import paramiko
 from rich.console import Console
 from .job_manager import JobManager, generate_job_id
 
 logger = logging.getLogger(__name__)
 console = Console()
+
+# Environment variable validation and payload creation
+VALID_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+def make_env_payload(env_dict: Dict[str, str]) -> bytes:
+    """Create secure environment variable payload for stdin injection."""
+    lines = []
+    for k, v in env_dict.items():
+        if not VALID_ENV_NAME.match(k):
+            raise ValueError(f"Invalid environment variable name: {k}")
+        # Use shlex.quote to safely handle special characters
+        lines.append(f"{k}={shlex.quote(v)}")
+    return ("\n".join(lines) + "\n").encode()
+
+def wrap_with_env_loader(user_command: str) -> str:
+    """Wrap user command to load environment variables from stdin."""
+    # set -a: automatically export all subsequently defined variables
+    # . /dev/stdin: source environment variables from stdin
+    # set +a: turn off automatic export
+    # exec: replace shell with user command
+    return f"set -a; . /dev/stdin; set +a; exec {user_command}"
+
+def execute_with_env_injection(
+    client: paramiko.SSHClient, 
+    command: str, 
+    env_dict: Optional[Dict[str, str]] = None
+) -> Tuple[int, str, str]:
+    """Execute command with secure environment variable injection via stdin."""
+    
+    if env_dict:
+        # Create environment payload
+        env_payload = make_env_payload(env_dict)
+        
+        # Wrap command to load environment from stdin
+        wrapped_command = wrap_with_env_loader(command)
+        
+        console.print(f"🔐 Injecting {len(env_dict)} environment variables securely")
+        
+        # Execute with environment injection
+        stdin, stdout, stderr = client.exec_command(f"bash -lc {shlex.quote(wrapped_command)}")
+        
+        # Send environment variables over stdin
+        stdin.write(env_payload)
+        stdin.channel.shutdown_write()  # Signal end of input
+        
+    else:
+        # No environment variables, execute normally
+        stdin, stdout, stderr = client.exec_command(command)
+    
+    # Get outputs
+    stdout_content = stdout.read().decode()
+    stderr_content = stderr.read().decode()
+    exit_code = stdout.channel.recv_exit_status()
+    
+    return exit_code, stdout_content, stderr_content
 
 
 class GitDeployment:
@@ -177,7 +234,7 @@ class GitDeployment:
         cmd = f"rm -rf ~/.bifrost/jobs/{self.job_id}"
         client.exec_command(cmd)
     
-    def deploy_and_execute(self, command: str, env_vars: Optional[list] = None) -> int:
+    def deploy_and_execute(self, command: str, env_vars: Optional[Dict[str, str]] = None) -> int:
         """Deploy code and execute command with proper cleanup."""
         
         # Detect git repo
@@ -206,33 +263,25 @@ class GitDeployment:
             # Detect and add bootstrap command
             bootstrap_cmd = self.detect_bootstrap_command(client, worktree_path)
             
-            # Build command with environment and working directory
-            full_command = f"cd {worktree_path}"
+            # Build full command with working directory and bootstrap
+            full_command = f"cd {worktree_path} && {bootstrap_cmd}{command}"
             
-            if env_vars:
-                env_setup = " && ".join(f"export {var}" for var in env_vars)
-                full_command += f" && {env_setup}"
-            
-            # Add bootstrap if detected, then user command
-            full_command += f" && {bootstrap_cmd}{command}"
-            
-            # Execute command
+            # Execute command with secure environment injection
             console.print(f"🔄 Executing in worktree: {command}")
-            stdin, stdout, stderr = client.exec_command(full_command)
+            exit_code, stdout_content, stderr_content = execute_with_env_injection(
+                client, full_command, env_vars
+            )
             
             # Stream output
             console.print("\n--- Remote Output ---")
-            for line in stdout:
-                print(line.rstrip())
-            
-            # Get exit code first
-            exit_code = stdout.channel.recv_exit_status()
+            if stdout_content:
+                print(stdout_content.rstrip())
             
             # Only show errors if command failed (non-zero exit code)
-            stderr_output = stderr.read().decode()
-            if stderr_output and exit_code != 0:
+            if stderr_content and exit_code != 0:
                 console.print(f"\n--- Remote Errors ---", style="red")
-                console.print(stderr_output, style="red")
+                console.print(stderr_content, style="red")
+            
             return exit_code
             
         finally:
@@ -246,7 +295,7 @@ class GitDeployment:
             
             client.close()
     
-    def deploy_and_execute_detached(self, command: str, env_vars: Optional[list] = None) -> str:
+    def deploy_and_execute_detached(self, command: str, env_vars: Optional[Dict[str, str]] = None) -> str:
         """Deploy code and execute command in detached mode, return job ID."""
         
         # Generate unique job ID

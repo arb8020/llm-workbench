@@ -4,9 +4,10 @@ import json
 import time
 import uuid
 import logging
+import shlex
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import paramiko
 from rich.console import Console
 
@@ -136,7 +137,7 @@ fi
         console.print("📋 Uploaded job wrapper script")
     
     def start_tmux_session(self, client: paramiko.SSHClient, job_id: str, 
-                          command: str, env_vars: Optional[list] = None) -> str:
+                          command: str, env_vars: Optional[Dict[str, str]] = None) -> str:
         """Start tmux session for detached job execution."""
         
         tmux_session = f"bifrost_{job_id}"
@@ -146,7 +147,7 @@ fi
         
         # Add environment variables if provided
         if env_vars:
-            env_setup = " && ".join(f"export {var}" for var in env_vars)
+            env_setup = " && ".join(f'export {k}={shlex.quote(v)}' for k, v in env_vars.items())
             wrapper_cmd = f"{env_setup} && {wrapper_cmd}"
         
         # Start tmux session - use single quotes to wrap the entire command
