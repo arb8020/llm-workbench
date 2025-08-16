@@ -12,8 +12,8 @@ def matmul_inference():
     
     # Create matrices on the specified device
     with jax.default_device(device):
-        A = jnp.ones((1000, 1000))
-        B = jnp.ones((1000, 1000))
+        A = jnp.ones((123, 345))
+        B = jnp.ones((345, 678))
         C = jnp.matmul(A, B)
         return C.sum()
 
