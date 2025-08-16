@@ -14,6 +14,8 @@ dependencies = [
     "numpy>=2.0.0",
     "jax[cuda12]",
     "pathlib",
+    "vllm>=0.5.0",
+    "requests>=2.28.0",
 ]
 
 [project.optional-dependencies]
@@ -35,12 +37,20 @@ dev = [
     "pytest>=7.0.0",
 ]
 
+# Inference server backends
+backends = [
+    "vllm>=0.5.0",
+    "requests>=2.28.0",
+]
+
 # All optional dependencies
 all = [
     "safetensors>=0.3.0",
     "torch>=2.0.0",
     "jax[cuda12]>=0.4.0",
     "jaxlib>=0.4.0",
+    "vllm>=0.5.0",
+    "requests>=2.28.0",
 ]
 
 [project.urls]
@@ -49,7 +59,7 @@ Repository = "https://github.com/yourusername/inference"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["jax*", "utils*"]
+include = ["engine*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.py"]
