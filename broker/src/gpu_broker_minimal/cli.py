@@ -20,6 +20,7 @@ console = Console()
 def search_gpus(
     gpu_type: Optional[str] = typer.Option(None, "--gpu-type", help="GPU type to search for"),
     max_price: Optional[float] = typer.Option(None, "--max-price", help="Maximum price per hour"),
+    min_vram: Optional[int] = typer.Option(None, "--min-vram", help="Minimum VRAM in GB"),
     provider: Optional[str] = typer.Option(None, "--provider", help="Specific provider to search"),
     cloud_type: Optional[str] = typer.Option(None, "--cloud-type", help="Cloud type: 'secure' or 'community'"),
     cuda_version: Optional[str] = typer.Option(None, "--cuda-version", help="CUDA version filter (e.g., '12.0', '11.8')"),
@@ -45,6 +46,8 @@ def search_gpus(
         query_conditions.append(client.price_per_hour < max_price)
     if gpu_type:
         query_conditions.append(client.gpu_type.contains(gpu_type))
+    if min_vram:
+        query_conditions.append(client.memory_gb >= min_vram)
     if cloud_type:
         cloud_enum = CloudType.SECURE if cloud_type == "secure" else CloudType.COMMUNITY
         query_conditions.append(client.cloud_type == cloud_enum)
@@ -157,10 +160,11 @@ def show_availability_analysis():
 
 
 @app.command() 
-def create_instance(
+def create(
     gpu_type: Optional[str] = typer.Option(None, "--gpu-type", help="GPU type to provision"),
     cloud_type: Optional[str] = typer.Option("secure", "--cloud-type", help="Cloud type: 'secure' (default) or 'community'"),
     max_price: Optional[float] = typer.Option(None, "--max-price", help="Maximum price per hour"),
+    min_vram: Optional[int] = typer.Option(None, "--min-vram", help="Minimum VRAM in GB"),
     image: str = typer.Option("runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04", "--image", help="Docker image"),
     name: Optional[str] = typer.Option(None, "--name", help="Instance name"),
     sort_by: Optional[str] = typer.Option("price", "--sort", help="Sort by: 'price', 'memory', 'value' (memory/price)"),
@@ -180,6 +184,9 @@ def create_instance(
         query_conditions.append(client.price_per_hour < max_price)
     if gpu_type:
         query_conditions.append(client.gpu_type.contains(gpu_type))
+    if min_vram:
+        query_conditions.append(client.memory_gb >= min_vram)
+        console.print(f"🧠 Filtering for GPUs with at least {min_vram}GB VRAM")
     if cloud_type:
         cloud_enum = CloudType.SECURE if cloud_type == "secure" else CloudType.COMMUNITY
         query_conditions.append(client.cloud_type == cloud_enum)
