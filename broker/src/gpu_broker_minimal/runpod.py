@@ -150,7 +150,7 @@ def provision_instance(request: ProvisionRequest, ssh_startup_script: Optional[s
         "gpuCount": request.gpu_count,
         "imageName": request.image,
         "cloudType": "SECURE" if not request.spot_instance else "COMMUNITY",
-        "name": f"gpus-{request.gpu_type or 'auto'}-{int(time.time())}",
+        "name": request.name or f"gpus-{request.gpu_type or 'auto'}-{int(time.time())}",
         "supportPublicIp": True,  # Required for SSH access
         "containerDiskInGb": 10,  # Smaller disk for better availability
         "volumeInGb": 0,  # Explicit volume setting

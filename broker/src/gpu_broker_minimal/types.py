@@ -198,6 +198,7 @@ class ProvisionRequest:
     gpu_type: Optional[str] = None
     gpu_count: int = 1
     image: str = "runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04"
+    name: Optional[str] = None
     max_price_per_hour: Optional[float] = None
     provider: Optional[str] = None  # If None, search all providers
     spot_instance: bool = False

@@ -3,6 +3,7 @@ Command-line interface for GPU cloud operations
 """
 
 import sys
+import json
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -172,7 +173,8 @@ def create(
     print_ssh: bool = typer.Option(False, "--print-ssh", help="Print SSH connection string when ready (for piping to bifrost)")
 ):
     """Provision a new GPU instance using pandas-style search"""
-    console.print("🚀 Provisioning GPU instance...")
+    if not print_ssh:
+        console.print("🚀 Provisioning GPU instance...")
     
     # Build query for provisioning using client interface to avoid TypeError
     from .client import GPUClient
@@ -186,11 +188,13 @@ def create(
         query_conditions.append(client.gpu_type.contains(gpu_type))
     if min_vram:
         query_conditions.append(client.memory_gb >= min_vram)
-        console.print(f"🧠 Filtering for GPUs with at least {min_vram}GB VRAM")
+        if not print_ssh:
+            console.print(f"🧠 Filtering for GPUs with at least {min_vram}GB VRAM")
     if cloud_type:
         cloud_enum = CloudType.SECURE if cloud_type == "secure" else CloudType.COMMUNITY
         query_conditions.append(client.cloud_type == cloud_enum)
-        console.print(f"🔒 Using {cloud_type} cloud for {'better availability' if cloud_type == 'secure' else 'lower prices'}")
+        if not print_ssh:
+            console.print(f"🔒 Using {cloud_type} cloud for {'better availability' if cloud_type == 'secure' else 'lower prices'}")
     
     # Determine sort function
     sort_func = None
@@ -207,7 +211,8 @@ def create(
             final_query = final_query & condition
     
     # Use enhanced create with search + retry using client
-    console.print(f"🎯 Trying up to {max_attempts} offers sorted by {sort_by}...")
+    if not print_ssh:
+        console.print(f"🎯 Trying up to {max_attempts} offers sorted by {sort_by}...")
     try:
         instance = client.create(
             query=final_query,
@@ -224,8 +229,6 @@ def create(
     if instance:
         if print_ssh:
             # Wait for instance to be ready and print SSH connection string
-            console.print(f"✅ Instance created: {instance.id}", err=True)
-            console.print(f"⏳ Waiting for SSH to be ready...", err=True)
             
             import time
             max_wait = 300  # 5 minutes
@@ -243,12 +246,11 @@ def create(
                 
                 time.sleep(10)
                 waited += 10
-                if waited % 30 == 0:  # Progress update every 30 seconds
-                    console.print(f"   Still waiting... ({waited}s elapsed)", err=True)
+                # Skip progress updates in print_ssh mode
             
-            console.print("❌ Timeout waiting for SSH to be ready", err=True)
-            console.print(f"   Instance ID: {instance.id}", err=True)
-            console.print("   Try: broker getssh <instance_id>", err=True)
+            console.print("❌ Timeout waiting for SSH to be ready")
+            console.print(f"   Instance ID: {instance.id}")
+            console.print("   Try: broker getssh <instance_id>")
             sys.exit(1)
         else:
             # Normal output
@@ -295,14 +297,96 @@ def terminate(instance_id: str):
 
 
 @app.command()
-def list():
+def list(
+    simple: bool = typer.Option(False, "--simple", help="Simple output format for scripting (id,name,status,ssh)"),
+    json_output: bool = typer.Option(False, "--json", help="JSON output format for scripting"),
+    name: Optional[str] = typer.Option(None, "--name", help="Filter by instance name"),
+    ssh_only: bool = typer.Option(False, "--ssh-only", help="Output only SSH connection strings (one per line)")
+):
     """List all user instances"""
-    console.print("📋 Listing all instances...")
+    if not simple and not json_output and not ssh_only:
+        console.print("📋 Listing all instances...")
     
     instances = list_instances()
     
+    # Apply name filter if specified
+    if name:
+        filtered_instances = []
+        for instance in instances:
+            instance_name = "N/A"
+            if hasattr(instance, 'raw_data') and instance.raw_data and 'name' in instance.raw_data:
+                instance_name = instance.raw_data['name']
+            if instance_name == name:
+                filtered_instances.append(instance)
+        instances = filtered_instances
+    
     if not instances:
-        console.print("📭 No instances found")
+        if not simple and not json_output and not ssh_only:
+            console.print("📭 No instances found")
+        elif json_output:
+            print("[]")
+        return
+    
+    # SSH-only output format for scripting
+    if ssh_only:
+        for instance in instances:
+            # Only output running instances with SSH info
+            if str(instance.status).lower() == "instancestatus.running" and instance.public_ip and instance.ssh_port:
+                ssh_info = f"{instance.ssh_username}@{instance.public_ip}:{instance.ssh_port}"
+                print(ssh_info)
+        return
+    
+    # JSON output format for scripting
+    if json_output:
+        instances_data = []
+        for instance in instances:
+            # Get name from raw_data if available
+            instance_name = "N/A"
+            if hasattr(instance, 'raw_data') and instance.raw_data and 'name' in instance.raw_data:
+                instance_name = instance.raw_data['name']
+            
+            # Format SSH info
+            ssh_info = ""
+            if instance.public_ip and instance.ssh_port:
+                ssh_info = f"{instance.ssh_username}@{instance.public_ip}:{instance.ssh_port}"
+            
+            # Get clean status
+            status = str(instance.status).lower()
+            
+            instances_data.append({
+                "id": instance.id,
+                "name": instance_name,
+                "status": status,
+                "ssh": ssh_info,
+                "gpu_type": instance.gpu_type,
+                "gpu_count": instance.gpu_count,
+                "price_per_hour": instance.price_per_hour,
+                "public_ip": instance.public_ip,
+                "ssh_port": instance.ssh_port,
+                "ssh_username": instance.ssh_username
+            })
+        
+        print(json.dumps(instances_data, indent=2))
+        return
+    
+    # Simple output format for scripting
+    if simple:
+        for instance in instances:
+            # Get name from raw_data if available
+            instance_name = "N/A"
+            if hasattr(instance, 'raw_data') and instance.raw_data and 'name' in instance.raw_data:
+                instance_name = instance.raw_data['name']
+            
+            # Format SSH info
+            ssh_info = ""
+            if instance.public_ip and instance.ssh_port:
+                ssh_info = f"{instance.ssh_username}@{instance.public_ip}:{instance.ssh_port}"
+            
+            # Get clean status (without color markup)
+            status = str(instance.status).lower()
+            
+            # Output: id,name,status,ssh
+            print(f"{instance.id},{instance_name},{status},{ssh_info}")
         return
     
     # Display results in a table
@@ -358,18 +442,27 @@ def getssh(instance_id: str):
     # Get instance details
     instance = get_instance(instance_id)
     if not instance:
-        console.print("❌ Instance not found", err=True)
-        sys.exit(1)
+        # Try to find by partial ID match
+        instances = list_instances()
+        matching_instances = [inst for inst in instances if inst.id.startswith(instance_id)]
+        if len(matching_instances) == 1:
+            instance = matching_instances[0]
+        elif len(matching_instances) > 1:
+            console.print(f"❌ Multiple instances match '{instance_id}': {[inst.id for inst in matching_instances]}")
+            sys.exit(1)
+        else:
+            console.print("❌ Instance not found")
+            sys.exit(1)
     
     # Check if instance is running
     from .types import InstanceStatus
     if instance.status != InstanceStatus.RUNNING:
-        console.print(f"❌ Instance is not running (status: {instance.status})", err=True)
+        console.print(f"❌ Instance is not running (status: {instance.status})")
         sys.exit(1)
     
     # Check if SSH is available
     if not instance.public_ip or not instance.ssh_port:
-        console.print("❌ SSH connection info not available", err=True)
+        console.print("❌ SSH connection info not available")
         sys.exit(1)
     
     # Output just the SSH connection string for piping

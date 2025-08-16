@@ -191,6 +191,7 @@ def create(
                 gpu_type=gpu_type_id,
                 gpu_count=offer.gpu_count,
                 image=image,
+                name=name,
                 provider=offer.provider,
                 spot_instance=offer.spot,
                 **kwargs

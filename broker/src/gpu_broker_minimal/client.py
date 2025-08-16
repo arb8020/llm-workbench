@@ -4,6 +4,7 @@ GPU Broker Client - Main interface for GPU operations
 
 import os
 from typing import List, Optional, Union, Dict, Any, Callable
+from dotenv import load_dotenv
 from .types import GPUOffer, GPUInstance, CloudType
 from .query import GPUQuery, QueryType
 from . import api
@@ -54,12 +55,15 @@ class GPUClient:
         if api_key:
             self._api_key = api_key
         else:
+            # Load .env file if it exists
+            load_dotenv()
             self._api_key = os.environ.get('RUNPOD_API_KEY')
             if not self._api_key:
                 raise ValueError(
                     "RunPod API key required. Set via:\n"
                     "  client = GPUBrokerClient(api_key='your-key')\n"
-                    "  export RUNPOD_API_KEY=your-key"
+                    "  export RUNPOD_API_KEY=your-key\n"
+                    "  Or add RUNPOD_API_KEY=your-key to .env file"
                 )
         
         # Set up query interface
@@ -84,6 +88,9 @@ class GPUClient:
     
     def _discover_ssh_key(self):
         """Auto-discover SSH key from common locations"""
+        # Load .env file if it exists
+        load_dotenv()
+        
         # Check environment variable first
         env_key = os.environ.get('GPU_BROKER_SSH_KEY')
         if env_key:
