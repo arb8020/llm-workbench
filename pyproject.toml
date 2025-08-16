@@ -1,2 +1,2 @@
 [tool.uv.workspace]
-members = ["bifrost", "broker", "engine"]
+members = ["bifrost", "broker", "engine", "interp"]
