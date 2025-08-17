@@ -218,12 +218,19 @@ class GPUClient:
         cuda_version: Optional[str] = None,
         sort: Optional[Callable[[Any], Any]] = None,
         reverse: bool = False,
+        # Port exposure configuration
+        exposed_ports: Optional[List[int]] = None,
+        enable_http_proxy: bool = True,
         # Retry parameters
         max_attempts: int = 3,
         **kwargs
     ) -> Optional['ClientGPUInstance']:
         """Create GPU instance
         
+        Args:
+            exposed_ports: List of ports to expose via HTTP proxy (e.g., [8000] for vLLM)
+            enable_http_proxy: Enable RunPod's HTTP proxy for exposed ports
+            
         Returns:
             GPU instance with client configuration
         """
@@ -237,6 +244,8 @@ class GPUClient:
             cuda_version=cuda_version,
             sort=sort,
             reverse=reverse,
+            exposed_ports=exposed_ports,
+            enable_http_proxy=enable_http_proxy,
             max_attempts=max_attempts,
             **kwargs
         )

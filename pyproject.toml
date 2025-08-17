@@ -1,2 +1,54 @@
 [tool.uv.workspace]
 members = ["bifrost", "broker", "engine", "interp", "leyline", "rollouts"]
+
+[project]
+name = "llm-workbench"
+version = "0.1.0"
+description = "Complete toolkit for GPU-accelerated machine learning workflows"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+# Lightweight local development - no ML dependencies
+local = [
+    "rollouts",
+    "broker", 
+    "bifrost",
+    "leyline"
+]
+
+# Full ML stack for remote GPU deployment  
+gpu = [
+    "rollouts",
+    "broker",
+    "bifrost", 
+    "leyline",
+    "engine",
+    "interp"
+]
+
+# Everything (default for uv sync)
+all = [
+    "rollouts",
+    "broker",
+    "bifrost",
+    "leyline", 
+    "engine",
+    "interp"
+]
+
+[tool.uv.sources]
+rollouts = { workspace = true }
+broker = { workspace = true }
+bifrost = { workspace = true }
+leyline = { workspace = true }
+engine = { workspace = true }
+interp = { workspace = true }
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = []  # Meta-package - no code in root

@@ -116,6 +116,9 @@ def create(
     cuda_version: Optional[str] = None,
     sort: Optional[Callable[[Any], Any]] = None,
     reverse: bool = False,
+    # Port exposure configuration
+    exposed_ports: Optional[List[int]] = None,
+    enable_http_proxy: bool = True,
     # Retry parameters
     max_attempts: int = 3,
     **kwargs
@@ -194,6 +197,8 @@ def create(
                 name=name,
                 provider=offer.provider,
                 spot_instance=offer.spot,
+                exposed_ports=exposed_ports,
+                enable_http_proxy=enable_http_proxy,
                 **kwargs
             )
             
