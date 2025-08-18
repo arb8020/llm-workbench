@@ -335,11 +335,23 @@ class GitDeployment:
             
             # Create worktree with optional custom directory name
             if target_dir:
-                # Override job_id for custom directory name
-                original_job_id = self.job_id
-                self.job_id = target_dir
-                worktree_path = self.create_worktree(client, repo_name)
-                self.job_id = original_job_id  # Restore original
+                # Create custom worktree path but keep using original job_id for git branch
+                worktree_path = f"~/.bifrost/worktrees/{target_dir}"
+                job_branch = f"job/{self.job_id}"
+                
+                console.print(f"🌳 Creating custom worktree: {worktree_path}")
+                
+                # Create worktree manually with custom path
+                bare_repo_path = f"~/.bifrost/repos/{repo_name}.git"
+                cmd = f"cd {bare_repo_path} && git worktree add {worktree_path} {job_branch}"
+                stdin, stdout, stderr = client.exec_command(cmd)
+                exit_code = stdout.channel.recv_exit_status()
+                
+                if exit_code != 0:
+                    error = stderr.read().decode()
+                    raise RuntimeError(f"Failed to create custom worktree: {error}")
+                
+                console.print(f"✅ Custom worktree ready at: {worktree_path}")
             else:
                 worktree_path = self.create_worktree(client, repo_name)
             

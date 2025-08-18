@@ -70,6 +70,24 @@ def process_env_vars(
     return env_dict
 
 
+def parse_env(env_list: Optional[List[str]]) -> Optional[Dict[str, str]]:
+    """Parse environment variables from CLI format (KEY=value) to dict.
+    
+    This is a simplified version for the new three-operation commands.
+    For full functionality, use process_env_vars().
+    """
+    if not env_list:
+        return None
+        
+    env_dict = {}
+    for env_var in env_list:
+        if '=' not in env_var:
+            raise typer.BadParameter(f"Environment variable must be in KEY=value format: {env_var}")
+        key, value = env_var.split('=', 1)
+        env_dict[key] = value
+    return env_dict
+
+
 def _execute_command(
     ssh_info: str, 
     command: str, 
@@ -134,6 +152,116 @@ def parse_ssh_info(ssh_info: str):
     port = int(port) if port else 22
     return user, host, port
 
+
+@app.command()
+def push(
+    ssh_connection: str = typer.Argument(..., help="SSH connection string (user@host:port)"),
+    target_dir: Optional[str] = typer.Option(None, "--target-dir", help="Specific directory name for worktree"),
+    ssh_key: Optional[str] = typer.Option(None, "--ssh-key", help="Path to SSH private key file"),
+):
+    """Push/sync local code to remote instance without execution."""
+    try:
+        from .client import BifrostClient
+        
+        console.print(f"📦 Pushing code to {ssh_connection}")
+        if target_dir:
+            console.print(f"📁 Target directory: {target_dir}")
+        
+        # Create client with optional SSH key
+        client = BifrostClient(ssh_connection, ssh_key_path=ssh_key)
+        
+        # Deploy code only
+        worktree_path = client.push(target_dir)
+        
+        console.print(f"✅ Code deployed successfully")
+        console.print(f"📂 Worktree path: {worktree_path}")
+        
+    except Exception as e:
+        console.print(f"❌ Push failed: {e}", style="red")
+        sys.exit(1)
+
+
+@app.command()
+def exec(
+    ssh_connection: str = typer.Argument(..., help="SSH connection string (user@host:port)"),
+    command: str = typer.Argument(..., help="Command to execute"),
+    worktree: Optional[str] = typer.Option(None, "--worktree", help="Specific worktree/directory path to run in"),
+    env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables (KEY=value)"),
+    ssh_key: Optional[str] = typer.Option(None, "--ssh-key", help="Path to SSH private key file"),
+):
+    """Execute command in remote environment (optionally in specific worktree)."""
+    try:
+        from .client import BifrostClient
+        
+        console.print(f"🔄 Executing command on {ssh_connection}")
+        if worktree:
+            console.print(f"📁 Working directory: {worktree}")
+        console.print(f"Command: {command}")
+        
+        # Parse environment variables
+        env_dict = parse_env(env)
+        if env_dict:
+            console.print(f"🔐 Environment variables: {', '.join(sorted(env_dict.keys()))}")
+        
+        # Create client with optional SSH key
+        client = BifrostClient(ssh_connection, ssh_key_path=ssh_key)
+        
+        # Execute command
+        result = client.exec(command, env_dict, worktree)
+        
+        # Show output
+        console.print("\n--- Command Output ---")
+        if result.strip():
+            print(result)
+        else:
+            console.print("(no output)")
+        
+        console.print("✅ Command completed successfully")
+        
+    except Exception as e:
+        console.print(f"❌ Execution failed: {e}", style="red")
+        sys.exit(1)
+
+
+@app.command()
+def deploy(
+    ssh_connection: str = typer.Argument(..., help="SSH connection string (user@host:port)"),
+    command: str = typer.Argument(..., help="Command to execute after deployment"),
+    env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables (KEY=value)"),
+    ssh_key: Optional[str] = typer.Option(None, "--ssh-key", help="Path to SSH private key file"),
+):
+    """Deploy local code and execute command (convenience: push + exec)."""
+    try:
+        from .client import BifrostClient
+        
+        console.print(f"🚀 Deploying and executing on {ssh_connection}")
+        console.print(f"Command: {command}")
+        
+        # Parse environment variables
+        env_dict = parse_env(env)
+        if env_dict:
+            console.print(f"🔐 Environment variables: {', '.join(sorted(env_dict.keys()))}")
+        
+        # Create client with optional SSH key
+        client = BifrostClient(ssh_connection, ssh_key_path=ssh_key)
+        
+        # Deploy and execute
+        result = client.deploy(command, env_dict)
+        
+        # Show output
+        console.print("\n--- Command Output ---")
+        if result.strip():
+            print(result)
+        else:
+            console.print("(no output)")
+        
+        console.print("✅ Deploy and execution completed successfully")
+        
+    except Exception as e:
+        console.print(f"❌ Deploy failed: {e}", style="red")
+        sys.exit(1)
+
+
 @app.command()
 def run(
     ssh_info: str = typer.Argument(..., help="SSH connection string (user@host:port)"),
@@ -144,7 +272,9 @@ def run(
     no_deploy: bool = typer.Option(False, "--no-deploy", help="Skip git deployment (legacy mode)"),
     detach: bool = typer.Option(False, "--detach", help="Run job in background (detached mode)"),
 ):
-    """Run a command on remote GPU instance with automatic code deployment."""
+    """DEPRECATED: Use 'deploy' instead. Run a command on remote GPU instance with automatic code deployment."""
+    console.print("⚠️  WARNING: 'bifrost run' is deprecated. Use 'bifrost deploy' instead.", style="yellow")
+    console.print("   This command will be removed in v0.2.0", style="dim")
     _execute_command(ssh_info, command, env, env_file, dotenv, no_deploy, detach)
 
 @app.command()
@@ -157,7 +287,9 @@ def launch(
     no_deploy: bool = typer.Option(False, "--no-deploy", help="Skip git deployment (legacy mode)"),
     detach: bool = typer.Option(False, "--detach", help="Run job in background (detached mode)"),
 ):
-    """Launch a command on remote GPU instance with automatic code deployment (alias for run)."""
+    """DEPRECATED: Use 'deploy' instead. Launch a command on remote GPU instance with automatic code deployment."""
+    console.print("⚠️  WARNING: 'bifrost launch' is deprecated. Use 'bifrost deploy' instead.", style="yellow")
+    console.print("   This command will be removed in v0.2.0", style="dim")
     _execute_command(ssh_info, command, env, env_file, dotenv, no_deploy, detach)
 
 
