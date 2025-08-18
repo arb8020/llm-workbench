@@ -13,7 +13,7 @@ from rich.panel import Panel
 from rich import box
 from typing import Optional
 
-from . import search, get_instance, terminate_instance, create, list_instances
+from .client import GPUClient
 from .types import CloudType
 from .ssh_clients import start_interactive_ssh_session, execute_command_streaming
 
@@ -22,7 +22,7 @@ console = Console()
 
 
 @app.command()
-def search_gpus(
+def search(
     gpu_type: Optional[str] = typer.Option(None, "--gpu-type", help="GPU type to search for"),
     max_price: Optional[float] = typer.Option(None, "--max-price", help="Maximum price per hour"),
     min_vram: Optional[int] = typer.Option(None, "--min-vram", help="Minimum VRAM in GB"),
@@ -288,7 +288,8 @@ def status(instance_id: str):
     """Get status of a specific instance"""
     console.print(f"📊 Getting status for instance: {instance_id}")
     
-    instance = get_instance(instance_id)
+    client = GPUClient()
+    instance = client.get_instance(instance_id)
     
     if instance:
         console.print(f"✅ Instance found")
@@ -308,12 +309,42 @@ def terminate(instance_id: str):
     """Terminate an instance"""
     console.print(f"🗑️  Terminating instance: {instance_id}")
     
-    success = terminate_instance(instance_id)
+    client = GPUClient()
+    success = client.terminate_instance(instance_id)
     
     if success:
         console.print("✅ Instance terminated successfully")
     else:
         console.print("❌ Failed to terminate instance")
+
+
+@app.command()
+def cleanup(
+    instance_id: Optional[str] = typer.Argument(None, help="Specific instance ID to cleanup (optional)"),
+    all_instances: bool = typer.Option(False, "--all", "-a", help="Cleanup all running instances"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be cleaned up without actually doing it")
+):
+    """Cleanup GPU instances (single instance or bulk cleanup)"""
+    
+    if instance_id and all_instances:
+        console.print("❌ Cannot specify both instance ID and --all flag")
+        return
+    
+    if not instance_id and not all_instances:
+        console.print("❌ Must specify either an instance ID or use --all flag")
+        console.print("💡 Usage examples:")
+        console.print("   broker cleanup <instance_id>     # Cleanup specific instance")
+        console.print("   broker cleanup --all             # Cleanup all running instances")
+        console.print("   broker cleanup --all --dry-run   # See what would be cleaned up")
+        return
+    
+    if instance_id:
+        # Single instance cleanup (enhanced terminate)
+        _cleanup_single_instance(instance_id, force, dry_run)
+    else:
+        # Bulk cleanup all instances
+        _cleanup_all_instances(force, dry_run)
 
 
 @app.command()
@@ -366,7 +397,8 @@ def list(
     if not simple and not json_output and not ssh_only:
         console.print("📋 Listing all instances...")
     
-    instances = list_instances()
+    client = GPUClient()
+    instances = client.list_instances()
     
     # Apply name filter if specified
     if name:
@@ -499,10 +531,11 @@ def list(
 def getssh(instance_id: str):
     """Get SSH connection string for an instance (machine readable)"""
     # Get instance details
-    instance = get_instance(instance_id)
+    client = GPUClient()
+    instance = client.get_instance(instance_id)
     if not instance:
         # Try to find by partial ID match
-        instances = list_instances()
+        instances = client.list_instances()
         matching_instances = [inst for inst in instances if inst.id.startswith(instance_id)]
         if len(matching_instances) == 1:
             instance = matching_instances[0]
@@ -534,7 +567,8 @@ def ssh(instance_id: str):
     console.print(f"🔗 Connecting to instance: {instance_id}")
     
     # Get instance details
-    instance = get_instance(instance_id)
+    client = GPUClient()
+    instance = client.get_instance(instance_id)
     if not instance:
         console.print("❌ Instance not found")
         return
@@ -573,7 +607,8 @@ def exec(instance_id: str, command: str):
     console.print(f"🔄 Executing command on instance: {instance_id}")
     
     # Get instance details
-    instance = get_instance(instance_id)
+    client = GPUClient()
+    instance = client.get_instance(instance_id)
     if not instance:
         console.print("❌ Instance not found")
         return
@@ -745,6 +780,136 @@ def format_uptime(seconds: int) -> str:
         hours = seconds // 3600
         minutes = (seconds % 3600) // 60
         return f"{hours}h {minutes}m"
+
+
+def _cleanup_single_instance(instance_id: str, force: bool, dry_run: bool):
+    """Cleanup a single instance with enhanced feedback"""
+    
+    # Get instance details first
+    client = GPUClient()
+    instance = client.get_instance(instance_id)
+    if not instance:
+        # Try to find by partial ID match like in getssh command
+        instances = client.list_instances()
+        matching_instances = [inst for inst in instances if inst.id.startswith(instance_id)]
+        if len(matching_instances) == 1:
+            instance = matching_instances[0]
+        elif len(matching_instances) > 1:
+            console.print(f"❌ Multiple instances match '{instance_id}': {[inst.id for inst in matching_instances]}")
+            return
+        else:
+            console.print("❌ Instance not found")
+            return
+    
+    # Display instance details
+    console.print(f"🔍 Found instance: {instance.id}")
+    console.print(f"   Status: {instance.status}")
+    console.print(f"   GPU: {instance.gpu_type} x{instance.gpu_count}")
+    console.print(f"   Price: ${instance.price_per_hour:.3f}/hr")
+    
+    if dry_run:
+        console.print("🔥 [DRY RUN] Would terminate this instance")
+        return
+    
+    # Confirmation unless force is used
+    if not force:
+        console.print(f"\n⚠️  This will terminate the instance and stop all billing")
+        response = typer.confirm("Are you sure you want to proceed?")
+        if not response:
+            console.print("❌ Cleanup cancelled")
+            return
+    
+    # Perform termination
+    console.print(f"🧹 Cleaning up instance: {instance.id}")
+    success = terminate_instance(instance.id)
+    
+    if success:
+        console.print("✅ Instance cleanup completed successfully")
+        console.print("💰 Billing for this instance has been stopped")
+    else:
+        console.print("❌ Failed to cleanup instance")
+
+
+def _cleanup_all_instances(force: bool, dry_run: bool):
+    """Cleanup all running instances"""
+    console.print("🔍 Scanning for running instances...")
+    
+    client = GPUClient()
+    instances = client.list_instances()
+    
+    if not instances:
+        console.print("✅ No instances found")
+        return
+    
+    # Filter for running instances
+    from .types import InstanceStatus
+    running_instances = [inst for inst in instances if inst.status == InstanceStatus.RUNNING]
+    
+    if not running_instances:
+        console.print("✅ No running instances to cleanup")
+        return
+    
+    # Display what would be cleaned up
+    console.print(f"🎯 Found {len(running_instances)} running instance(s):")
+    
+    total_cost = 0
+    table = Table()
+    table.add_column("ID", style="cyan")
+    table.add_column("GPU", style="green")
+    table.add_column("Price/Hr", style="yellow")
+    table.add_column("Status", style="magenta")
+    
+    for instance in running_instances:
+        total_cost += instance.price_per_hour
+        gpu_info = f"{instance.gpu_type} x{instance.gpu_count}" if instance.gpu_count > 1 else instance.gpu_type
+        table.add_row(
+            instance.id[:12] + "..." if len(instance.id) > 15 else instance.id,
+            gpu_info,
+            f"${instance.price_per_hour:.3f}",
+            str(instance.status)
+        )
+    
+    console.print(table)
+    console.print(f"\n💰 Total hourly cost: ${total_cost:.3f}/hr")
+    
+    if dry_run:
+        console.print(f"🔥 [DRY RUN] Would terminate {len(running_instances)} instance(s)")
+        return
+    
+    # Confirmation unless force is used
+    if not force:
+        console.print(f"\n⚠️  This will terminate ALL {len(running_instances)} running instances and stop billing")
+        response = typer.confirm("Are you sure you want to proceed?")
+        if not response:
+            console.print("❌ Cleanup cancelled")
+            return
+    
+    # Perform bulk termination
+    console.print(f"🧹 Cleaning up {len(running_instances)} instances...")
+    
+    success_count = 0
+    failed_instances = []
+    
+    for instance in running_instances:
+        console.print(f"  Terminating {instance.id[:12]}...")
+        success = client.terminate_instance(instance.id)
+        
+        if success:
+            success_count += 1
+            console.print(f"    ✅ Terminated")
+        else:
+            failed_instances.append(instance.id)
+            console.print(f"    ❌ Failed")
+    
+    # Summary
+    console.print(f"\n🎯 Cleanup complete: {success_count}/{len(running_instances)} instances terminated")
+    console.print(f"💰 Estimated savings: ${total_cost:.3f}/hr")
+    
+    if failed_instances:
+        console.print(f"⚠️  Failed to terminate {len(failed_instances)} instance(s):")
+        for failed_id in failed_instances:
+            console.print(f"   {failed_id}")
+        console.print("💡 Try running the cleanup command again in a few seconds")
 
 
 def main():
