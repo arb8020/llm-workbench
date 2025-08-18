@@ -69,29 +69,35 @@ class GPUInstance:
     
     def exec(self, command: str, ssh_key_path: Optional[str] = None, timeout: int = 30) -> 'SSHResult':
         """Execute command via SSH using configured key"""
-        from .ssh_clients import execute_command_sync
-        import os
-        
+        self._validate_ssh_ready()
+        key_content = self._load_ssh_key(ssh_key_path)
+        return self._execute_command(command, key_content, timeout)
+    
+    def _validate_ssh_ready(self) -> None:
+        """Validate that instance has SSH connection details available"""
         if not self.public_ip or not self.ssh_username:
             raise ValueError("Instance SSH details not available - may not be running yet")
+    
+    def _load_ssh_key(self, ssh_key_path: Optional[str]) -> Optional[str]:
+        """Load SSH private key content from file path"""
+        import os
         
-        # Determine which SSH key to use
-        key_path = None
-        if ssh_key_path:
-            # Use provided key path
-            key_path = os.path.expanduser(ssh_key_path)
+        if not ssh_key_path:
+            return None
         
-        # Load private key if path provided
-        private_key_content = None
-        if key_path:
-            try:
-                with open(key_path, 'r') as f:
-                    private_key_content = f.read()
-            except Exception as e:
-                raise ValueError(f"Failed to load SSH key from {key_path}: {e}")
+        key_path = os.path.expanduser(ssh_key_path)
+        try:
+            with open(key_path, 'r') as f:
+                return f.read()
+        except Exception as e:
+            raise ValueError(f"Failed to load SSH key from {key_path}: {e}")
+    
+    def _execute_command(self, command: str, key_content: Optional[str], timeout: int) -> 'SSHResult':
+        """Execute SSH command and return formatted result"""
+        from .ssh_clients import execute_command_sync
         
         success, stdout, stderr = execute_command_sync(
-            self, private_key_content, command, timeout=timeout
+            self, key_content, command, timeout=timeout
         )
         
         return SSHResult(
