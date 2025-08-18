@@ -6,19 +6,8 @@ name = "llm-workbench"
 version = "0.1.0"
 description = "Complete toolkit for GPU-accelerated machine learning workflows"
 requires-python = ">=3.10"
-dependencies = []
-
-[project.optional-dependencies]
-# Lightweight local development - no ML dependencies
-local = [
-    "rollouts",
-    "broker", 
-    "bifrost",
-    "leyline"
-]
-
-# Full ML stack for remote GPU deployment  
-gpu = [
+# Default: Full GPU stack for remote deployment
+dependencies = [
     "rollouts",
     "broker",
     "bifrost", 
@@ -27,14 +16,13 @@ gpu = [
     "interp"
 ]
 
-# Everything (default for uv sync)
-all = [
+[project.optional-dependencies]
+# Lightweight local development - no ML dependencies
+local = [
     "rollouts",
-    "broker",
+    "broker", 
     "bifrost",
-    "leyline", 
-    "engine",
-    "interp"
+    "leyline"
 ]
 
 [tool.uv.sources]
