@@ -107,9 +107,17 @@ class GPUInstance:
             exit_code=0 if success else 1
         )
     
-    def run(self, command: str, **kwargs) -> 'SSHResult':
-        """Alias for exec()"""
-        return self.exec(command, **kwargs)
+    def ssh_connection_string(self) -> str:
+        """Get SSH connection string for use with bifrost or other tools.
+        
+        Returns:
+            SSH connection string in format: user@host:port
+            
+        Raises:
+            ValueError: If instance SSH details not available
+        """
+        self._validate_ssh_ready()
+        return f"{self.ssh_username}@{self.public_ip}:{self.ssh_port}"
     
     def terminate(self) -> bool:
         """Terminate this instance"""

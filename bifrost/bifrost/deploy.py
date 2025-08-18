@@ -295,6 +295,79 @@ class GitDeployment:
             
             client.close()
     
+    def deploy_code_only(self, target_dir: Optional[str] = None) -> str:
+        """Deploy code without executing commands. Returns worktree path.
+        
+        This method:
+        1. Detects git repository and current commit
+        2. Sets up remote .bifrost directory structure
+        3. Pushes code to remote bare repository
+        4. Creates git worktree for this deployment
+        5. Installs Python dependencies if detected
+        
+        Args:
+            target_dir: Optional specific directory name for worktree
+            
+        Returns:
+            Path to deployed worktree on remote instance
+            
+        Raises:
+            ValueError: If not in a git repository
+            RuntimeError: If deployment fails
+        """
+        # Detect git repo
+        repo_name, commit_hash = self.detect_git_repo()
+        
+        # Create SSH client
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        
+        try:
+            # Connect to remote
+            console.print(f"🔗 Connecting to {self.ssh_user}@{self.ssh_host}:{self.ssh_port}")
+            client.connect(hostname=self.ssh_host, port=self.ssh_port, username=self.ssh_user)
+            
+            # Set up remote structure
+            bare_repo_path = self.setup_remote_structure(client, repo_name)
+            
+            # Push code
+            self.push_code(repo_name, commit_hash, bare_repo_path)
+            
+            # Create worktree with optional custom directory name
+            if target_dir:
+                # Override job_id for custom directory name
+                original_job_id = self.job_id
+                self.job_id = target_dir
+                worktree_path = self.create_worktree(client, repo_name)
+                self.job_id = original_job_id  # Restore original
+            else:
+                worktree_path = self.create_worktree(client, repo_name)
+            
+            # Install dependencies
+            bootstrap_cmd = self.detect_bootstrap_command(client, worktree_path)
+            if bootstrap_cmd:
+                # Remove the trailing " && " from bootstrap command for standalone execution
+                bootstrap_only = bootstrap_cmd.rstrip(" && ")
+                console.print(f"🔄 Installing dependencies: {bootstrap_only}")
+                
+                # Execute bootstrap command in worktree
+                full_bootstrap = f"cd {worktree_path} && {bootstrap_only}"
+                stdin, stdout, stderr = client.exec_command(full_bootstrap)
+                exit_code = stdout.channel.recv_exit_status()
+                
+                if exit_code != 0:
+                    error = stderr.read().decode()
+                    console.print(f"⚠️  Dependency installation failed: {error}", style="yellow")
+                    console.print("Continuing deployment without dependencies...")
+                else:
+                    console.print("✅ Dependencies installed successfully")
+            
+            console.print(f"✅ Code deployed to: {worktree_path}")
+            return worktree_path
+            
+        finally:
+            client.close()
+    
     def deploy_and_execute_detached(self, command: str, env_vars: Optional[Dict[str, str]] = None) -> str:
         """Deploy code and execute command in detached mode, return job ID."""
         

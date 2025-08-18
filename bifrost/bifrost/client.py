@@ -40,6 +40,7 @@ class BifrostClient:
         self, 
         ssh_connection: str,
         timeout: int = 30,
+        ssh_key_path: Optional[str] = None,
         progress_callback: Optional[Callable[[str, int, int], None]] = None,
         logger: Optional[logging.Logger] = None
     ):
@@ -49,11 +50,13 @@ class BifrostClient:
         Args:
             ssh_connection: SSH connection string like 'user@host:port'
             timeout: SSH connection timeout in seconds
+            ssh_key_path: Optional path to SSH private key file
             progress_callback: Optional callback for file transfer progress
             logger: Optional logger for SDK operations
         """
         self.ssh = SSHConnection.from_string(ssh_connection)
         self.timeout = timeout
+        self.ssh_key_path = ssh_key_path
         self.progress_callback = progress_callback
         self.logger = logger or logging.getLogger(__name__)
         
@@ -67,20 +70,187 @@ class BifrostClient:
             self._ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             
             try:
-                self._ssh_client.connect(
-                    hostname=self.ssh.host,
-                    port=self.ssh.port, 
-                    username=self.ssh.user,
-                    timeout=self.timeout
-                )
+                # Load SSH key if provided
+                key_content = self._load_ssh_key()
+                
+                if key_content:
+                    # Use provided key
+                    import io
+                    from paramiko import RSAKey, Ed25519Key, ECDSAKey
+                    
+                    key_file = io.StringIO(key_content)
+                    # Try different key types
+                    private_key = None
+                    for key_class in [RSAKey, Ed25519Key, ECDSAKey]:
+                        try:
+                            key_file.seek(0)
+                            private_key = key_class.from_private_key(key_file)
+                            break
+                        except:
+                            continue
+                    
+                    if not private_key:
+                        raise ConnectionError(f"Could not parse SSH key at {self.ssh_key_path}")
+                    
+                    self._ssh_client.connect(
+                        hostname=self.ssh.host,
+                        port=self.ssh.port, 
+                        username=self.ssh.user,
+                        pkey=private_key,
+                        timeout=self.timeout
+                    )
+                else:
+                    # Use SSH agent or default keys
+                    self._ssh_client.connect(
+                        hostname=self.ssh.host,
+                        port=self.ssh.port, 
+                        username=self.ssh.user,
+                        timeout=self.timeout
+                    )
+                    
                 self.logger.info(f"Connected to {self.ssh}")
             except Exception as e:
                 raise ConnectionError(f"Failed to connect to {self.ssh}: {e}")
         
         return self._ssh_client
     
+    def _load_ssh_key(self) -> Optional[str]:
+        """Load SSH private key content from file path."""
+        if not self.ssh_key_path:
+            return None
+        
+        import os
+        key_path = os.path.expanduser(self.ssh_key_path)
+        try:
+            with open(key_path, 'r') as f:
+                return f.read()
+        except Exception as e:
+            raise ConnectionError(f"Failed to load SSH key from {key_path}: {e}")
+    
+    def push(self, target_dir: Optional[str] = None) -> str:
+        """
+        Push/sync local code to remote instance without execution.
+        
+        This method:
+        1. Creates or updates Git worktree on remote instance
+        2. Copies current directory to remote via Git
+        3. Auto-detects and installs Python dependencies
+        4. Returns path to deployed worktree
+        
+        Mental model: Like `git push` - send code to remote
+        
+        Args:
+            target_dir: Optional specific directory name for worktree
+            
+        Returns:
+            Path to deployed worktree on remote instance
+            
+        Raises:
+            ConnectionError: SSH connection failed
+            JobError: Code deployment failed
+        """
+        try:
+            deployment = GitDeployment(self.ssh.user, self.ssh.host, self.ssh.port)
+            worktree_path = deployment.deploy_code_only(target_dir)
+            self.logger.info(f"Code deployed to: {worktree_path}")
+            return worktree_path
+        except Exception as e:
+            if isinstance(e, ConnectionError):
+                raise
+            raise JobError(f"Code deployment failed: {e}")
+    
+    def exec(self, command: str, env: Optional[Dict[str, str]] = None, worktree: Optional[str] = None) -> str:
+        """
+        Execute command in remote environment (optionally in specific worktree).
+        
+        This method:
+        1. Executes command directly on remote instance
+        2. Optionally runs in context of specific worktree directory
+        3. Applies environment variables if provided
+        4. Returns command output
+        
+        Mental model: Like `docker exec` - run command in remote environment
+        
+        Args:
+            command: Command to execute
+            env: Environment variables to set
+            worktree: Specific worktree/directory path, or current directory if None
+            
+        Returns:
+            Command output as string
+            
+        Raises:
+            ConnectionError: SSH connection failed
+            JobError: Command execution failed
+        """
+        try:
+            ssh_client = self._get_ssh_client()
+            
+            # Build command with optional worktree context
+            if worktree:
+                # Validate worktree exists for better error messages
+                stdin, stdout, stderr = ssh_client.exec_command(f"test -d {worktree}")
+                if stdout.channel.recv_exit_status() != 0:
+                    raise JobError(f"Directory not found: {worktree}")
+                full_command = f"cd {worktree} && {command}"
+            else:
+                full_command = command
+            
+            # Execute command with environment variables if provided
+            if env:
+                from .deploy import execute_with_env_injection
+                exit_code, stdout_content, stderr_content = execute_with_env_injection(
+                    ssh_client, full_command, env
+                )
+                if exit_code != 0:
+                    raise JobError(f"Command failed with exit code {exit_code}: {stderr_content}")
+                return stdout_content
+            else:
+                # Execute simple command without environment variables
+                stdin, stdout, stderr = ssh_client.exec_command(full_command)
+                exit_code = stdout.channel.recv_exit_status()
+                output = stdout.read().decode('utf-8')
+                error = stderr.read().decode('utf-8')
+                
+                if exit_code != 0:
+                    raise JobError(f"Command failed with exit code {exit_code}: {error}")
+                
+                return output
+            
+        except Exception as e:
+            if isinstance(e, (ConnectionError, JobError)):
+                raise
+            raise JobError(f"Execution failed: {e}")
+    
+    def deploy(self, command: str, env: Optional[Dict[str, str]] = None) -> str:
+        """
+        Deploy local code and execute command (convenience method).
+        
+        This method:
+        1. Calls push() to deploy code
+        2. Calls exec() to run command in deployed worktree
+        3. Equivalent to: push() followed by exec(command, worktree=worktree_path)
+        
+        Mental model: Like deployment tools - deploy and start application
+        
+        Args:
+            command: Command to execute after deployment
+            env: Environment variables to set
+            
+        Returns:
+            Command output as string
+            
+        Raises:
+            ConnectionError: SSH connection failed
+            JobError: Deployment or execution failed
+        """
+        worktree_path = self.push()
+        return self.exec(command, env, worktree_path)
+    
     def run(self, command: str, env: Optional[Dict[str, str]] = None, no_deploy: bool = False) -> str:
         """
+        DEPRECATED: Use deploy() instead. Will be removed in v0.2.0
+        
         Execute command synchronously on remote instance.
         
         Args:
@@ -95,44 +265,19 @@ class BifrostClient:
             ConnectionError: SSH connection failed
             JobError: Command execution failed
         """
-        try:
-            if not no_deploy:
-                # Use GitDeployment for code deployment
-                deployment = GitDeployment(self.ssh.user, self.ssh.host, self.ssh.port)
-                env_list = [f"{k}={v}" for k, v in (env or {}).items()]
-                exit_code = deployment.deploy_and_execute(command, env_list)
-                
-                if exit_code != 0:
-                    raise JobError(f"Command failed with exit code {exit_code}")
-                
-                return "Command completed successfully"  # GitDeployment streams output directly
-            else:
-                # Legacy mode - direct execution
-                ssh_client = self._get_ssh_client()
-                exec_command = command
-                
-                # Add environment variables if provided
-                if env:
-                    env_str = " ".join([f"{k}={v}" for k, v in env.items()])
-                    exec_command = f"env {env_str} {exec_command}"
-                
-                # Execute command
-                stdin, stdout, stderr = ssh_client.exec_command(exec_command)
-                
-                # Wait for completion and get results
-                exit_code = stdout.channel.recv_exit_status()
-                output = stdout.read().decode('utf-8')
-                error = stderr.read().decode('utf-8')
-                
-                if exit_code != 0:
-                    raise JobError(f"Command failed with exit code {exit_code}: {error}")
-                
-                return output
-            
-        except Exception as e:
-            if isinstance(e, (ConnectionError, JobError)):
-                raise
-            raise JobError(f"Execution failed: {e}")
+        import warnings
+        warnings.warn(
+            "BifrostClient.run() is deprecated. Use deploy() for deployment+execution or exec() for command-only execution.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
+        if no_deploy:
+            # Legacy mode - use exec() for command execution
+            return self.exec(command, env)
+        else:
+            # Use new deploy() method
+            return self.deploy(command, env)
     
     def run_detached(
         self, 
