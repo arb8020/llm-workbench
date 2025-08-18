@@ -21,6 +21,44 @@ app = typer.Typer(help="GPU cloud broker CLI")
 console = Console()
 
 
+def _internal_search(gpu_type=None, max_price=None, min_vram=None, provider=None, 
+                   cloud_type=None, cuda_version=None, sort_by="price", reverse=False):
+    """Internal search function that doesn't trigger analysis"""
+    # Build pandas-style query using client interface to avoid TypeError
+    client = GPUClient()
+    
+    query_conditions = []
+    
+    if max_price:
+        query_conditions.append(client.price_per_hour < max_price)
+    if gpu_type:
+        query_conditions.append(client.gpu_type.contains(gpu_type))
+    if min_vram:
+        query_conditions.append(client.memory_gb >= min_vram)
+    if cloud_type:
+        cloud_enum = CloudType.SECURE if cloud_type == "secure" else CloudType.COMMUNITY
+        query_conditions.append(client.cloud_type == cloud_enum)
+    
+    # Determine sort function
+    sort_func = None
+    if sort_by == "memory":
+        sort_func = lambda x: x.memory_gb
+    elif sort_by == "value":
+        sort_func = lambda x: x.memory_gb / x.price_per_hour
+    # Default is price, which is handled automatically
+    
+    # Execute query using client
+    if query_conditions:
+        combined_query = query_conditions[0]
+        for condition in query_conditions[1:]:
+            combined_query = combined_query & condition
+        offers = client.search(query=combined_query, cuda_version=cuda_version, sort=sort_func, reverse=reverse)
+    else:
+        offers = client.search(cuda_version=cuda_version, sort=sort_func, reverse=reverse)
+    
+    return offers
+
+
 @app.command()
 def search(
     gpu_type: Optional[str] = typer.Option(None, "--gpu-type", help="GPU type to search for"),
@@ -42,7 +80,6 @@ def search(
         return
     
     # Build pandas-style query using client interface to avoid TypeError
-    from .client import GPUClient
     client = GPUClient()
     
     query_conditions = []
@@ -110,7 +147,8 @@ def show_availability_analysis():
     """Show detailed availability analysis by cloud type"""
     console.print("🔍 [bold]GPU Availability Analysis by Cloud Type[/bold]\n")
     
-    all_offers = search()
+    # Call the internal search function to avoid Typer parameter issues
+    all_offers = _internal_search()
     secure_offers = [o for o in all_offers if o.cloud_type == CloudType.SECURE]
     community_offers = [o for o in all_offers if o.cloud_type == CloudType.COMMUNITY]
     
@@ -183,7 +221,6 @@ def create(
         console.print("🚀 Provisioning GPU instance...")
     
     # Build query for provisioning using client interface to avoid TypeError
-    from .client import GPUClient
     client = GPUClient()
     
     query_conditions = []
@@ -571,7 +608,7 @@ def ssh(instance_id: str):
     instance = client.get_instance(instance_id)
     if not instance:
         console.print("❌ Instance not found")
-        return
+        raise typer.Exit(1)
     
     # Check if instance is running
     from .types import InstanceStatus
@@ -590,8 +627,6 @@ def ssh(instance_id: str):
         # Use client's SSH key configuration if available
         ssh_key_path = None
         try:
-            from .client import GPUClient
-            client = GPUClient()
             ssh_key_path = client.get_ssh_key_path()
         except:
             pass  # Fall back to SSH agent
@@ -611,7 +646,7 @@ def exec(instance_id: str, command: str):
     instance = client.get_instance(instance_id)
     if not instance:
         console.print("❌ Instance not found")
-        return
+        raise typer.Exit(1)
     
     # Check if instance is running
     from .types import InstanceStatus
@@ -630,8 +665,6 @@ def exec(instance_id: str, command: str):
         # Use client's SSH key configuration if available
         ssh_key_path = None
         try:
-            from .client import GPUClient
-            client = GPUClient()
             ssh_key_path = client.get_ssh_key_path()
         except:
             pass  # Fall back to SSH agent
@@ -649,7 +682,6 @@ def config():
     console.print("🔧 [bold]GPU Broker Configuration Check[/bold]\n")
     
     try:
-        from .client import GPUClient
         client = GPUClient()
         
         validation_results = client.validate_configuration()
@@ -660,7 +692,7 @@ def config():
         # Test API connection
         console.print("\n🌐 **Connection Test**:")
         try:
-            offers = search()
+            offers = _internal_search()
             console.print(f"✅ RunPod API connection successful ({len(offers)} GPU offers available)")
         except Exception as e:
             console.print(f"❌ RunPod API connection failed: {e}")

@@ -206,6 +206,7 @@ def provision_instance(request: ProvisionRequest, ssh_startup_script: Optional[s
             status=InstanceStatus.PENDING,
             gpu_type=request.gpu_type or "auto-selected",
             gpu_count=request.gpu_count,
+            name=request.name,  # Fix: Use name from request
             price_per_hour=0.0,  # We'll get this from a separate query
             raw_data=pod_data
         )
@@ -357,6 +358,7 @@ def get_instance_details(instance_id: str) -> Optional[GPUInstance]:
             status=status,
             gpu_type="unknown",  # TODO: Get from machine details
             gpu_count=pod.get("gpuCount", 0),
+            name=pod.get("name"),  # Fix: Properly map name field
             price_per_hour=pod.get("costPerHr", 0.0),
             public_ip=public_ip,
             ssh_port=ssh_port,
@@ -412,6 +414,7 @@ def _parse_pod_to_instance(pod: Dict[str, Any]) -> GPUInstance:
         status=status,
         gpu_type="unknown",  # TODO: Get from machine details
         gpu_count=pod.get("gpuCount", 0),
+        name=pod.get("name"),  # Fix: Properly map name field
         price_per_hour=pod.get("costPerHr", 0.0),
         public_ip=public_ip,
         ssh_port=ssh_port,
