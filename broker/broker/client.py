@@ -214,6 +214,7 @@ class GPUClient:
         # Search parameters
         gpu_type: Optional[str] = None,
         max_price_per_hour: Optional[float] = None,
+        cloud_type: Optional[Union[str, CloudType]] = None,
         provider: Optional[str] = None,
         cuda_version: Optional[str] = None,
         sort: Optional[Callable[[Any], Any]] = None,
@@ -228,18 +229,49 @@ class GPUClient:
         """Create GPU instance
         
         Args:
+            cloud_type: Cloud deployment type ("secure", "community", or CloudType enum)
             exposed_ports: List of ports to expose via HTTP proxy (e.g., [8000] for vLLM)
             enable_http_proxy: Enable RunPod's HTTP proxy for exposed ports
             
         Returns:
             GPU instance with client configuration
         """
+        # Build query conditions from convenience parameters (like CLI does)
+        query_conditions = []
+        
+        if max_price_per_hour is not None:
+            query_conditions.append(self.price_per_hour < max_price_per_hour)
+        
+        if gpu_type is not None:
+            query_conditions.append(self.gpu_type.contains(gpu_type))
+            
+        if cloud_type is not None:
+            # Convert string to enum if needed
+            if isinstance(cloud_type, str):
+                cloud_enum = CloudType.SECURE if cloud_type.lower() == "secure" else CloudType.COMMUNITY
+            else:
+                cloud_enum = cloud_type
+            query_conditions.append(self.cloud_type == cloud_enum)
+        
+        # Merge with existing query if provided
+        final_query = query
+        if query_conditions:
+            conditions_query = query_conditions[0]
+            for condition in query_conditions[1:]:
+                conditions_query = conditions_query & condition
+                
+            if final_query is not None:
+                final_query = final_query & conditions_query
+            else:
+                final_query = conditions_query
+        
         instance = api.create(
-            query=query,
+            query=final_query,
             image=image,
             name=name,
-            gpu_type=gpu_type,
-            max_price_per_hour=max_price_per_hour,
+            # Don't pass individual search params if we built a query
+            gpu_type=None if query_conditions else gpu_type,
+            max_price_per_hour=None if query_conditions else max_price_per_hour,
             provider=provider,
             cuda_version=cuda_version,
             sort=sort,
@@ -337,6 +369,16 @@ class ClientGPUInstance:
     def wait_until_ssh_ready(self, timeout: int = 300) -> bool:
         """Wait until SSH is ready"""
         return self._instance.wait_until_ssh_ready(timeout)
+    
+    def refresh(self) -> 'ClientGPUInstance':
+        """Refresh the wrapped instance with latest data"""
+        updated_instance = self._client.get_instance(self._instance.id)
+        if updated_instance:
+            # Update the wrapped instance, keeping the wrapper
+            self._instance = updated_instance._instance
+            return self
+        else:
+            raise ValueError(f"Could not refresh instance {self._instance.id}")
     
     def terminate(self) -> bool:
         """Terminate this instance"""

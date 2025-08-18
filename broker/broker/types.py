@@ -62,6 +62,7 @@ class GPUInstance:
     gpu_type: str
     gpu_count: int
     price_per_hour: float
+    name: Optional[str] = None
     public_ip: Optional[str] = None
     ssh_port: Optional[int] = None
     ssh_username: Optional[str] = None
@@ -157,29 +158,43 @@ class GPUInstance:
         if not self.wait_until_ready(timeout=min(timeout, 300)):
             return False
         
-        # Wait for direct SSH assignment
-        if not self._wait_for_direct_ssh_assignment(start_time, timeout):
+        # Wait for SSH assignment (direct or proxy)
+        if not self._wait_for_ssh_assignment(start_time, timeout):
             return False
         
         # Test SSH connectivity
         return self._test_ssh_connectivity()
     
-    def _wait_for_direct_ssh_assignment(self, start_time: float, timeout: int) -> bool:
+    def _wait_for_ssh_assignment(self, start_time: float, timeout: int) -> bool:
         """Wait for direct SSH to be assigned (not proxy)."""
         import time
+        from .runpod import get_instance_details
         
         print("Waiting for direct SSH to be assigned...")
+        print("Note: This may take up to 10 minutes. Proxy SSH will be ignored.")
+        
         while time.time() - start_time < timeout:
-            self.refresh()
+            # Get fresh data directly from API (like broker list does)
+            fresh_instance = get_instance_details(self.id)
             
-            if self._has_direct_ssh_details():
-                print(f"✅ Direct SSH assigned: {self.public_ip}:{self.ssh_port}")
-                return True
+            if fresh_instance and fresh_instance.public_ip and fresh_instance.ssh_port:
+                if fresh_instance.public_ip != "ssh.runpod.io":
+                    # Update current instance with fresh data
+                    self.public_ip = fresh_instance.public_ip
+                    self.ssh_port = fresh_instance.ssh_port
+                    self.ssh_username = fresh_instance.ssh_username
+                    self.status = fresh_instance.status
+                    
+                    print(f"✅ Direct SSH assigned: {self.public_ip}:{self.ssh_port}")
+                    return True
             
-            self._print_ssh_wait_status()
+            self._print_ssh_wait_status(start_time)
             time.sleep(10)
         
-        print("Timeout waiting for direct SSH")
+        elapsed_minutes = int((time.time() - start_time) / 60)
+        print(f"❌ Timeout waiting for direct SSH after {elapsed_minutes} minutes")
+        print("   Direct SSH was not assigned within the timeout period.")
+        print("   The instance will be cleaned up automatically.")
         return False
     
     def _has_direct_ssh_details(self) -> bool:
@@ -190,15 +205,18 @@ class GPUInstance:
             self.public_ip != "ssh.runpod.io"
         )
     
-    def _print_ssh_wait_status(self) -> None:
-        """Print current SSH wait status."""
+    def _print_ssh_wait_status(self, start_time: float) -> None:
+        """Print current SSH wait status with timing info."""
+        import time
+        elapsed = int(time.time() - start_time)
+        
         if self.public_ip and self.ssh_port:
             if self.public_ip == "ssh.runpod.io":
-                print("   Still waiting for direct SSH (currently proxy)...")
+                print(f"   Still waiting for direct SSH (currently proxy) - {elapsed}s elapsed...")
             else:
-                print("   SSH details available but not recognized as direct...")
+                print(f"   SSH details available but not recognized as direct - {elapsed}s elapsed...")
         else:
-            print("   Still waiting for SSH details...")
+            print(f"   Still waiting for SSH details - {elapsed}s elapsed...")
     
     def _test_ssh_connectivity(self) -> bool:
         """Test SSH connectivity with a simple command."""
@@ -221,7 +239,7 @@ class GPUInstance:
     
     def refresh(self) -> 'GPUInstance':
         """Refresh instance details from provider"""
-        from . import get_instance
+        from .api import get_instance
         
         updated_instance = get_instance(self.id, self.provider)
         if updated_instance:
