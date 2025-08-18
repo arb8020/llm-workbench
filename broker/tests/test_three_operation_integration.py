@@ -19,12 +19,9 @@ from broker.types import CloudType
 from bifrost import BifrostClient, JobStatus
 
 
-def create_test_script() -> Path:
-    """Create a simple test script for validation."""
-    test_file = Path(__file__).parent / "test_data" / "three_operation_test.py"
-    test_file.parent.mkdir(exist_ok=True)
-    
-    script_content = '''#!/usr/bin/env python3
+def create_test_script() -> str:
+    """Create test script content that will be executed inline."""
+    return '''
 import json
 from datetime import datetime
 from pathlib import Path
@@ -50,9 +47,6 @@ output_file.write_text(json.dumps(test_data, indent=2))
 print("✅ Integration test completed successfully")
 print(f"Created output: {output_file}")
 '''
-    
-    test_file.write_text(script_content)
-    return test_file
 
 
 def test_three_operations_with_gpu():
@@ -76,9 +70,9 @@ def test_three_operations_with_gpu():
     ssh_conn = instance.ssh_connection_string()
     print(f"✅ Using instance: {instance.id} - {ssh_conn}")
     
-    # Create test data
-    test_script = create_test_script()
-    print(f"✅ Created test script: {test_script}")
+    # Get test script content
+    test_script_content = create_test_script()
+    print("✅ Created test script content")
     
     try:
         # Initialize Bifrost client
@@ -90,12 +84,9 @@ def test_three_operations_with_gpu():
         assert worktree_path.endswith("integration_test"), "Custom target_dir not working"
         print(f"✅ Push successful: {worktree_path}")
         
-        # Test 2: Exec operation
+        # Test 2: Exec operation (execute Python code inline)
         print("\n2️⃣ Testing EXEC operation...")
-        result = bifrost.exec(
-            f"python {test_script.relative_to(Path.cwd())}", 
-            worktree=worktree_path
-        )
+        result = bifrost.exec(f'python3 -c "{test_script_content}"', worktree=worktree_path)
         assert "Integration test completed successfully" in result, "Exec operation failed"
         print("✅ Exec successful")
         
@@ -146,15 +137,11 @@ def test_three_operations_with_gpu():
 
 def cleanup_test_files():
     """Clean up test artifacts."""
-    test_dirs = [
-        Path(__file__).parent / "test_data",
-        Path(__file__).parent / "test_outputs"
-    ]
+    test_dir = Path(__file__).parent / "test_outputs"
     
-    for test_dir in test_dirs:
-        if test_dir.exists():
-            shutil.rmtree(test_dir)
-            print(f"✅ Cleaned up {test_dir}")
+    if test_dir.exists():
+        shutil.rmtree(test_dir)
+        print(f"✅ Cleaned up {test_dir}")
 
 
 if __name__ == "__main__":
