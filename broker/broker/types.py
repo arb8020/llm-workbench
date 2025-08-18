@@ -122,13 +122,13 @@ class GPUInstance:
     
     def terminate(self) -> bool:
         """Terminate this instance"""
-        from . import terminate_instance
+        from .api import terminate_instance
         return terminate_instance(self.id, self.provider)
     
     def wait_until_ready(self, timeout: int = 300) -> bool:
         """Wait until instance status is RUNNING"""
         import time
-        from . import get_instance
+        from .api import get_instance
         
         start_time = time.time()
         
