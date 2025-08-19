@@ -6,12 +6,11 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Callable, Iterator, List, Dict, Any
+from typing import Optional, Callable, Iterator, List, Dict
 import logging
 
 from .types import (
-    SSHConnection, JobInfo, JobStatus, CopyResult, RemotePath,
-    BifrostError, ConnectionError, JobError, TransferError
+    SSHConnection, JobInfo, JobStatus, CopyResult, ConnectionError, JobError, TransferError
 )
 from .deploy import GitDeployment
 
@@ -86,7 +85,7 @@ class BifrostClient:
                             key_file.seek(0)
                             private_key = key_class.from_private_key(key_file)
                             break
-                        except:
+                        except Exception:
                             continue
                     
                     if not private_key:
@@ -661,6 +660,163 @@ class BifrostClient:
                 self.logger.warning(f"Failed to copy {rel_path}: {e}")
         
         return files_copied, total_bytes
+    
+    def upload_files(
+        self, 
+        local_path: str, 
+        remote_path: str, 
+        recursive: bool = False
+    ) -> CopyResult:
+        """
+        Upload files from local to remote machine.
+        
+        Args:
+            local_path: Local file or directory path
+            remote_path: Remote destination path
+            recursive: Upload directories recursively
+            
+        Returns:
+            CopyResult with transfer statistics
+            
+        Raises:
+            ConnectionError: SSH connection failed
+            TransferError: File transfer failed
+        """
+        start_time = time.time()
+        
+        try:
+            ssh_client = self._get_ssh_client()
+            
+            # Check if local path exists
+            local_path_obj = Path(local_path)
+            if not local_path_obj.exists():
+                raise TransferError(f"Local path not found: {local_path}")
+            
+            is_directory = local_path_obj.is_dir()
+            
+            if is_directory and not recursive:
+                raise TransferError(f"{local_path} is a directory. Use recursive=True")
+            
+            # Create SFTP client
+            sftp = ssh_client.open_sftp()
+            
+            try:
+                files_uploaded = 0
+                total_bytes = 0
+                
+                if is_directory:
+                    files_uploaded, total_bytes = self._upload_directory(sftp, ssh_client, local_path, remote_path)
+                else:
+                    total_bytes = self._upload_file(sftp, local_path, remote_path)
+                    files_uploaded = 1
+                
+                duration = time.time() - start_time
+                
+                return CopyResult(
+                    success=True,
+                    files_copied=files_uploaded,
+                    total_bytes=total_bytes,
+                    duration_seconds=duration
+                )
+                
+            finally:
+                sftp.close()
+                
+        except Exception as e:
+            if isinstance(e, (ConnectionError, TransferError)):
+                raise
+            duration = time.time() - start_time
+            return CopyResult(
+                success=False,
+                files_copied=0,
+                total_bytes=0,
+                duration_seconds=duration,
+                error_message=str(e)
+            )
+    
+    def _create_remote_dir(self, sftp, remote_dir: str):
+        """Create remote directory recursively."""
+        try:
+            sftp.stat(remote_dir)  # Check if directory exists
+        except FileNotFoundError:
+            # Directory doesn't exist, create it
+            parent_dir = os.path.dirname(remote_dir)
+            if parent_dir and parent_dir != remote_dir:  # Avoid infinite recursion
+                self._create_remote_dir(sftp, parent_dir)
+            try:
+                sftp.mkdir(remote_dir)
+            except OSError:
+                # Directory might have been created by another process
+                pass
+    
+    def _upload_file(self, sftp, local_path: str, remote_path: str) -> int:
+        """Upload single file and return bytes transferred."""
+        # Create remote directory if needed
+        remote_dir = os.path.dirname(remote_path)
+        if remote_dir and remote_dir != '.':
+            # Create directory structure recursively
+            self._create_remote_dir(sftp, remote_dir)
+        
+        # Get file size
+        file_size = os.path.getsize(local_path)
+        
+        # Define progress callback wrapper
+        def progress_wrapper(transferred, total):
+            if self.progress_callback:
+                self.progress_callback("file", transferred, total)
+        
+        # Upload file with optional progress reporting
+        if file_size > 1024 * 1024 and self.progress_callback:  # Files >1MB
+            sftp.put(local_path, remote_path, callback=progress_wrapper)
+        else:
+            sftp.put(local_path, remote_path)
+        
+        return file_size
+    
+    def _upload_directory(self, sftp, ssh_client, local_path: str, remote_path: str) -> tuple[int, int]:
+        """Upload directory recursively and return (files_uploaded, total_bytes)."""
+        local_path_obj = Path(local_path)
+        
+        files_uploaded = 0
+        total_bytes = 0
+        
+        # Walk through local directory
+        for local_file in local_path_obj.rglob('*'):
+            if local_file.is_file():
+                # Calculate relative path and remote destination
+                rel_path = local_file.relative_to(local_path_obj)
+                remote_file = f"{remote_path}/{rel_path}".replace('\\', '/')
+                
+                # Upload file
+                try:
+                    file_bytes = self._upload_file(sftp, str(local_file), remote_file)
+                    files_uploaded += 1
+                    total_bytes += file_bytes
+                except Exception as e:
+                    self.logger.warning(f"Failed to upload {rel_path}: {e}")
+        
+        return files_uploaded, total_bytes
+    
+    def download_files(
+        self, 
+        remote_path: str, 
+        local_path: str, 
+        recursive: bool = False
+    ) -> CopyResult:
+        """
+        Download files from remote to local machine.
+        
+        This is an alias for copy_files() with clearer naming.
+        
+        Args:
+            remote_path: Remote file or directory path
+            local_path: Local destination path
+            recursive: Download directories recursively
+            
+        Returns:
+            CopyResult with transfer statistics
+        """
+        return self.copy_files(remote_path, local_path, recursive)
     
     def close(self):
         """Close SSH connection."""
