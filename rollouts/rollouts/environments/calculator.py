@@ -1,16 +1,11 @@
 import asyncio
-import argparse
-import time
 from typing import List
 
-from dataclasses import replace
 
 from ..dtypes import (
-    Message, Trajectory, Tool, ToolFunction, ToolFunctionParameter, 
-    ToolCall, ToolResult, StopReason, Endpoint, Actor, AgentState, RunConfig
+    Tool, ToolFunction, ToolFunctionParameter, 
+    ToolCall, ToolResult, StopReason, AgentState, RunConfig, Environment
 )
-from ..agents import stdout_handler
-from .base import Environment
 
 class CalculatorEnvironment(Environment):
     def __init__(self, current_value: float = 0.0):

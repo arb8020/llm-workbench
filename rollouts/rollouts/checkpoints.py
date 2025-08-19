@@ -7,8 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Protocol
 
 from dacite import from_dict, Config
-from .dtypes import StopReason
-from .agents import AgentState, Actor, Environment
+from .dtypes import StopReason, AgentState, Actor, Environment
 
 
 class CheckpointStore(Protocol):

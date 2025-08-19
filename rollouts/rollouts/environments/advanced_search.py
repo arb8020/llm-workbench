@@ -6,19 +6,17 @@ Adds conjunctive (decompose) and disjunctive (branch) search to any Environment.
 """
 
 from dataclasses import dataclass, replace
-from typing import Any, Dict, List, Optional, Callable
+from typing import Dict, List, Optional, Callable
 import asyncio
 import json
-import traceback
 
 from ..dtypes import (
     Message, Trajectory, StopReason, Tool, ToolFunction, ToolFunctionParameter, ToolCall, ToolResult,
-    AgentState, RunConfig, Actor, ToolConfirmResult
+    AgentState, RunConfig, Environment, default_confirm_tool
 )
 from ..agents import (
-    run_agent, default_confirm_tool, stdout_handler
+    run_agent
 )
-from .base import Environment
 
 
 # ── Search Configuration ──────────────────────────────────────────────────────
