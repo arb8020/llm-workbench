@@ -2,20 +2,20 @@
 Command-line interface for GPU cloud operations
 """
 
-import sys
 import json
-import typer
 import subprocess
-from datetime import datetime, timezone
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich import box
+import sys
 from typing import Optional
 
+import typer
+from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
 from .client import GPUClient
+from .ssh_clients_compat import execute_command_streaming, start_interactive_ssh_session
 from .types import CloudType
-from .ssh_clients import start_interactive_ssh_session, execute_command_streaming
 
 app = typer.Typer(help="GPU cloud broker CLI")
 console = Console()
@@ -42,9 +42,13 @@ def _internal_search(gpu_type=None, max_price=None, min_vram=None, provider=None
     # Determine sort function
     sort_func = None
     if sort_by == "memory":
-        sort_func = lambda x: x.memory_gb
+        def sort_by_memory(x):
+            return x.memory_gb
+        sort_func = sort_by_memory
     elif sort_by == "value":
-        sort_func = lambda x: x.memory_gb / x.price_per_hour
+        def sort_by_value(x):
+            return x.memory_gb / x.price_per_hour
+        sort_func = sort_by_value
     # Default is price, which is handled automatically
     
     # Execute query using client
@@ -97,9 +101,13 @@ def search(
     # Determine sort function
     sort_func = None
     if sort_by == "memory":
-        sort_func = lambda x: x.memory_gb
+        def sort_by_memory(x):
+            return x.memory_gb
+        sort_func = sort_by_memory
     elif sort_by == "value":
-        sort_func = lambda x: x.memory_gb / x.price_per_hour
+        def sort_by_value(x):
+            return x.memory_gb / x.price_per_hour
+        sort_func = sort_by_value
     # Default is price, which is handled automatically
     
     # Execute query using client
@@ -175,8 +183,8 @@ def show_availability_analysis():
     console.print(community_table)
     
     # Available in both clouds
-    secure_types = set(o.gpu_type for o in secure_offers)
-    community_types = set(o.gpu_type for o in community_offers)
+    secure_types = {o.gpu_type for o in secure_offers}
+    community_types = {o.gpu_type for o in community_offers}
     both_clouds = secure_types & community_types
     
     if both_clouds:
@@ -213,6 +221,7 @@ def create(
     sort_by: Optional[str] = typer.Option("price", "--sort", help="Sort by: 'price', 'memory', 'value' (memory/price)"),
     max_attempts: int = typer.Option(3, "--max-attempts", help="Try up to N offers before giving up"),
     print_ssh: bool = typer.Option(False, "--print-ssh", help="Print SSH connection string when ready (for piping to bifrost)"),
+    allow_proxy: bool = typer.Option(False, "--allow-proxy", help="Allow proxy SSH connections (default: wait for direct SSH)"),
     container_disk: Optional[int] = typer.Option(None, "--container-disk", help="Container disk size in GB (default: 50GB)"),
     volume_disk: Optional[int] = typer.Option(None, "--volume-disk", help="Volume disk size in GB (default: 0GB)")
 ):
@@ -242,9 +251,13 @@ def create(
     # Determine sort function
     sort_func = None
     if sort_by == "memory":
-        sort_func = lambda x: x.memory_gb
+        def sort_by_memory(x):
+            return x.memory_gb
+        sort_func = sort_by_memory
     elif sort_by == "value":
-        sort_func = lambda x: x.memory_gb / x.price_per_hour
+        def sort_by_value(x):
+            return x.memory_gb / x.price_per_hour
+        sort_func = sort_by_value
     
     # Build final query
     final_query = None
@@ -293,13 +306,19 @@ def create(
             
             while waited < max_wait:
                 # Re-fetch instance status
+                from .api import get_instance
                 current_instance = get_instance(instance.id)
                 if current_instance and current_instance.public_ip and current_instance.ssh_port:
                     from .types import InstanceStatus
                     if current_instance.status == InstanceStatus.RUNNING:
-                        # Print SSH connection string to stdout for piping
-                        print(f"{current_instance.ssh_username}@{current_instance.public_ip}:{current_instance.ssh_port}")
-                        return
+                        # Check if we should wait for direct SSH or allow proxy
+                        is_proxy = current_instance.public_ip == "ssh.runpod.io"
+                        
+                        if allow_proxy or not is_proxy:
+                            # Print SSH connection string to stdout for piping
+                            print(f"{current_instance.ssh_username}@{current_instance.public_ip}:{current_instance.ssh_port}")
+                            return
+                        # If it's proxy and we don't allow proxy, continue waiting
                 
                 time.sleep(10)
                 waited += 10
@@ -329,7 +348,7 @@ def status(instance_id: str):
     instance = client.get_instance(instance_id)
     
     if instance:
-        console.print(f"✅ Instance found")
+        console.print("✅ Instance found")
         console.print(f"   ID: {instance.id}")
         console.print(f"   Status: {instance.status}")
         console.print(f"   GPU: {instance.gpu_type} x{instance.gpu_count}")
@@ -396,7 +415,7 @@ def info(
         console.print(f"🔍 Getting detailed information for instance: {instance_id}")
     
     # Get instance details using the enhanced GraphQL query
-    from .runpod import get_instance_details_enhanced
+    from .providers.runpod import get_instance_details_enhanced
     
     try:
         instance_data = get_instance_details_enhanced(instance_id)
@@ -585,6 +604,13 @@ def getssh(instance_id: str):
     
     # Check if instance is running
     from .types import InstanceStatus
+    if not instance:
+        console.print("❌ Instance is None")
+        sys.exit(1)
+    
+    # Type assertion - we know instance is not None after the check above
+    assert instance is not None
+    
     if instance.status != InstanceStatus.RUNNING:
         console.print(f"❌ Instance is not running (status: {instance.status})")
         sys.exit(1)
@@ -610,6 +636,9 @@ def ssh(instance_id: str):
         console.print("❌ Instance not found")
         raise typer.Exit(1)
     
+    # Type assertion - we know instance is not None after the check above
+    assert instance is not None
+    
     # Check if instance is running
     from .types import InstanceStatus
     if instance.status != InstanceStatus.RUNNING:
@@ -628,10 +657,11 @@ def ssh(instance_id: str):
         ssh_key_path = None
         try:
             ssh_key_path = client.get_ssh_key_path()
-        except:
+        except Exception:
             pass  # Fall back to SSH agent
         
-        start_interactive_ssh_session(instance, private_key=ssh_key_path)
+        # Extract the wrapped GPUInstance for SSH functions
+        start_interactive_ssh_session(instance._instance, private_key=ssh_key_path)
     except Exception as e:
         console.print(f"❌ SSH connection failed: {e}")
 
@@ -647,6 +677,9 @@ def exec(instance_id: str, command: str):
     if not instance:
         console.print("❌ Instance not found")
         raise typer.Exit(1)
+    
+    # Type assertion - we know instance is not None after the check above
+    assert instance is not None
     
     # Check if instance is running
     from .types import InstanceStatus
@@ -666,12 +699,15 @@ def exec(instance_id: str, command: str):
         ssh_key_path = None
         try:
             ssh_key_path = client.get_ssh_key_path()
-        except:
+        except Exception:
             pass  # Fall back to SSH agent
         
-        success = execute_command_streaming(instance, command, private_key=ssh_key_path)
-        if not success:
-            console.print("❌ Command execution failed")
+        # Extract the wrapped GPUInstance for SSH functions
+        exit_code, stdout, stderr = execute_command_streaming(instance._instance, command, private_key=ssh_key_path)
+        if exit_code != 0:
+            console.print(f"❌ Command execution failed (exit code: {exit_code})")
+            if stderr.strip():
+                console.print(f"   Error: {stderr.strip()}")
     except Exception as e:
         console.print(f"❌ Command execution failed: {e}")
 
@@ -732,7 +768,7 @@ def display_enhanced_instance_info(instance_data: dict, live_metrics: bool, inst
         mem_util = machine.get('memoryUtilPercent', 0)
         disk_util = machine.get('diskUtilPercent', 0)
         
-        util_info = f"Real-time Utilization:\n"
+        util_info = "Real-time Utilization:\n"
         util_info += f"• CPU: {cpu_util}% ({instance_data.get('vcpuCount', '?')} vCPUs available)\n"
         util_info += f"• Memory: {mem_util}% ({instance_data.get('memoryInGb', '?')}GB RAM available)\n"
         util_info += f"• Disk: {disk_util}% ({instance_data.get('containerDiskInGb', '?')}GB container)"
@@ -771,7 +807,7 @@ def display_enhanced_instance_info(instance_data: dict, live_metrics: bool, inst
     
     network_info = [
         f"SSH: [bold]{ssh_info}[/bold]" if ssh_info else "SSH: Not available",
-        f"Direct SSH: {'✅ Available' if ssh_info and not 'ssh.runpod.io' in str(ssh_info) else '❌ Proxy only'}",
+        f"Direct SSH: {'✅ Available' if ssh_info and 'ssh.runpod.io' not in str(ssh_info) else '❌ Proxy only'}",
         f"Exposed Ports: {instance_data.get('ports', 'Default')}"
     ]
     
@@ -788,7 +824,7 @@ def display_enhanced_instance_info(instance_data: dict, live_metrics: bool, inst
     
     # Live disk usage if requested
     if live_metrics and ssh_info:
-        console.print(f"\n🔍 [yellow]Fetching live disk usage via SSH...[/yellow]")
+        console.print("\n🔍 [yellow]Fetching live disk usage via SSH...[/yellow]")
         try:
             result = subprocess.run([
                 "bifrost", "launch", ssh_info, "df -h / && echo && du -sh /root/.cache /root/.bifrost 2>/dev/null || true"
@@ -845,7 +881,7 @@ def _cleanup_single_instance(instance_id: str, force: bool, dry_run: bool):
     
     # Confirmation unless force is used
     if not force:
-        console.print(f"\n⚠️  This will terminate the instance and stop all billing")
+        console.print("\n⚠️  This will terminate the instance and stop all billing")
         response = typer.confirm("Are you sure you want to proceed?")
         if not response:
             console.print("❌ Cleanup cancelled")
@@ -853,6 +889,7 @@ def _cleanup_single_instance(instance_id: str, force: bool, dry_run: bool):
     
     # Perform termination
     console.print(f"🧹 Cleaning up instance: {instance.id}")
+    from .api import terminate_instance
     success = terminate_instance(instance.id)
     
     if success:
@@ -928,10 +965,10 @@ def _cleanup_all_instances(force: bool, dry_run: bool):
         
         if success:
             success_count += 1
-            console.print(f"    ✅ Terminated")
+            console.print("    ✅ Terminated")
         else:
             failed_instances.append(instance.id)
-            console.print(f"    ❌ Failed")
+            console.print("    ❌ Failed")
     
     # Summary
     console.print(f"\n🎯 Cleanup complete: {success_count}/{len(running_instances)} instances terminated")
