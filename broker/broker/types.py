@@ -3,8 +3,10 @@ Core data types for GPU cloud operations
 """
 
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, Union, List
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from .ssh_clients_compat import execute_command_sync, execute_command_async
 
 
 class InstanceStatus(str, Enum):
@@ -69,10 +71,56 @@ class GPUInstance:
     raw_data: Optional[Dict[str, Any]] = None
     
     def exec(self, command: str, ssh_key_path: Optional[str] = None, timeout: int = 30) -> 'SSHResult':
-        """Execute command via SSH using configured key"""
+        """Execute command via SSH using configured key (synchronous)"""
         self._validate_ssh_ready()
         key_content = self._load_ssh_key(ssh_key_path)
-        return self._execute_command(command, key_content, timeout)
+        
+        exit_code, stdout, stderr = execute_command_sync(
+            self, key_content, command, timeout=timeout
+        )
+        
+        return SSHResult(
+            success=exit_code == 0,
+            stdout=stdout,
+            stderr=stderr,
+            exit_code=exit_code
+        )
+    
+    async def aexec(self, command: str, ssh_key_path: Optional[str] = None, timeout: int = 30) -> 'SSHResult':
+        """Execute command via SSH using configured key (asynchronous)
+        
+        Args:
+            command: Command to execute
+            ssh_key_path: Path to SSH private key file
+            timeout: Command timeout in seconds
+            
+        Returns:
+            SSHResult with command output
+            
+        Example:
+            # Single async command
+            result = await instance.aexec("nvidia-smi")
+            
+            # Multiple commands in parallel
+            results = await asyncio.gather(
+                instance.aexec("nvidia-smi"),
+                instance.aexec("df -h"),
+                instance.aexec("ps aux")
+            )
+        """
+        self._validate_ssh_ready()
+        key_content = self._load_ssh_key(ssh_key_path)
+        
+        exit_code, stdout, stderr = await execute_command_async(
+            self, key_content, command, timeout=timeout
+        )
+        
+        return SSHResult(
+            success=exit_code == 0,
+            stdout=stdout,
+            stderr=stderr,
+            exit_code=exit_code
+        )
     
     def _validate_ssh_ready(self) -> None:
         """Validate that instance has SSH connection details available"""
@@ -88,25 +136,11 @@ class GPUInstance:
         
         key_path = os.path.expanduser(ssh_key_path)
         try:
-            with open(key_path, 'r') as f:
+            with open(key_path) as f:
                 return f.read()
         except Exception as e:
-            raise ValueError(f"Failed to load SSH key from {key_path}: {e}")
+            raise ValueError(f"Failed to load SSH key from {key_path}: {e}") from e
     
-    def _execute_command(self, command: str, key_content: Optional[str], timeout: int) -> 'SSHResult':
-        """Execute SSH command and return formatted result"""
-        from .ssh_clients import execute_command_sync
-        
-        success, stdout, stderr = execute_command_sync(
-            self, key_content, command, timeout=timeout
-        )
-        
-        return SSHResult(
-            success=success,
-            stdout=stdout,
-            stderr=stderr,
-            exit_code=0 if success else 1
-        )
     
     def ssh_connection_string(self) -> str:
         """Get SSH connection string for use with bifrost or other tools.
@@ -128,6 +162,7 @@ class GPUInstance:
     def wait_until_ready(self, timeout: int = 300) -> bool:
         """Wait until instance status is RUNNING"""
         import time
+
         from .api import get_instance
         
         start_time = time.time()
@@ -168,7 +203,8 @@ class GPUInstance:
     def _wait_for_ssh_assignment(self, start_time: float, timeout: int) -> bool:
         """Wait for direct SSH to be assigned (not proxy)."""
         import time
-        from .runpod import get_instance_details
+
+        from .providers.runpod import get_instance_details
         
         print("Waiting for direct SSH to be assigned...")
         print("Note: This may take up to 10 minutes. Proxy SSH will be ignored.")
@@ -305,7 +341,6 @@ class GPUInstance:
         for port_info in ports_data:
             if isinstance(port_info, dict):
                 private_port = port_info.get("privatePort")
-                public_port = port_info.get("publicPort") 
                 # Check if it's an HTTP proxy port (not just TCP)
                 if private_port and private_port != 22:  # Exclude SSH
                     http_ports.append(private_port)

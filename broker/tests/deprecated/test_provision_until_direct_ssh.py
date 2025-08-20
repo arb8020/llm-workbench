@@ -3,14 +3,13 @@
 Provision multiple instances until we get one with direct SSH for testing
 """
 
-import sys
-import os
 import asyncio
 import logging
+import os
+import sys
 import time
 
-# Add the src directory to Python path for testing
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+# Import from broker package directly (no path manipulation needed with uv)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -28,7 +27,11 @@ async def test_provision_until_direct_ssh():
     try:
         # Import minimal GPU broker
         import broker as gpus
-        from broker.ssh_clients import SSHMethod, execute_command_sync, execute_command_async
+        from broker.ssh_clients import (
+            SSHMethod,
+            execute_command_async,
+            execute_command_sync,
+        )
         from broker.types import CloudType
         
         logger.info("✅ GPU broker imports successfully")
@@ -151,7 +154,7 @@ async def test_provision_until_direct_ssh():
             else:
                 logger.error(f"  ❌ {client_name.upper()}: {result.upper()}")
         
-        logger.info(f"\n📊 Summary:")
+        logger.info("\n📊 Summary:")
         logger.info(f"   Real output: {real_count}/{total} clients")
         logger.info(f"   Instance: {direct_ssh_instance.id}")
         logger.info(f"   SSH: root@{direct_ssh_instance.public_ip}:{direct_ssh_instance.ssh_port}")

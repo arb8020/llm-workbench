@@ -5,18 +5,16 @@ This test validates that the push/exec/deploy operations work correctly
 with real GPU infrastructure.
 """
 
-import sys
 import json
 import shutil
+import sys
 from pathlib import Path
 
-# Add package directories to Python path for testing
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "bifrost"))
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Import packages directly (no path manipulation needed with uv)
+
+from bifrost.bifrost import BifrostClient
 
 from broker import GPUClient
-from broker.types import CloudType
-from bifrost import BifrostClient, JobStatus
 
 
 def create_test_script() -> str:
@@ -131,7 +129,7 @@ def test_three_operations_with_gpu():
         # Cleanup
         try:
             bifrost.close()
-        except:
+        except Exception:
             pass
 
 

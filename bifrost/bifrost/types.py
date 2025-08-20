@@ -3,8 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Optional, Dict, Any, List
-from pathlib import Path
+from typing import Optional
 
 
 class JobStatus(Enum):

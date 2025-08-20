@@ -3,14 +3,12 @@
 Smoke test for GPU broker minimal - provision, wait for SSH, test connectivity
 """
 
-import sys
-import os
 import asyncio
 import logging
+import os
+import sys
 import time
 
-# Add the src directory to Python path for testing
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -45,7 +43,11 @@ async def wait_for_public_ip(instance_id: str, max_wait_seconds: int = 300):
 
 async def test_ssh_connectivity(instance, ssh_method_hint=None):
     """Test actual SSH connectivity and output capture"""
-    from broker.ssh_clients import execute_command_sync, execute_command_async, SSHMethod
+    from broker.ssh_clients import (
+        SSHMethod,
+        execute_command_async,
+        execute_command_sync,
+    )
     
     logger.info(f"🔗 Testing SSH connectivity to {instance.public_ip}:{instance.ssh_port}")
     
@@ -171,7 +173,6 @@ async def smoke_test():
     try:
         # Import GPU broker
         import broker as gpus
-        from broker.types import CloudType
         
         logger.info("✅ GPU broker imports successful")
         
@@ -187,7 +188,7 @@ async def smoke_test():
         logger.info(f"✅ Found {len(offers)} offers")
         
         # Step 2: Try to provision (may need multiple attempts)
-        logger.info(f"\n🚀 Step 2: Provisioning instance...")
+        logger.info("\n🚀 Step 2: Provisioning instance...")
         instance = None
         
         for i, offer in enumerate(offers[:3]):  # Try up to 3 offers
@@ -210,7 +211,7 @@ async def smoke_test():
         logger.info(f"   Initial public_ip: {instance.public_ip}")
         
         # Step 3: Wait for public IP
-        logger.info(f"\n⏳ Step 3: Waiting for public IP...")
+        logger.info("\n⏳ Step 3: Waiting for public IP...")
         ready_instance = await wait_for_public_ip(instance.id, max_wait_seconds=300)
         
         if not ready_instance:
@@ -220,11 +221,11 @@ async def smoke_test():
         instance = ready_instance
         
         # Step 4: Test SSH connectivity  
-        logger.info(f"\n🔗 Step 4: Testing SSH connectivity...")
+        logger.info("\n🔗 Step 4: Testing SSH connectivity...")
         results, ssh_method = await test_ssh_connectivity(instance)
         
         # Step 5: Analyze results
-        logger.info(f"\n" + "=" * 70)
+        logger.info("\n" + "=" * 70)
         logger.info("🎯 SMOKE TEST RESULTS")
         logger.info("=" * 70)
         
@@ -235,7 +236,7 @@ async def smoke_test():
         logger.info(f"Instance: {instance.id}")
         logger.info(f"SSH method: {ssh_method}")
         logger.info(f"Public IP: {instance.public_ip}:{instance.ssh_port}")
-        logger.info(f"")
+        logger.info("")
         
         for test_name, result in results.items():
             if result == "real_output":
@@ -249,7 +250,7 @@ async def smoke_test():
             elif result == "skipped":
                 logger.info(f"  ⏩ {test_name.upper()}: Skipped")
         
-        logger.info(f"\n📊 Summary:")
+        logger.info("\n📊 Summary:")
         logger.info(f"   Real output: {real_output_count}/{total_tests} tests")
         logger.info(f"   Working: {working_count}/{total_tests} tests")
         
@@ -257,19 +258,19 @@ async def smoke_test():
         if ssh_method == "direct":
             success = real_output_count >= 2  # Expect real output for direct SSH
             if success:
-                logger.info(f"\n🎉 SMOKE TEST PASSED!")
-                logger.info(f"Direct SSH with real output capture is working!")
+                logger.info("\n🎉 SMOKE TEST PASSED!")
+                logger.info("Direct SSH with real output capture is working!")
             else:
-                logger.error(f"\n❌ SMOKE TEST FAILED!")
-                logger.error(f"Direct SSH should provide real output capture")
+                logger.error("\n❌ SMOKE TEST FAILED!")
+                logger.error("Direct SSH should provide real output capture")
         else:
             success = working_count >= 1  # Proxy SSH is limited but should work somewhat
             if success:
-                logger.info(f"\n⚠️ SMOKE TEST PARTIAL PASS")
-                logger.info(f"Got proxy SSH (limited functionality as expected)")
+                logger.info("\n⚠️ SMOKE TEST PARTIAL PASS")
+                logger.info("Got proxy SSH (limited functionality as expected)")
             else:
-                logger.error(f"\n❌ SMOKE TEST FAILED!")
-                logger.error(f"Even proxy SSH is not working")
+                logger.error("\n❌ SMOKE TEST FAILED!")
+                logger.error("Even proxy SSH is not working")
         
         return success
         
@@ -285,7 +286,7 @@ async def smoke_test():
             logger.info(f"\n🗑️ Cleaning up instance {instance.id}...")
             try:
                 if instance.terminate():
-                    logger.info(f"✅ Instance terminated")
+                    logger.info("✅ Instance terminated")
                 else:
                     logger.warning(f"⚠️ Failed to terminate instance {instance.id}")
                     logger.warning("   Please terminate manually to avoid charges")

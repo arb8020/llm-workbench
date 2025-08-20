@@ -3,13 +3,11 @@
 Test both Paramiko and AsyncSSH clients with output capture validation
 """
 
-import sys
-import os
 import asyncio
 import logging
+import os
+import sys
 
-# Add the src directory to Python path for testing
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -26,9 +24,7 @@ async def test_both_ssh_clients():
     try:
         # Import minimal GPU broker
         import broker as gpus
-        from broker.ssh_clients import (
-            execute_command_sync, execute_command_async
-        )
+        from broker.ssh_clients import execute_command_async, execute_command_sync
         logger.info("✅ GPU broker imports successfully")
         
         # Get test instance
@@ -157,10 +153,10 @@ async def test_both_ssh_clients():
         working_count = sum(1 for r in results.values() if r in ["real_output", "success"])
         total = len(results)
         
-        logger.info(f"\n📊 Summary:")
+        logger.info("\n📊 Summary:")
         logger.info(f"   Real output: {real_count}/{total} clients")
         logger.info(f"   Working: {working_count}/{total} clients")
-        logger.info(f"   SSH method: direct")
+        logger.info("   SSH method: direct")
         
         if real_count >= 2:
             logger.info("\n🎉 EXCELLENT: Multiple clients capturing real output!")

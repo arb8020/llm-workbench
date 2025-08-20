@@ -3,14 +3,12 @@
 Full integration test that provisions its own GPU and tests both SSH clients
 """
 
-import sys
-import os
 import asyncio
 import logging
+import os
+import sys
 import time
 
-# Add the src directory to Python path for testing
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -27,7 +25,11 @@ async def test_full_integration():
     try:
         # Import minimal GPU broker
         import broker as gpus
-        from broker.ssh_clients import SSHMethod, execute_command_sync, execute_command_async
+        from broker.ssh_clients import (
+            SSHMethod,
+            execute_command_async,
+            execute_command_sync,
+        )
         from broker.types import CloudType
         
         logger.info("✅ GPU broker imports successfully")
@@ -186,7 +188,7 @@ async def test_full_integration():
         working_count = sum(1 for r in results.values() if r in ["real_output", "limited"])
         total = len(results)
         
-        logger.info(f"\n📊 Summary:")
+        logger.info("\n📊 Summary:")
         logger.info(f"   Real output: {real_count}/{total} clients")
         logger.info(f"   Working: {working_count}/{total} clients")
         logger.info(f"   SSH method: {ssh_method.value}")
