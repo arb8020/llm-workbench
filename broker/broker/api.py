@@ -2,12 +2,12 @@
 Main functional API for GPU cloud operations
 """
 
-from typing import List, Optional, Union, Callable, Any
 import logging
+from typing import Any, Callable, List, Optional, Union
 
-from .types import GPUOffer, GPUInstance, ProvisionRequest
+from .providers import runpod
 from .query import QueryType
-from . import runpod
+from .types import GPUInstance, GPUOffer, ProvisionRequest
 
 logger = logging.getLogger(__name__)
 

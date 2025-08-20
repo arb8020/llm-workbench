@@ -2,14 +2,15 @@
 RunPod provider implementation
 """
 
-import os
 import logging
+import os
 import time
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
+
 import requests
 from dotenv import load_dotenv
 
-from .types import GPUOffer, GPUInstance, InstanceStatus, ProvisionRequest, CloudType
+from ..types import CloudType, GPUInstance, GPUOffer, InstanceStatus, ProvisionRequest
 
 logger = logging.getLogger(__name__)
 
@@ -510,7 +511,7 @@ def terminate_instance(instance_id: str) -> bool:
         # - Would throw exception on failure (handled in except block)
         # This is the opposite of typical API patterns
         if result is None:
-            logger.info(f"Terminate succeeded (RunPod returns null on success)")
+            logger.info("Terminate succeeded (RunPod returns null on success)")
             return True
         else:
             logger.info(f"Unexpected terminate response: {result}")

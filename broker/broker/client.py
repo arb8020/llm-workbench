@@ -3,11 +3,13 @@ GPU Broker Client - Main interface for GPU operations
 """
 
 import os
-from typing import List, Optional, Union, Dict, Any, Callable
+from typing import Any, Callable, Dict, List, Optional, Union
+
 from dotenv import load_dotenv
-from .types import GPUOffer, GPUInstance, CloudType
-from .query import GPUQuery, QueryType
+
 from . import api
+from .query import GPUQuery, QueryType
+from .types import CloudType, GPUInstance, GPUOffer
 
 
 class GPUClient:
@@ -131,7 +133,6 @@ class GPUClient:
         # Validate SSH key
         if self._ssh_key_path and os.path.exists(self._ssh_key_path):
             # Check key permissions (should be 600 or 400)
-            import stat
             perms = oct(os.stat(self._ssh_key_path).st_mode)[-3:]
             if perms in ["600", "400"]:
                 results["ssh_key"] = f"✅ SSH key found with secure permissions ({perms})"
@@ -319,11 +320,39 @@ class ClientGPUInstance:
         return getattr(self._instance, name)
     
     def exec(self, command: str, ssh_key_path: Optional[str] = None, timeout: int = 30):
-        """Execute command using client's SSH configuration (non-streaming)"""
+        """Execute command using client's SSH configuration (synchronous)"""
         if ssh_key_path is None:
             ssh_key_path = self._client.get_ssh_key_path()
         
         return self._instance.exec(command, ssh_key_path, timeout)
+    
+    async def aexec(self, command: str, ssh_key_path: Optional[str] = None, timeout: int = 30):
+        """Execute command using client's SSH configuration (asynchronous)
+        
+        Args:
+            command: Command to execute
+            ssh_key_path: SSH private key path (uses client's if not provided)
+            timeout: Command timeout in seconds
+            
+        Returns:
+            SSHResult with command output
+            
+        Example:
+            # Single async command
+            result = await instance.aexec("nvidia-smi")
+            print(f"GPU info: {result.stdout}")
+            
+            # Multiple commands in parallel
+            gpu_info, disk_info, process_info = await asyncio.gather(
+                instance.aexec("nvidia-smi --query-gpu=name,memory.total --format=csv"),
+                instance.aexec("df -h /"),
+                instance.aexec("ps aux | head -10")
+            )
+        """
+        if ssh_key_path is None:
+            ssh_key_path = self._client.get_ssh_key_path()
+        
+        return await self._instance.aexec(command, ssh_key_path, timeout)
     
     def exec_streaming(self, command: str, output_callback=None, ssh_key_path: Optional[str] = None, timeout: int = 30):
         """Execute command with real-time output streaming
@@ -348,10 +377,10 @@ class ClientGPUInstance:
             ssh_key_path = self._client.get_ssh_key_path()
         
         # Use the streaming SSH client directly
-        from .ssh_clients import ParamikoSSHClient, get_ssh_connection_info, SSHMethod
+        from .ssh_clients import ParamikoSSHClient, get_ssh_connection_info
         
         try:
-            hostname, port, username = get_ssh_connection_info(self._instance, SSHMethod.DIRECT)
+            hostname, port, username = get_ssh_connection_info(self._instance)
             client = ParamikoSSHClient()
             
             if client.connect(hostname, port, username, ssh_key_path, timeout):
