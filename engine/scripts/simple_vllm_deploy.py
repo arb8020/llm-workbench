@@ -5,8 +5,6 @@ import subprocess
 import time
 import requests
 import sys
-import json
-from pathlib import Path
 
 
 def run_command(cmd, description, timeout=300):
@@ -65,7 +63,7 @@ def main():
     print(f"✅ SSH connection: {ssh_conn}")
     
     # Step 2: Deploy vLLM using bifrost
-    print(f"\n🌈 Step 2: Deploying vLLM via bifrost...")
+    print("\n🌈 Step 2: Deploying vLLM via bifrost...")
     
     # Install vLLM
     install_cmd = f'bifrost launch {ssh_conn} "pip install vllm requests"'
@@ -108,7 +106,7 @@ def main():
         print(f"   stdout: {stdout}")
     
     # Step 3: Wait for vLLM to be ready
-    print(f"\n⏳ Step 3: Waiting for vLLM to be ready...")
+    print("\n⏳ Step 3: Waiting for vLLM to be ready...")
     
     for attempt in range(60):  # Wait up to 5 minutes
         # Check if vLLM is responding
@@ -132,16 +130,16 @@ def main():
         return False
     
     # Step 4: Set up SSH tunnel (manual step)
-    print(f"\n🔗 Step 4: Setting up SSH tunnel...")
-    print(f"   Run this command in another terminal:")
+    print("\n🔗 Step 4: Setting up SSH tunnel...")
+    print("   Run this command in another terminal:")
     print(f"   ssh -L 8000:localhost:8000 -o StrictHostKeyChecking=no {ssh_conn} -N")
-    print(f"   (Keep that terminal open)")
+    print("   (Keep that terminal open)")
     
     # Wait for user to set up tunnel
     input("\n   Press Enter after setting up the SSH tunnel...")
     
     # Step 5: Test inference locally
-    print(f"\n🧪 Step 5: Testing inference...")
+    print("\n🧪 Step 5: Testing inference...")
     
     try:
         response = requests.post(
@@ -158,7 +156,7 @@ def main():
         if response.status_code == 200:
             data = response.json()
             message = data["choices"][0]["message"]["content"]
-            print(f"✅ Inference successful!")
+            print("✅ Inference successful!")
             print(f"   Response: '{message.strip()}'")
         else:
             print(f"❌ Inference failed: {response.status_code}")
@@ -169,16 +167,16 @@ def main():
         print(f"   Make sure SSH tunnel is running: ssh -L 8000:localhost:8000 {ssh_conn} -N")
         return False
     
-    print(f"\n🎉 Deployment successful!")
-    print(f"   Local endpoint: http://localhost:8000")
+    print("\n🎉 Deployment successful!")
+    print("   Local endpoint: http://localhost:8000")
     print(f"   SSH connection: {ssh_conn}")
     print(f"   vLLM job: {job_id or 'unknown'}")
-    print(f"\n   Example usage:")
-    print(f"   curl -X POST http://localhost:8000/v1/chat/completions \\")
-    print(f"        -H 'Content-Type: application/json' \\")
-    print(f"        -d '{{\"model\":\"openai-community/gpt2\",\"messages\":[{{\"role\":\"user\",\"content\":\"Hello!\"}}],\"max_tokens\":10}}'")
+    print("\n   Example usage:")
+    print("   curl -X POST http://localhost:8000/v1/chat/completions \\")
+    print("        -H 'Content-Type: application/json' \\")
+    print("        -d '{\"model\":\"openai-community/gpt2\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello!\"}],\"max_tokens\":10}'")
     
-    print(f"\n⚠️  Remember to clean up when done:")
+    print("\n⚠️  Remember to clean up when done:")
     # Get instance ID for cleanup
     list_cmd = "broker list --name vllm-gpt2-test --simple"
     success, stdout, stderr = run_command(list_cmd, "Getting instance ID", timeout=30)

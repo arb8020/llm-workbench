@@ -1,6 +1,5 @@
 # repo_utils.py - Utilities for exploring HuggingFace repositories
 from __future__ import annotations
-import pathlib
 from typing import List
 
 def list_repo_files(repo_id: str, pattern: str = None) -> List[str]:
@@ -68,7 +67,7 @@ if __name__ == "__main__":
     for f in files:
         print(f"  {f}")
     
-    print(f"\nTokenizer files detected:")
+    print("\nTokenizer files detected:")
     tokenizer_files = find_tokenizer_files(args.repo_id)
     for file_type, filename in tokenizer_files.items():
         print(f"  {file_type}: {filename}")

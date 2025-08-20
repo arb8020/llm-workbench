@@ -3,14 +3,14 @@
 Cleanup utility to nuke all active GPU instances
 """
 
-import sys
 import logging
-import requests
 import os
-from typing import List, Dict, Any
+import sys
+from typing import Any, Dict, List, Optional
 
-sys.path.insert(0, '../src')
-sys.path.insert(0, 'src')
+import requests
+
+# Import broker package directly (no path manipulation needed with uv)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ def get_api_key() -> str:
     
     # Try to read from .env file
     try:
-        with open('.env', 'r') as f:
+        with open('.env') as f:
             for line in f:
                 if line.startswith('RUNPOD_API_KEY='):
                     return line.split('=', 1)[1].strip()
@@ -31,7 +31,7 @@ def get_api_key() -> str:
         pass
     
     try:
-        with open('../.env', 'r') as f:
+        with open('../.env') as f:
             for line in f:
                 if line.startswith('RUNPOD_API_KEY='):
                     return line.split('=', 1)[1].strip()

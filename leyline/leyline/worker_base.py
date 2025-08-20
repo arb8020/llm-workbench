@@ -1,12 +1,10 @@
 import asyncio
 import logging
-import json
 import inspect
-from typing import Any, Callable, Dict, Optional, AsyncGenerator, Union
+from typing import Any, Callable, Dict, Optional
 import websockets
 from websockets.exceptions import ConnectionClosed, WebSocketException
 from concurrent.futures import ThreadPoolExecutor
-from functools import wraps
 
 from .common import parse_frame, build_chunk_frame
 

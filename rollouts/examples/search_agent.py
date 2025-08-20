@@ -7,13 +7,12 @@ Adds conjunctive (decompose) and disjunctive (branch) search to any Environment.
 from dataclasses import dataclass, replace
 from typing import Any, Dict, List, Optional, Callable
 import asyncio
-import json
 import traceback
 
 from rollouts import (
     Environment, Tool, ToolFunction, ToolFunctionParameter, ToolCall, ToolResult,
     StopReason, Message, Trajectory, Endpoint, Actor, AgentState, RunConfig,
-    ToolConfirmResult, run_agent, stdout_handler, confirm_tool_with_feedback,
+    run_agent, stdout_handler, confirm_tool_with_feedback,
     handle_tool_error, handle_stop_max_turns, inject_tool_reminder,
     default_confirm_tool
 )

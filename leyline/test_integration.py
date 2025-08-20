@@ -3,7 +3,6 @@
 
 import asyncio
 import json
-import time
 import subprocess
 import requests
 import sys

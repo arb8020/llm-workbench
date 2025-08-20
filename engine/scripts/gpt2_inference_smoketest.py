@@ -13,7 +13,6 @@ This is designed to be lightweight and quick for testing remote deployment.
 
 import sys
 import time
-from pathlib import Path
 
 def test_tokenizer():
     """Test GPT-2 tokenizer functionality."""

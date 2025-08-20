@@ -8,11 +8,14 @@ import time
 import requests
 from pathlib import Path
 
-# Add packages to path
-root_path = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(root_path))
-sys.path.insert(0, str(root_path / "broker"))
-sys.path.insert(0, str(root_path / "bifrost"))
+def setup_path():
+    """Add packages to path for imports."""
+    root_path = Path(__file__).parent.parent.parent
+    sys.path.insert(0, str(root_path))
+    sys.path.insert(0, str(root_path / "broker"))
+    sys.path.insert(0, str(root_path / "bifrost"))
+
+setup_path()
 
 from broker.client import GPUClient
 from bifrost.client import BifrostClient
@@ -36,7 +39,7 @@ async def deploy_vllm_remote():
     )
     
     print(f"✅ GPU instance created: {instance.id}")
-    print(f"   Waiting for SSH to be ready...")
+    print("   Waiting for SSH to be ready...")
     
     # Wait for SSH to be ready
     instance.wait_until_ssh_ready(timeout=600)  # 10 minutes max
@@ -44,7 +47,7 @@ async def deploy_vllm_remote():
     print(f"✅ SSH ready: {ssh_conn}")
     
     # Step 2: Deploy vLLM via bifrost
-    print(f"\n🌈 Step 2: Deploying vLLM via bifrost...")
+    print("\n🌈 Step 2: Deploying vLLM via bifrost...")
     bifrost = BifrostClient(ssh_conn)
     
     # Install vLLM (this may take a while)
@@ -85,7 +88,7 @@ python -m vllm.entrypoints.api_server {vllm_args}
     print(f"✅ vLLM job started: {job.job_id}")
     
     # Step 4: Wait for vLLM to be ready
-    print(f"\n⏳ Step 3: Waiting for vLLM to be ready...")
+    print("\n⏳ Step 3: Waiting for vLLM to be ready...")
     vllm_ready = False
     
     for attempt in range(60):  # Wait up to 5 minutes
@@ -110,7 +113,7 @@ python -m vllm.entrypoints.api_server {vllm_args}
                 print("✅ vLLM server is ready!")
                 break
                 
-        except Exception as e:
+        except Exception:
             pass  # Keep trying
             
         if attempt % 10 == 0:
@@ -122,7 +125,7 @@ python -m vllm.entrypoints.api_server {vllm_args}
         return instance, None
     
     # Step 5: Set up SSH tunnel for local access
-    print(f"\n🔗 Step 4: Setting up SSH tunnel...")
+    print("\n🔗 Step 4: Setting up SSH tunnel...")
     tunnel_cmd = [
         "ssh", "-L", f"{config.port}:localhost:{config.port}",
         "-o", "StrictHostKeyChecking=no",
@@ -137,7 +140,7 @@ python -m vllm.entrypoints.api_server {vllm_args}
     time.sleep(3)
     
     # Step 6: Test inference locally
-    print(f"\n🧪 Step 5: Testing inference...")
+    print("\n🧪 Step 5: Testing inference...")
     local_url = f"http://localhost:{config.port}"
     
     try:
@@ -155,7 +158,7 @@ python -m vllm.entrypoints.api_server {vllm_args}
         if response.status_code == 200:
             data = response.json()
             message = data["choices"][0]["message"]["content"]
-            print(f"✅ Inference successful!")
+            print("✅ Inference successful!")
             print(f"   Response: '{message.strip()}'")
         else:
             print(f"❌ Inference failed: {response.status_code}")
@@ -163,14 +166,14 @@ python -m vllm.entrypoints.api_server {vllm_args}
     except Exception as e:
         print(f"❌ Inference test error: {e}")
     
-    print(f"\n🎉 Deployment complete!")
+    print("\n🎉 Deployment complete!")
     print(f"   Local endpoint: {local_url}")
     print(f"   SSH connection: {ssh_conn}")
     print(f"   GPU instance: {instance.id}")
     print(f"   vLLM job: {job.job_id}")
-    print(f"\n   To access vLLM:")
+    print("\n   To access vLLM:")
     print(f"   curl -X POST {local_url}/v1/chat/completions \\")
-    print(f"        -H 'Content-Type: application/json' \\")
+    print("        -H 'Content-Type: application/json' \\")
     print(f"        -d '{{\"model\":\"{config.model_name}\",\"messages\":[{{\"role\":\"user\",\"content\":\"Hello!\"}}],\"max_tokens\":10}}'")
     
     return instance, tunnel_process
@@ -186,7 +189,7 @@ async def main():
         instance, tunnel = await deploy_vllm_remote()
         
         if instance:
-            print(f"\n⚠️  Remember to terminate the GPU instance when done:")
+            print("\n⚠️  Remember to terminate the GPU instance when done:")
             print(f"   broker terminate {instance.id}")
             
             if tunnel:

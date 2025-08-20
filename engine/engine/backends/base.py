@@ -2,11 +2,9 @@
 
 import asyncio
 import subprocess
-import requests
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List
-from pathlib import Path
 
 
 @dataclass

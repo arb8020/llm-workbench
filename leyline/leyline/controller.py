@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import Dict, Set, Optional, Any
+from typing import Dict, Set, Optional
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse
 import websockets
@@ -131,7 +131,7 @@ class Controller:
         queue = self.request_queues.get(rid)
         if not queue:
             logger.error(f"No queue found for request {rid}")
-            yield f"event: error\ndata: Request not found\n\n"
+            yield "event: error\ndata: Request not found\n\n"
             return
         
         try:
@@ -156,7 +156,7 @@ class Controller:
                     
         except asyncio.TimeoutError:
             logger.error(f"Timeout waiting for response chunks for request {rid}")
-            yield f"event: error\ndata: Request timeout\n\n"
+            yield "event: error\ndata: Request timeout\n\n"
         except Exception as e:
             logger.error(f"Error streaming response: {e}")
             yield f"event: error\ndata: {str(e)}\n\n"
@@ -212,7 +212,7 @@ class Controller:
     
     def run(self, **kwargs):
         """Run both the HTTP and WebSocket servers."""
-        logger.info(f"Starting Leyline Controller")
+        logger.info("Starting Leyline Controller")
         logger.info(f"HTTP API: http://{self.host}:{self.port}")
         logger.info(f"Worker WebSocket: ws://{self.host}:{self.ws_port}")
         

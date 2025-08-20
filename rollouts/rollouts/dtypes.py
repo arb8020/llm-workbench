@@ -7,6 +7,7 @@ from abc import ABC
 from dataclasses import dataclass, field, asdict, fields
 from typing import Any, Dict, List, Optional, Mapping, Union, TypeVar, Type, Iterator, Callable, Awaitable, Tuple
 from datetime import datetime, timezone
+import dacite
 
 # TODO: Better torch typing options explored:
 # 1. Create a Protocol for tensor-like objects (has .tolist(), .shape, .dtype) - cleanest approach
@@ -16,7 +17,6 @@ from datetime import datetime, timezone
 # 
 # Current: Simple fallback for type hints - actual tensor handling is done at runtime via hasattr checks
 TorchTensor = Any
-import dacite
 
 # Verbose function for debugging
 def verbose(level=1):

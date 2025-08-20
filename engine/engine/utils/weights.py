@@ -71,12 +71,18 @@ def _canonicalize(params: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         out["wpe"] = out["transformer.wpe.weight"]
     # Layer norm aliases
     for k in list(out.keys()):
-        if k.endswith(".ln_1.weight"): out[k.replace(".ln_1.weight", ".ln1.gamma")] = out[k]
-        if k.endswith(".ln_1.bias"):   out[k.replace(".ln_1.bias",   ".ln1.beta")]  = out[k]
-        if k.endswith(".ln_2.weight"): out[k.replace(".ln_2.weight", ".ln2.gamma")] = out[k]
-        if k.endswith(".ln_2.bias"):   out[k.replace(".ln_2.bias",   ".ln2.beta")]  = out[k]
-        if k.endswith(".ln_f.weight"): out[k.replace(".ln_f.weight", ".lnf.gamma")] = out[k]
-        if k.endswith(".ln_f.bias"):   out[k.replace(".ln_f.bias",   ".lnf.beta")]  = out[k]
+        if k.endswith(".ln_1.weight"):
+            out[k.replace(".ln_1.weight", ".ln1.gamma")] = out[k]
+        if k.endswith(".ln_1.bias"):
+            out[k.replace(".ln_1.bias", ".ln1.beta")] = out[k]
+        if k.endswith(".ln_2.weight"):
+            out[k.replace(".ln_2.weight", ".ln2.gamma")] = out[k]
+        if k.endswith(".ln_2.bias"):
+            out[k.replace(".ln_2.bias", ".ln2.beta")] = out[k]
+        if k.endswith(".ln_f.weight"):
+            out[k.replace(".ln_f.weight", ".lnf.gamma")] = out[k]
+        if k.endswith(".ln_f.bias"):
+            out[k.replace(".ln_f.bias", ".lnf.beta")] = out[k]
     return out
 
 def load_gpt2_weights(model_dir: str | pathlib.Path) -> GPT2Weights:

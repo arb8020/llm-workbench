@@ -2,7 +2,10 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Tuple, List, Optional, Union
-import json, re, unicodedata, pathlib
+import json
+import re
+import unicodedata
+import pathlib
 
 # -----------------------------
 # GPT-2 Byte-Level BPE Tokenizer
@@ -155,7 +158,6 @@ def download_gpt2_assets(model_name: str = "gpt2", cache_dir: Optional[Union[str
     """
     from huggingface_hub import hf_hub_download
     import shutil
-    import os
     
     # Map model names to actual repo IDs
     repo_mapping = {

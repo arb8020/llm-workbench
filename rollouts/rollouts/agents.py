@@ -5,35 +5,24 @@ import asyncio
 import json
 import os
 import time
-from abc import ABC
-from dataclasses import dataclass, field, replace, asdict
-from pathlib import Path
+from dataclasses import replace
 from typing import (Any, Dict, List, Optional, Tuple, Callable,
-                   AsyncIterator, Protocol, Awaitable, Union)
+                   AsyncIterator, Awaitable)
 
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types import CompletionUsage
-from datetime import datetime, timezone
 
 import aiohttp
-from dacite import from_dict, Config
+from dacite import from_dict
 
 import copy
-import hashlib
 
 # Environment class and other core types are now imported from dtypes
-from typing import Type
-from tqdm import tqdm
-from tqdm.asyncio import tqdm_asyncio
 
 from .dtypes import (
-    Trajectory, 
-    Tool, ToolCall, ToolResult, ToolConfirmResult, ToolFunction, ToolFunctionParameter,
-    StopReason, StreamChunk, Message, Usage, Choice, ChatCompletion, SerialDataclass,
-    Endpoint, Actor, AgentState, RunConfig, Environment, 
-    default_stdin_handler, default_confirm_tool, default_no_tool_handler
+    Tool, ToolCall, ToolResult, ToolConfirmResult, StopReason, StreamChunk, Message, Usage, Choice, ChatCompletion, Actor, AgentState, RunConfig
 )
 
 # ── Core Design Philosophy ────────────────────────────────────────────────────
@@ -398,8 +387,10 @@ async def rollout_moonshot(actor: Actor, on_chunk: Callable[[StreamChunk], Await
         params["tools"] = [_tool_to_openai(t) for t in actor.tools]
         params["tool_choice"] = "auto"
     
-    try: stream = await client.chat.completions.create(**params)
-    except Exception as e: print("Exception:", str(e), json.dumps(params, indent=2, default=str))
+    try:
+        stream = await client.chat.completions.create(**params)
+    except Exception as e:
+        print("Exception:", str(e), json.dumps(params, indent=2, default=str))
     
     completion = await aggregate_stream(stream, on_chunk)
     completion = replace(completion, model=actor.endpoint.model)
@@ -943,9 +934,6 @@ async def inject_tool_reminder(state: AgentState, run_config: 'RunConfig') -> Ag
     )
     return replace(state, actor=replace(state.actor, trajectory=new_trajectory))
 
-async def handle_checkpoint_event(state: AgentState, event: str, run_config: RunConfig, session_id: Optional[str] = None) -> None:
-    """Handle checkpoint event if configured - currently a no-op stub"""
-    pass
 
 FullAuto = RunConfig(
     on_chunk=stdout_handler,
@@ -958,12 +946,18 @@ FullAuto = RunConfig(
 
 async def rollout(actor: Actor, on_chunk: Callable[[StreamChunk], Awaitable[None]]=stdout_handler, 
                   user_message_for_thinking: Optional[str] = None, turn_idx: int = 0, inline_thinking: Optional[str] = None) -> Actor:
-    match actor.endpoint.provider:
-        case "openai":      new_actor = await rollout_openai(actor, on_chunk) 
-        case "moonshot":    new_actor = await rollout_moonshot(actor, on_chunk)
-        case "vllm":        new_actor = await rollout_vllm(actor, on_chunk)
-        case "anthropic":   new_actor = await rollout_anthropic(actor, on_chunk, user_message_for_thinking, turn_idx, inline_thinking)
-        case _: print(f"Invalid provider {actor.endpoint.provider})"); sys.exit(0)
+    provider = actor.endpoint.provider
+    if provider == "openai":
+        new_actor = await rollout_openai(actor, on_chunk)
+    elif provider == "moonshot":
+        new_actor = await rollout_moonshot(actor, on_chunk)
+    elif provider == "vllm":
+        new_actor = await rollout_vllm(actor, on_chunk)
+    elif provider == "anthropic":
+        new_actor = await rollout_anthropic(actor, on_chunk, user_message_for_thinking, turn_idx, inline_thinking)
+    else:
+        print(f"Invalid provider {actor.endpoint.provider})")
+        sys.exit(0)
     return new_actor
 
 async def run_agent_step(state: AgentState, rcfg: RunConfig) -> AgentState:
@@ -1147,7 +1141,7 @@ async def run_agent(
         # Debug: Print environment type and available tools
         #print(f"[DEBUG] run_agent called with environment type: {type(current_state.environment).__name__}")
         if hasattr(current_state.environment, 'get_tools'):
-            tools = [tool.function.name for tool in current_state.environment.get_tools()]
+            [tool.function.name for tool in current_state.environment.get_tools()]
             #print(f"[DEBUG] Available tools: {tools}")
         
         # Save initial state

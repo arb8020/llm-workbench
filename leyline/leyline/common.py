@@ -1,6 +1,6 @@
 import uuid
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 # Constants
 HEARTBEAT = 30.0  # seconds (legacy, now using ping/pong)

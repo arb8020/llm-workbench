@@ -19,15 +19,11 @@ Examples:
 """
 
 import argparse
-import asyncio
 import json
 import os
 import subprocess
-import sys
 import time
-import uuid
 from dataclasses import dataclass, asdict
-from pathlib import Path
 from typing import Dict, List, Optional
 
 try:
@@ -1101,7 +1097,7 @@ def main():
     status_parser.add_argument("name", help="Agent name")
     
     # List command
-    list_parser = subparsers.add_parser("list", help="List all agents")
+    subparsers.add_parser("list", help="List all agents")
     
     # Watch command
     watch_parser = subparsers.add_parser("watch", help="Watch agent output like tail -f")
@@ -1124,7 +1120,7 @@ def main():
     kill_parser.add_argument("name", help="Agent name")
     
     # Cleanup command
-    cleanup_parser = subparsers.add_parser("cleanup", help="Kill all agents")
+    subparsers.add_parser("cleanup", help="Kill all agents")
     
     args = parser.parse_args()
     

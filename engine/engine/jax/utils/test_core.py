@@ -3,7 +3,7 @@ from __future__ import annotations
 import tempfile
 import json
 import pathlib
-from tokenizer import GPT2Tokenizer, load_tokenizer_files, encode, decode, _bytes_to_unicode, _get_pairs
+from tokenizer import GPT2Tokenizer, load_tokenizer_files, encode, _bytes_to_unicode, _get_pairs
 from weights import GPT2Weights, _canonicalize
 import numpy as np
 

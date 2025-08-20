@@ -1,7 +1,7 @@
 """vLLM backend configuration."""
 
-from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any
+from dataclasses import dataclass
+from typing import Optional, List
 from ..base import BackendConfig
 
 

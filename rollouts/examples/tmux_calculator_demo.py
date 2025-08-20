@@ -16,10 +16,8 @@ Then attach to see the agent: tmux attach -t calc_demo
 
 import asyncio
 import os
-import tempfile
 import uuid
 import time
-import subprocess
 import sys
 from pathlib import Path
 
@@ -50,7 +48,7 @@ async def main():
     session_name = f"calc_demo_{int(time.time())}"
     pipe_path = f"/tmp/calc_demo_pipe_{uuid.uuid4().hex[:8]}"
     
-    print(f"🚀 Starting tmux calculator demo...")
+    print("🚀 Starting tmux calculator demo...")
     print(f"📺 Session: {session_name}")
     print(f"📡 Pipe: {pipe_path}")
     print(f"👀 Attach with: tmux attach -t {session_name}")
@@ -165,7 +163,7 @@ async def main():
         pane.send_keys("echo '🎯 Demo complete! Session will remain open for inspection.'")
         pane.send_keys("exec bash")  # Keep session alive
         
-        print(f"✅ Agent completed!")
+        print("✅ Agent completed!")
         print(f"📺 Session '{session_name}' remains open for inspection")
         print(f"👀 View with: tmux attach -t {session_name}")
         print(f"🗑️  Clean up with: tmux kill-session -t {session_name}")
