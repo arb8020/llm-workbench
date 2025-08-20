@@ -4,6 +4,8 @@ Centralized GraphQL queries and mutations for RunPod API
 All queries here have been tested and verified to work.
 """
 
+from typing import Optional
+
 # WORKING GPU SEARCH QUERY
 GPU_SEARCH_QUERY = """
 query {

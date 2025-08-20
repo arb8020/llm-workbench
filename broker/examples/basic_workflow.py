@@ -12,9 +12,11 @@ This example shows the complete lifecycle:
 This is the fundamental workflow that most users will follow.
 """
 
-import broker as gpus
 import asyncio
 import time
+
+import broker as gpus
+
 
 async def main():
     print("🚀 GPU Broker Minimal - Basic Workflow")
@@ -57,7 +59,7 @@ async def main():
             print("❌ Failed to provision any instance")
             return
         
-        print(f"✅ Instance created!")
+        print("✅ Instance created!")
         print(f"   ID: {instance.id}")
         print(f"   Status: {instance.status}")
         print(f"   GPU: {instance.gpu_type}")
@@ -83,7 +85,7 @@ async def main():
             if (str(instance.status) == "InstanceStatus.RUNNING" and 
                 instance.public_ip and 
                 instance.ssh_port):
-                print(f"✅ Instance ready!")
+                print("✅ Instance ready!")
                 print(f"   Public IP: {instance.public_ip}")
                 print(f"   SSH Port: {instance.ssh_port}")
                 break

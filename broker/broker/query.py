@@ -3,6 +3,7 @@ Pandas-style query engine for GPU search and filtering
 """
 
 from typing import Any, List, Union
+
 from .types import GPUOffer
 
 

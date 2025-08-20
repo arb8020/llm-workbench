@@ -10,12 +10,10 @@ import sys
 import re
 import json
 import os
-import shlex
 from datetime import datetime
 from pathlib import Path
 from dotenv import dotenv_values
 from .deploy import GitDeployment
-from .job_manager import JobManager
 
 app = typer.Typer(help="Bifrost - Remote GPU execution tool")
 console = Console()
@@ -40,7 +38,7 @@ def process_env_vars(
     # 1. Load from .env if --dotenv is used
     if dotenv and Path(".env").exists():
         env_dict.update({k: v for k, v in dotenv_values(".env").items() if v is not None})
-        console.print(f"📄 Loaded .env from current directory")
+        console.print("📄 Loaded .env from current directory")
     
     # 2. Load from --env-file(s) in order
     for f in env_file or []:
@@ -125,7 +123,7 @@ def _execute_command(
                 console.print("🔄 Starting detached job...")
                 job_id = deployment.deploy_and_execute_detached(command, env_dict)
                 console.print(f"✅ Job {job_id} started successfully")
-                console.print(f"💡 Job will continue running even if SSH disconnects")
+                console.print("💡 Job will continue running even if SSH disconnects")
                 return  # Don't wait for completion
             else:
                 # Immediate execution
@@ -173,7 +171,7 @@ def push(
         # Deploy code only
         worktree_path = client.push(target_dir)
         
-        console.print(f"✅ Code deployed successfully")
+        console.print("✅ Code deployed successfully")
         console.print(f"📂 Worktree path: {worktree_path}")
         
     except Exception as e:
@@ -411,14 +409,13 @@ def _copy_files(source: str, destination: str, recursive: bool):
     finally:
         try:
             sftp.close()
-        except:
+        except Exception:
             pass
         client.close()
 
 
 def _copy_file(sftp, remote_path: str, local_path: str):
     """Copy a single file via SFTP."""
-    import os
     from pathlib import Path
     
     # Get remote file size for progress reporting
@@ -426,7 +423,7 @@ def _copy_file(sftp, remote_path: str, local_path: str):
         remote_stat = sftp.stat(remote_path)
         file_size = remote_stat.st_size
         console.print(f"📄 File size: {file_size:,} bytes")
-    except:
+    except Exception:
         file_size = 0
     
     # Ensure local directory exists
@@ -503,7 +500,7 @@ def _show_job_logs(user: str, host: str, port: int, job_id: str, follow: bool, l
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     
     try:
-        console.print(f"🔗 Connecting...")
+        console.print("🔗 Connecting...")
         client.connect(hostname=host, port=port, username=user, timeout=30)
         
         # Check if job exists
@@ -520,7 +517,7 @@ def _show_job_logs(user: str, host: str, port: int, job_id: str, follow: bool, l
                 metadata = json.loads(metadata_output)
                 command = metadata.get('command', 'N/A')
                 console.print(f"Command: {command}")
-            except:
+            except Exception:
                 pass
         
         log_file = f"~/.bifrost/jobs/{job_id}/job.log"
@@ -580,7 +577,7 @@ def _show_instance_jobs(user: str, host: str, port: int):
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     
     try:
-        console.print(f"🔗 Connecting...")
+        console.print("🔗 Connecting...")
         client.connect(hostname=host, port=port, username=user, timeout=30)
         
         # Get list of job directories
@@ -625,7 +622,8 @@ def _show_instance_jobs(user: str, host: str, port: int):
                     command = command[:37] + '...'
                 
                 # Format start time
-                start_time = _format_start_time(job_data.get('start_time'))
+                start_time_str = job_data.get('start_time')
+                start_time = _format_start_time(start_time_str or '')
                 
                 table.add_row(
                     job_id,
@@ -709,7 +707,7 @@ def _calculate_runtime(job_data: dict) -> str:
             minutes = (total_seconds % 3600) // 60
             return f"{hours}h{minutes}m"
             
-    except Exception as e:
+    except Exception:
         return 'N/A'
 
 
@@ -758,7 +756,7 @@ def _execute_legacy(user: str, host: str, port: int, command: str, env_dict: Opt
         
         # Only show errors if command failed (non-zero exit code)
         if stderr_content and exit_code != 0:
-            console.print(f"\n--- Remote Errors ---", style="red")
+            console.print("\n--- Remote Errors ---", style="red")
             console.print(stderr_content, style="red")
         
         if exit_code == 0:

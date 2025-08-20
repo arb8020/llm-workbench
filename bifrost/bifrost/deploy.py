@@ -6,7 +6,6 @@ import uuid
 import logging
 import shlex
 import re
-from pathlib import Path
 from typing import Tuple, Optional, Dict
 import paramiko
 from rich.console import Console
@@ -176,7 +175,7 @@ class GitDeployment:
         ssh_cmd = f"ssh -p {self.ssh_port} -o StrictHostKeyChecking=no"
         remote_url = f"{self.ssh_user}@{self.ssh_host}:{bare_repo_path}"
         
-        console.print(f"📤 Pushing code to remote...")
+        console.print("📤 Pushing code to remote...")
         
         # Push current HEAD to a job-specific branch
         job_branch = f"job/{self.job_id}"
@@ -187,7 +186,7 @@ class GitDeployment:
             env['GIT_SSH_COMMAND'] = ssh_cmd
             
             # Push to remote
-            result = subprocess.run([
+            subprocess.run([
                 "git", "push", remote_url, f"HEAD:refs/heads/{job_branch}"
             ], env=env, capture_output=True, text=True, check=True)
             
@@ -279,7 +278,7 @@ class GitDeployment:
             
             # Only show errors if command failed (non-zero exit code)
             if stderr_content and exit_code != 0:
-                console.print(f"\n--- Remote Errors ---", style="red")
+                console.print("\n--- Remote Errors ---", style="red")
                 console.print(stderr_content, style="red")
             
             return exit_code

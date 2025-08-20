@@ -9,8 +9,8 @@ The fastest way to get started:
 4. Clean up
 """
 
+
 import broker as gpus
-import time
 from broker.types import CloudType
 
 # Step 1: Find best value GPU under $0.40/hr in secure cloud

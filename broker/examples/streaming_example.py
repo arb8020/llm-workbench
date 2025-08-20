@@ -3,11 +3,9 @@
 Example showing streaming vs non-streaming execution
 """
 
-import sys
 import os
+import sys
 
-# Add the broker package to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 import broker as gpus
 

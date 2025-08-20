@@ -5,9 +5,8 @@ import time
 import uuid
 import logging
 import shlex
-from datetime import datetime
-from pathlib import Path
-from typing import Optional, Dict, Any, List
+from datetime import datetime, timezone
+from typing import Optional, Dict, Any
 import paramiko
 from rich.console import Console
 
@@ -41,7 +40,7 @@ class JobManager:
             "command": command,
             "ssh_info": f"{self.ssh_user}@{self.ssh_host}:{self.ssh_port}",
             "status": "starting",
-            "start_time": datetime.utcnow().isoformat() + "Z",
+            "start_time": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "end_time": None,
             "exit_code": None,
             "tmux_session": f"bifrost_{job_id}",
@@ -175,14 +174,14 @@ fi
         
         if not status_exists:
             # Job hasn't started yet, wait a bit more
-            console.print(f"⏳ Job files not found immediately, waiting...")
+            console.print("⏳ Job files not found immediately, waiting...")
             time.sleep(2)
             stdin, stdout, stderr = client.exec_command(status_check_cmd)
             status_exists = stdout.channel.recv_exit_status() == 0
         
         if not status_exists:
             # Check tmux sessions to see what's available for debugging
-            verify_cmd = f"tmux list-sessions 2>/dev/null || echo 'No sessions'"
+            verify_cmd = "tmux list-sessions 2>/dev/null || echo 'No sessions'"
             stdin, stdout, stderr = client.exec_command(verify_cmd)
             sessions_output = stdout.read().decode()
             console.print(f"🐛 Debug - tmux sessions: {sessions_output}")
