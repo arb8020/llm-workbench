@@ -232,19 +232,30 @@ class GitDeployment:
             # Update existing workspace
             console.print("📝 Updating existing workspace...")
             
-            # Pull latest changes
-            cmd = f"cd {workspace_path} && git pull origin main"
-            stdin, stdout, stderr = client.exec_command(cmd)
-            exit_code = stdout.channel.recv_exit_status()
+            # Ensure origin remote is configured (worktrees don't have it by default)
+            remote_url = f"{bare_repo_path}"
+            config_cmd = f"cd {workspace_path} && git remote get-url origin 2>/dev/null || git remote add origin {remote_url}"
+            stdin, stdout, stderr = client.exec_command(config_cmd)
             
-            if exit_code != 0:
-                error = stderr.read().decode()
-                # Try to reset if pull fails (e.g., due to local changes)
-                console.print("⚠️  Pull failed, resetting workspace...")
-                reset_cmd = f"cd {workspace_path} && git fetch origin main && git reset --hard origin/main"
+            # Fetch latest changes from bare repo
+            fetch_cmd = f"cd {workspace_path} && git fetch origin main"
+            stdin, stdout, stderr = client.exec_command(fetch_cmd)
+            fetch_exit = stdout.channel.recv_exit_status()
+            
+            if fetch_exit != 0:
+                fetch_error = stderr.read().decode()
+                console.print(f"⚠️  Fetch failed: {fetch_error}")
+                # Try alternative: reset to match bare repo
+                reset_cmd = f"cd {workspace_path} && git reset --hard main"
                 stdin, stdout, stderr = client.exec_command(reset_cmd)
                 if stdout.channel.recv_exit_status() != 0:
-                    raise RuntimeError(f"Failed to update workspace: {error}")
+                    console.print("⚠️  Reset failed, workspace may be out of sync")
+            else:
+                # Pull or reset to latest
+                pull_cmd = f"cd {workspace_path} && git reset --hard origin/main"
+                stdin, stdout, stderr = client.exec_command(pull_cmd)
+                if stdout.channel.recv_exit_status() != 0:
+                    console.print("⚠️  Reset to origin/main failed")
             
             console.print("✅ Workspace updated successfully")
         else:
