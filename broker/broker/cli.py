@@ -20,6 +20,12 @@ from .types import CloudType
 app = typer.Typer(help="GPU cloud broker CLI")
 console = Console()
 
+# Create subcommand groups
+instances_app = typer.Typer(help="Instance management commands")
+
+# Add subcommands to main app
+app.add_typer(instances_app, name="instances")
+
 
 def _internal_search(gpu_type=None, max_price=None, min_vram=None, provider=None, 
                    cloud_type=None, cuda_version=None, sort_by="price", reverse=False):
@@ -63,7 +69,7 @@ def _internal_search(gpu_type=None, max_price=None, min_vram=None, provider=None
     return offers
 
 
-@app.command()
+@app.command("search")
 def search(
     gpu_type: Optional[str] = typer.Option(None, "--gpu-type", help="GPU type to search for"),
     max_price: Optional[float] = typer.Option(None, "--max-price", help="Maximum price per hour"),
@@ -210,7 +216,7 @@ def show_availability_analysis():
     console.print("\n[bold yellow]Recommendation:[/bold yellow] Use [bold]--cloud-type secure[/bold] for reliable provisioning")
 
 
-@app.command() 
+@app.command("create")
 def create(
     gpu_type: Optional[str] = typer.Option(None, "--gpu-type", help="GPU type to provision"),
     cloud_type: Optional[str] = typer.Option("secure", "--cloud-type", help="Cloud type: 'secure' (default) or 'community'"),
@@ -339,8 +345,8 @@ def create(
         sys.exit(1)
 
 
-@app.command()
-def status(instance_id: str):
+@instances_app.command("status")
+def instances_status(instance_id: str):
     """Get status of a specific instance"""
     console.print(f"📊 Getting status for instance: {instance_id}")
     
@@ -360,8 +366,8 @@ def status(instance_id: str):
         console.print("❌ Instance not found")
 
 
-@app.command()
-def terminate(instance_id: str):
+@instances_app.command("terminate")
+def instances_terminate(instance_id: str):
     """Terminate an instance"""
     console.print(f"🗑️  Terminating instance: {instance_id}")
     
@@ -374,8 +380,8 @@ def terminate(instance_id: str):
         console.print("❌ Failed to terminate instance")
 
 
-@app.command()
-def cleanup(
+@instances_app.command("cleanup")
+def instances_cleanup(
     instance_id: Optional[str] = typer.Argument(None, help="Specific instance ID to cleanup (optional)"),
     all_instances: bool = typer.Option(False, "--all", "-a", help="Cleanup all running instances"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
@@ -403,8 +409,8 @@ def cleanup(
         _cleanup_all_instances(force, dry_run)
 
 
-@app.command()
-def info(
+@instances_app.command("info")
+def instances_info(
     instance_id: str,
     live_metrics: bool = typer.Option(False, "--live-metrics", help="Include real-time disk usage via SSH"),
     json_output: bool = typer.Option(False, "--json", help="JSON output format for scripting")
@@ -442,14 +448,14 @@ def info(
             console.print(f"❌ Failed to get instance info: {e}")
 
 
-@app.command()
-def list(
+@instances_app.command("search")
+def instances_search(
     simple: bool = typer.Option(False, "--simple", help="Simple output format for scripting (id,name,status,ssh)"),
     json_output: bool = typer.Option(False, "--json", help="JSON output format for scripting"),
     name: Optional[str] = typer.Option(None, "--name", help="Filter by instance name"),
     ssh_only: bool = typer.Option(False, "--ssh-only", help="Output only SSH connection strings (one per line)")
 ):
-    """List all user instances"""
+    """Search and list user instances"""
     if not simple and not json_output and not ssh_only:
         console.print("📋 Listing all instances...")
     
@@ -583,8 +589,8 @@ def list(
     console.print(table)
 
 
-@app.command()
-def getssh(instance_id: str):
+@instances_app.command("getssh")
+def instances_getssh(instance_id: str):
     """Get SSH connection string for an instance (machine readable)"""
     # Get instance details
     client = GPUClient()
@@ -624,8 +630,8 @@ def getssh(instance_id: str):
     print(f"{instance.ssh_username}@{instance.public_ip}:{instance.ssh_port}")
 
 
-@app.command()
-def ssh(instance_id: str):
+@instances_app.command("ssh")
+def instances_ssh(instance_id: str):
     """Start an interactive SSH session to an instance"""
     console.print(f"🔗 Connecting to instance: {instance_id}")
     
@@ -666,8 +672,8 @@ def ssh(instance_id: str):
         console.print(f"❌ SSH connection failed: {e}")
 
 
-@app.command()
-def exec(instance_id: str, command: str):
+@instances_app.command("exec")
+def instances_exec(instance_id: str, command: str):
     """Execute a command on an instance with streaming output"""
     console.print(f"🔄 Executing command on instance: {instance_id}")
     
@@ -780,6 +786,37 @@ def display_enhanced_instance_info(instance_data: dict, live_metrics: bool, inst
         status_info.append(util_info)
     
     console.print(Panel("\n".join(status_info), title="📊 Status & Performance", box=box.ROUNDED))
+    
+    # GPU Telemetry section
+    gpu_telemetry = machine.get('gpuTelemetry', []) if machine else []
+    if gpu_telemetry:
+        telemetry_info = []
+        for i, gpu in enumerate(gpu_telemetry):
+            gpu_id = gpu.get('id', f'GPU-{i}')
+            util = gpu.get('percentUtilization', 0)
+            temp = gpu.get('temperatureCelcius', 0)
+            mem_util = gpu.get('memoryUtilization', 0)
+            power = gpu.get('powerWatts', 0)
+            
+            # Add temperature warning
+            temp_warning = ""
+            if temp > 80:
+                temp_warning = " 🔥 Hot!"
+            elif temp > 70:
+                temp_warning = " ⚠️ Warm"
+            
+            # Add power efficiency info
+            power_info = f"{power:.1f}W" if power > 0 else "N/A"
+            
+            telemetry_info.append(f"[bold]{gpu_id}[/bold]:")
+            telemetry_info.append(f"• Utilization: {util:.1f}%")
+            telemetry_info.append(f"• Memory: {mem_util:.1f}% utilized")
+            telemetry_info.append(f"• Temperature: {temp:.1f}°C{temp_warning}")
+            telemetry_info.append(f"• Power: {power_info}")
+            if i < len(gpu_telemetry) - 1:
+                telemetry_info.append("")  # Add spacing between GPUs
+        
+        console.print(Panel("\n".join(telemetry_info), title="🎮 GPU Telemetry", box=box.ROUNDED))
     
     # Hardware Configuration section
     hardware_info = [
@@ -979,6 +1016,8 @@ def _cleanup_all_instances(force: bool, dry_run: bool):
         for failed_id in failed_instances:
             console.print(f"   {failed_id}")
         console.print("💡 Try running the cleanup command again in a few seconds")
+
+
 
 
 def main():
