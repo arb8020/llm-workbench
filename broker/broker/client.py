@@ -160,6 +160,11 @@ class GPUClient:
         return self._query.memory_gb
     
     @property
+    def vram_gb(self):
+        """Query by GPU VRAM: client.vram_gb >= 8"""
+        return self._query.vram_gb
+    
+    @property
     def cloud_type(self):
         """Query by cloud type: client.cloud_type == CloudType.SECURE"""
         return self._query.cloud_type

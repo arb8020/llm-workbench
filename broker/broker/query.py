@@ -137,12 +137,12 @@ class GPUQuery:
     # Query fields
     gpu_type = QueryField('gpu_type')
     price_per_hour = QueryField('price_per_hour')
-    vram_gb = QueryField('vram_gb')
+    vram_gb = QueryField('vram_gb')          # GPU VRAM in GB
+    memory_gb = QueryField('memory_gb')      # Alias for vram_gb (backward compatibility)
     provider = QueryField('provider')
     availability = QueryField('availability')
     region = QueryField('region')
     vcpu = QueryField('vcpu')
-    memory_gb = QueryField('memory_gb')
     storage_gb = QueryField('storage_gb')
     spot = QueryField('spot')
     cuda_version = QueryField('cuda_version')

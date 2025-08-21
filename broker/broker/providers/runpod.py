@@ -105,13 +105,15 @@ def search_gpu_offers(cuda_version: Optional[str] = None) -> List[GPUOffer]:
             price_info = gpu_type.get("lowestPrice", {})
             
             if gpu_type.get("secureCloud") and price_info.get("uninterruptablePrice"):
+                gpu_vram = gpu_type.get("memoryInGb", 0)
                 offers.append(GPUOffer(
                     id=f"runpod-{gpu_type['id']}-secure",
                     provider="runpod",
                     gpu_type=gpu_type["displayName"],
                     gpu_count=1,
                     vcpu=0,  # Not specified in this query
-                    memory_gb=gpu_type.get("memoryInGb", 0),
+                    memory_gb=gpu_vram,  # For backward compatibility - this is actually GPU VRAM
+                    vram_gb=gpu_vram,    # Properly populate VRAM field
                     storage_gb=0,  # Not specified in this query  
                     price_per_hour=price_info["uninterruptablePrice"],
                     availability_zone="secure-cloud",
@@ -121,13 +123,15 @@ def search_gpu_offers(cuda_version: Optional[str] = None) -> List[GPUOffer]:
                 ))
             
             if gpu_type.get("communityCloud") and price_info.get("minimumBidPrice"):
+                gpu_vram = gpu_type.get("memoryInGb", 0)
                 offers.append(GPUOffer(
                     id=f"runpod-{gpu_type['id']}-community-spot",
                     provider="runpod", 
                     gpu_type=gpu_type["displayName"],
                     gpu_count=1,
                     vcpu=0,  # Not specified in this query
-                    memory_gb=gpu_type.get("memoryInGb", 0),
+                    memory_gb=gpu_vram,  # For backward compatibility - this is actually GPU VRAM
+                    vram_gb=gpu_vram,    # Properly populate VRAM field
                     storage_gb=0,  # Not specified in this query
                     price_per_hour=price_info["minimumBidPrice"], 
                     availability_zone="community-cloud",
@@ -247,6 +251,17 @@ def get_instance_details_enhanced(instance_id: str) -> Optional[dict]:
             }
             machine {
                 podHostId
+                cpuUtilPercent
+                memoryUtilPercent
+                diskUtilPercent
+                gpuUtilPercent
+                gpuTelemetry {
+                    id
+                    percentUtilization
+                    temperatureCelcius
+                    memoryUtilization
+                    powerWatts
+                }
             }
         }
     }
