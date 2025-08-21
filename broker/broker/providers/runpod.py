@@ -255,6 +255,11 @@ def get_instance_details_enhanced(instance_id: str) -> Optional[dict]:
                 memoryUtilPercent
                 diskUtilPercent
                 gpuUtilPercent
+                gpuType {
+                    displayName
+                    manufacturer
+                    memoryInGb
+                }
                 gpuTelemetry {
                     id
                     percentUtilization
@@ -296,6 +301,11 @@ def get_instance_details(instance_id: str) -> Optional[GPUInstance]:
             machineId
             machine {
                 podHostId
+                gpuType {
+                    displayName
+                    manufacturer
+                    memoryInGb
+                }
             }
             desiredStatus
             lastStatusChange
@@ -368,11 +378,16 @@ def get_instance_details(instance_id: str) -> Optional[GPUInstance]:
             ssh_port = 22
             ssh_username = pod_host_id  # Proxy uses podHostId as username
         
+        # Extract GPU type from machine details
+        gpu_type = "unknown"
+        if pod.get("machine") and pod["machine"].get("gpuType") and pod["machine"]["gpuType"].get("displayName"):
+            gpu_type = pod["machine"]["gpuType"]["displayName"]
+        
         return GPUInstance(
             id=pod["id"],
             provider="runpod",
             status=status,
-            gpu_type="unknown",  # TODO: Get from machine details
+            gpu_type=gpu_type,
             gpu_count=pod.get("gpuCount", 0),
             name=pod.get("name"),  # Fix: Properly map name field
             price_per_hour=pod.get("costPerHr", 0.0),
@@ -424,11 +439,16 @@ def _parse_pod_to_instance(pod: Dict[str, Any]) -> GPUInstance:
         ssh_port = 22
         ssh_username = pod_host_id  # Proxy uses podHostId as username
     
+    # Extract GPU type from machine details
+    gpu_type = "unknown"
+    if pod.get("machine") and pod["machine"].get("gpuType") and pod["machine"]["gpuType"].get("displayName"):
+        gpu_type = pod["machine"]["gpuType"]["displayName"]
+    
     return GPUInstance(
         id=pod["id"],
         provider="runpod",
         status=status,
-        gpu_type="unknown",  # TODO: Get from machine details
+        gpu_type=gpu_type,
         gpu_count=pod.get("gpuCount", 0),
         name=pod.get("name"),  # Fix: Properly map name field
         price_per_hour=pod.get("costPerHr", 0.0),
@@ -453,6 +473,11 @@ def list_instances() -> List[GPUInstance]:
                 machineId
                 machine {
                     podHostId
+                    gpuType {
+                        displayName
+                        manufacturer
+                        memoryInGb
+                    }
                 }
                 desiredStatus
                 lastStatusChange
