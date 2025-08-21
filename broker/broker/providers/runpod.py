@@ -504,6 +504,47 @@ def list_instances() -> List[GPUInstance]:
         return []
 
 
+def get_user_balance() -> Optional[Dict[str, Any]]:
+    """Get user balance and spending information from RunPod"""
+    query = """
+    query {
+        myself {
+            clientBalance
+            currentSpendPerHr
+            clientLifetimeSpend
+            spendLimit
+            creditAlertThreshold
+            referralEarnings
+        }
+    }
+    """
+    
+    try:
+        data = _make_graphql_request(query)
+        user_data = data.get("myself")
+        
+        if not user_data:
+            return None
+        
+        # Convert to more readable format
+        balance_info = {
+            "provider": "runpod",
+            "current_balance": user_data.get("clientBalance", 0),
+            "current_spend_per_hour": user_data.get("currentSpendPerHr", 0),
+            "lifetime_spend": user_data.get("clientLifetimeSpend", 0),
+            "spend_limit": user_data.get("spendLimit"),
+            "credit_alert_threshold": user_data.get("creditAlertThreshold"),
+            "referral_earnings": user_data.get("referralEarnings", 0),
+            "raw_data": user_data
+        }
+        
+        return balance_info
+        
+    except Exception as e:
+        logger.error(f"Failed to get RunPod user balance: {e}")
+        return None
+
+
 def terminate_instance(instance_id: str) -> bool:
     """Terminate a RunPod instance"""
     # Use simple schema - RunPod API might return different types

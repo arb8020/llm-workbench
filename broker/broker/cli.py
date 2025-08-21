@@ -22,9 +22,11 @@ console = Console()
 
 # Create subcommand groups
 instances_app = typer.Typer(help="Instance management commands")
+providers_app = typer.Typer(help="Provider information and balance commands")
 
 # Add subcommands to main app
 app.add_typer(instances_app, name="instances")
+app.add_typer(providers_app, name="providers")
 
 
 def _internal_search(gpu_type=None, max_price=None, min_vram=None, provider=None, 
@@ -321,8 +323,11 @@ def create(
                         is_proxy = current_instance.public_ip == "ssh.runpod.io"
                         
                         if allow_proxy or not is_proxy:
-                            # Print SSH connection string to stdout for piping
-                            print(f"{current_instance.ssh_username}@{current_instance.public_ip}:{current_instance.ssh_port}")
+                            # Print SSH command for easy copy-paste
+                            if current_instance.ssh_port == 22:
+                                print(f"ssh {current_instance.ssh_username}@{current_instance.public_ip}")
+                            else:
+                                print(f"ssh -p {current_instance.ssh_port} {current_instance.ssh_username}@{current_instance.public_ip}")
                             return
                         # If it's proxy and we don't allow proxy, continue waiting
                 
@@ -366,16 +371,67 @@ def instances_status(instance_id: str):
         console.print("❌ Instance not found")
 
 
-@instances_app.command("terminate")
-def instances_terminate(instance_id: str):
-    """Terminate an instance"""
-    console.print(f"🗑️  Terminating instance: {instance_id}")
+@instances_app.command("terminate")  
+def instances_terminate(
+    instance_id: Optional[str] = typer.Argument(None, help="Instance ID or partial ID to search for and terminate"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be terminated without actually doing it")
+):
+    """Search for an instance by ID and terminate it"""
+    if not instance_id:
+        console.print("❌ Instance ID is required")
+        console.print("💡 Usage: broker instances terminate <instance_id>")
+        return
+    
+    console.print(f"🔍 Searching for instance: {instance_id}")
     
     client = GPUClient()
-    success = client.terminate_instance(instance_id)
+    
+    # Try exact match first
+    instance = client.get_instance(instance_id)
+    
+    # If not found, try partial ID match
+    if not instance:
+        instances = client.list_instances()
+        matching_instances = [inst for inst in instances if inst.id.startswith(instance_id)]
+        
+        if len(matching_instances) == 0:
+            console.print(f"❌ No instances found matching '{instance_id}'")
+            return
+        elif len(matching_instances) > 1:
+            console.print(f"❌ Multiple instances match '{instance_id}':")
+            for inst in matching_instances:
+                console.print(f"   {inst.id} - {inst.status}")
+            console.print("💡 Please use a more specific ID")
+            return
+        else:
+            instance = matching_instances[0]
+    
+    # Display instance details
+    console.print(f"✅ Found instance: {instance.id}")
+    console.print(f"   Status: {instance.status}")
+    console.print(f"   GPU: {instance.gpu_type} x{instance.gpu_count}")
+    console.print(f"   Price: ${instance.price_per_hour:.3f}/hr")
+    
+    if dry_run:
+        console.print("🔥 [DRY RUN] Would terminate this instance")
+        return
+    
+    # Confirmation unless force is used
+    if not force:
+        console.print("\n⚠️  This will terminate the instance and stop all billing")
+        response = typer.confirm("Are you sure you want to proceed?")
+        if not response:
+            console.print("❌ Termination cancelled")
+            return
+    
+    # Perform termination
+    console.print(f"🗑️ Terminating instance: {instance.id}")
+    success = client.terminate_instance(instance.id)
     
     if success:
         console.print("✅ Instance terminated successfully")
+        console.print("💰 Billing for this instance has been stopped")
     else:
         console.print("❌ Failed to terminate instance")
 
@@ -448,14 +504,14 @@ def instances_info(
             console.print(f"❌ Failed to get instance info: {e}")
 
 
-@instances_app.command("search")
-def instances_search(
+@instances_app.command("list")
+def instances_list(
     simple: bool = typer.Option(False, "--simple", help="Simple output format for scripting (id,name,status,ssh)"),
     json_output: bool = typer.Option(False, "--json", help="JSON output format for scripting"),
     name: Optional[str] = typer.Option(None, "--name", help="Filter by instance name"),
     ssh_only: bool = typer.Option(False, "--ssh-only", help="Output only SSH connection strings (one per line)")
 ):
-    """Search and list user instances"""
+    """List user instances"""
     if not simple and not json_output and not ssh_only:
         console.print("📋 Listing all instances...")
     
@@ -485,8 +541,11 @@ def instances_search(
         for instance in instances:
             # Only output running instances with SSH info
             if str(instance.status).lower() == "instancestatus.running" and instance.public_ip and instance.ssh_port:
-                ssh_info = f"{instance.ssh_username}@{instance.public_ip}:{instance.ssh_port}"
-                print(ssh_info)
+                if instance.ssh_port == 22:
+                    ssh_cmd = f"ssh {instance.ssh_username}@{instance.public_ip}"
+                else:
+                    ssh_cmd = f"ssh -p {instance.ssh_port} {instance.ssh_username}@{instance.public_ip}"
+                print(ssh_cmd)
         return
     
     # JSON output format for scripting
@@ -591,7 +650,7 @@ def instances_search(
 
 @instances_app.command("getssh")
 def instances_getssh(instance_id: str):
-    """Get SSH connection string for an instance (machine readable)"""
+    """Get SSH command for an instance (ready to copy-paste)"""
     # Get instance details
     client = GPUClient()
     instance = client.get_instance(instance_id)
@@ -626,8 +685,13 @@ def instances_getssh(instance_id: str):
         console.print("❌ SSH connection info not available")
         sys.exit(1)
     
-    # Output just the SSH connection string for piping
-    print(f"{instance.ssh_username}@{instance.public_ip}:{instance.ssh_port}")
+    # Output SSH command for easy copy-paste
+    if instance.ssh_port == 22:
+        # Standard port, no -p needed
+        print(f"ssh {instance.ssh_username}@{instance.public_ip}")
+    else:
+        # Non-standard port, include -p
+        print(f"ssh -p {instance.ssh_port} {instance.ssh_username}@{instance.public_ip}")
 
 
 @instances_app.command("ssh")
@@ -745,6 +809,114 @@ def config():
         console.print("   1. Copy `.env.example` to `.env` and add your RunPod API key")
         console.print("   2. Ensure SSH key exists at `~/.ssh/id_ed25519` or set GPU_BROKER_SSH_KEY")
         console.print("   3. Upload your SSH public key to RunPod dashboard")
+
+
+@providers_app.command("balance")
+def providers_balance(
+    json_output: bool = typer.Option(False, "--json", help="JSON output format for scripting"),
+    provider: Optional[str] = typer.Option(None, "--provider", help="Specific provider (default: all available)")
+):
+    """Show user balance and spending information for each provider"""
+    
+    if not json_output:
+        console.print("💰 [bold]Provider Balance Information[/bold]\n")
+    
+    # For now, we only support RunPod, but this is designed to be extensible
+    providers_to_check = ["runpod"] if not provider else [provider]
+    
+    balance_data = []
+    
+    for provider_name in providers_to_check:
+        if provider_name.lower() == "runpod":
+            try:
+                from .providers.runpod import get_user_balance
+                balance_info = get_user_balance()
+                
+                if balance_info:
+                    balance_data.append(balance_info)
+                    
+                    if not json_output:
+                        # Display RunPod balance information
+                        current_balance = balance_info.get("current_balance", 0)
+                        current_spend = balance_info.get("current_spend_per_hour", 0)
+                        lifetime_spend = balance_info.get("lifetime_spend", 0)
+                        spend_limit = balance_info.get("spend_limit")
+                        referral_earnings = balance_info.get("referral_earnings", 0)
+                        
+                        # Create balance panel
+                        balance_info_text = [
+                            f"Current Balance: [green]${current_balance:.2f}[/green]",
+                            f"Current Hourly Spend: [yellow]${current_spend:.3f}/hr[/yellow]",
+                            f"Lifetime Spend: [blue]${lifetime_spend:.2f}[/blue]",
+                        ]
+                        
+                        if spend_limit:
+                            balance_info_text.append(f"Spend Limit: [red]${spend_limit:.2f}[/red]")
+                        
+                        if referral_earnings > 0:
+                            balance_info_text.append(f"Referral Earnings: [cyan]${referral_earnings:.2f}[/cyan]")
+                        
+                        # Calculate burn rate and time remaining
+                        if current_spend > 0 and current_balance > 0:
+                            hours_remaining = current_balance / current_spend
+                            if hours_remaining < 24:
+                                time_str = f"{hours_remaining:.1f} hours"
+                                warning = " ⚠️"
+                            elif hours_remaining < 168:  # 1 week
+                                time_str = f"{hours_remaining/24:.1f} days"
+                                warning = " ⚠️" if hours_remaining < 48 else ""
+                            else:
+                                time_str = f"{hours_remaining/24/7:.1f} weeks"
+                                warning = ""
+                            
+                            balance_info_text.append(f"Time Remaining: [magenta]{time_str}[/magenta]{warning}")
+                        
+                        console.print(Panel(
+                            "\n".join(balance_info_text), 
+                            title=f"🏃 RunPod Account", 
+                            box=box.ROUNDED
+                        ))
+                else:
+                    if not json_output:
+                        console.print("❌ Failed to get RunPod balance information")
+                        
+            except Exception as e:
+                if not json_output:
+                    console.print(f"❌ Error getting RunPod balance: {e}")
+        else:
+            if not json_output:
+                console.print(f"❌ Provider '{provider_name}' not supported yet")
+    
+    if json_output:
+        import json
+        print(json.dumps(balance_data, indent=2))
+    elif not balance_data:
+        console.print("❌ No balance information available")
+
+
+@providers_app.command("list")
+def providers_list():
+    """List all available providers"""
+    console.print("📋 [bold]Available Providers[/bold]\n")
+    
+    providers_info = [
+        ("runpod", "RunPod", "✅ Active", "Community & Secure cloud GPU instances"),
+        # Add more providers here as they become available
+        # ("vast", "Vast.ai", "🚧 Planned", "Community GPU marketplace"),
+        # ("lambda", "Lambda Labs", "🚧 Planned", "On-demand cloud GPUs"),
+    ]
+    
+    table = Table(title="GPU Cloud Providers")
+    table.add_column("Provider", style="cyan")
+    table.add_column("Name", style="green")
+    table.add_column("Status", style="yellow")
+    table.add_column("Description", style="blue")
+    
+    for provider_id, name, status, description in providers_info:
+        table.add_row(provider_id, name, status, description)
+    
+    console.print(table)
+    console.print("\n💡 Use 'broker providers balance' to check account balances")
 
 
 def display_enhanced_instance_info(instance_data: dict, live_metrics: bool, instance_id: str):
