@@ -126,7 +126,7 @@ class BifrostClient:
         except Exception as e:
             raise ConnectionError(f"Failed to load SSH key from {key_path}: {e}")
     
-    def push(self, target_dir: Optional[str] = None) -> str:
+    def push(self, isolated: bool = False, target_dir: Optional[str] = None) -> str:
         """
         Push/sync local code to remote instance without execution.
         
@@ -134,15 +134,16 @@ class BifrostClient:
         1. Creates or updates Git worktree on remote instance
         2. Copies current directory to remote via Git
         3. Auto-detects and installs Python dependencies
-        4. Returns path to deployed worktree
+        4. Returns path to deployed code
         
         Mental model: Like `git push` - send code to remote
         
         Args:
-            target_dir: Optional specific directory name for worktree
+            isolated: Create isolated worktree with job_id (default: False)
+            target_dir: Custom directory name (only used with isolated=True)
             
         Returns:
-            Path to deployed worktree on remote instance
+            Path to deployed code directory
             
         Raises:
             ConnectionError: SSH connection failed
@@ -150,21 +151,30 @@ class BifrostClient:
         """
         try:
             deployment = GitDeployment(self.ssh.user, self.ssh.host, self.ssh.port)
-            worktree_path = deployment.deploy_code_only(target_dir)
-            self.logger.info(f"Code deployed to: {worktree_path}")
-            return worktree_path
+            
+            if isolated:
+                # Use existing isolated worktree deployment
+                worktree_path = deployment.deploy_code_only(target_dir)
+                self.logger.info(f"Code deployed to isolated worktree: {worktree_path}")
+                return worktree_path
+            else:
+                # Use workspace deployment (shared directory)
+                workspace_path = target_dir or "~/.bifrost/workspace"
+                deployment.deploy_to_workspace(workspace_path)
+                self.logger.info(f"Code deployed to workspace: {workspace_path}")
+                return workspace_path
         except Exception as e:
             if isinstance(e, ConnectionError):
                 raise
             raise JobError(f"Code deployment failed: {e}")
     
-    def exec(self, command: str, env: Optional[Dict[str, str]] = None, worktree: Optional[str] = None) -> str:
+    def exec(self, command: str, env: Optional[Dict[str, str]] = None, working_dir: Optional[str] = None, worktree: Optional[str] = None) -> str:
         """
-        Execute command in remote environment (optionally in specific worktree).
+        Execute command in remote environment.
         
         This method:
         1. Executes command directly on remote instance
-        2. Optionally runs in context of specific worktree directory
+        2. Runs in context of working directory (defaults to ~/.bifrost/workspace/)
         3. Applies environment variables if provided
         4. Returns command output
         
@@ -173,7 +183,8 @@ class BifrostClient:
         Args:
             command: Command to execute
             env: Environment variables to set
-            worktree: Specific worktree/directory path, or current directory if None
+            working_dir: Working directory (defaults to ~/.bifrost/workspace/ if deployed)
+            worktree: DEPRECATED - use working_dir instead
             
         Returns:
             Command output as string
@@ -185,15 +196,34 @@ class BifrostClient:
         try:
             ssh_client = self._get_ssh_client()
             
-            # Build command with optional worktree context
-            if worktree:
-                # Validate worktree exists for better error messages
-                stdin, stdout, stderr = ssh_client.exec_command(f"test -d {worktree}")
+            # Handle deprecated worktree parameter
+            if worktree is not None:
+                import warnings
+                warnings.warn(
+                    "The 'worktree' parameter is deprecated. Use 'working_dir' instead.",
+                    DeprecationWarning,
+                    stacklevel=2
+                )
+                if working_dir is None:
+                    working_dir = worktree
+            
+            # Build command with working directory context
+            if working_dir:
+                # Validate directory exists for better error messages
+                stdin, stdout, stderr = ssh_client.exec_command(f"test -d {working_dir}")
                 if stdout.channel.recv_exit_status() != 0:
-                    raise JobError(f"Directory not found: {worktree}")
-                full_command = f"cd {worktree} && {command}"
+                    raise JobError(f"Directory not found: {working_dir}")
+                full_command = f"cd {working_dir} && {command}"
             else:
-                full_command = command
+                # Default to workspace if it exists, otherwise home with warning
+                default_dir = "~/.bifrost/workspace"
+                stdin, stdout, stderr = ssh_client.exec_command(f"test -d {default_dir}")
+                if stdout.channel.recv_exit_status() == 0:
+                    full_command = f"cd {default_dir} && {command}"
+                    self.logger.info(f"Using default working directory: {default_dir}")
+                else:
+                    full_command = command
+                    self.logger.warning("No code deployed yet. Running from home directory. Consider running push() first.")
             
             # Execute command with environment variables if provided
             if env:
@@ -221,20 +251,21 @@ class BifrostClient:
                 raise
             raise JobError(f"Execution failed: {e}")
     
-    def deploy(self, command: str, env: Optional[Dict[str, str]] = None) -> str:
+    def deploy(self, command: str, env: Optional[Dict[str, str]] = None, isolated: bool = False) -> str:
         """
         Deploy local code and execute command (convenience method).
         
         This method:
         1. Calls push() to deploy code
-        2. Calls exec() to run command in deployed worktree
-        3. Equivalent to: push() followed by exec(command, worktree=worktree_path)
+        2. Calls exec() to run command in deployed directory
+        3. Equivalent to: push() followed by exec(command, working_dir=code_path)
         
         Mental model: Like deployment tools - deploy and start application
         
         Args:
             command: Command to execute after deployment
             env: Environment variables to set
+            isolated: Create isolated worktree with job_id (default: False)
             
         Returns:
             Command output as string
@@ -243,8 +274,8 @@ class BifrostClient:
             ConnectionError: SSH connection failed
             JobError: Deployment or execution failed
         """
-        worktree_path = self.push()
-        return self.exec(command, env, worktree_path)
+        code_path = self.push(isolated=isolated)
+        return self.exec(command, env, working_dir=code_path)
     
     def run(self, command: str, env: Optional[Dict[str, str]] = None, no_deploy: bool = False) -> str:
         """

@@ -195,6 +195,73 @@ class GitDeployment:
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Failed to push code: {e.stderr}")
     
+    def push_code_to_main(self, repo_name: str, commit_hash: str, bare_repo_path: str) -> None:
+        """Push current code to remote bare repository main branch."""
+        
+        # Build SSH command for git push
+        ssh_cmd = f"ssh -p {self.ssh_port} -o StrictHostKeyChecking=no"
+        remote_url = f"{self.ssh_user}@{self.ssh_host}:{bare_repo_path}"
+        
+        console.print("📤 Pushing code to remote main branch...")
+        
+        try:
+            # Set git SSH command
+            env = os.environ.copy()
+            env['GIT_SSH_COMMAND'] = ssh_cmd
+            
+            # Push to remote main branch
+            subprocess.run([
+                "git", "push", remote_url, "HEAD:refs/heads/main"
+            ], env=env, capture_output=True, text=True, check=True)
+            
+            console.print("✅ Code pushed to main branch")
+            
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Failed to push code to main: {e.stderr}")
+    
+    def create_or_update_workspace(self, client: paramiko.SSHClient, bare_repo_path: str, workspace_path: str) -> None:
+        """Create or update shared workspace directory."""
+        
+        console.print(f"🌳 Setting up workspace: {workspace_path}")
+        
+        # Check if workspace already exists
+        stdin, stdout, stderr = client.exec_command(f"test -d {workspace_path}")
+        workspace_exists = stdout.channel.recv_exit_status() == 0
+        
+        if workspace_exists:
+            # Update existing workspace
+            console.print("📝 Updating existing workspace...")
+            
+            # Pull latest changes
+            cmd = f"cd {workspace_path} && git pull origin main"
+            stdin, stdout, stderr = client.exec_command(cmd)
+            exit_code = stdout.channel.recv_exit_status()
+            
+            if exit_code != 0:
+                error = stderr.read().decode()
+                # Try to reset if pull fails (e.g., due to local changes)
+                console.print("⚠️  Pull failed, resetting workspace...")
+                reset_cmd = f"cd {workspace_path} && git fetch origin main && git reset --hard origin/main"
+                stdin, stdout, stderr = client.exec_command(reset_cmd)
+                if stdout.channel.recv_exit_status() != 0:
+                    raise RuntimeError(f"Failed to update workspace: {error}")
+            
+            console.print("✅ Workspace updated successfully")
+        else:
+            # Create new workspace
+            console.print("🆕 Creating new workspace...")
+            
+            # Create workspace as git worktree from main branch
+            cmd = f"cd {bare_repo_path} && git worktree add {workspace_path} main"
+            stdin, stdout, stderr = client.exec_command(cmd)
+            exit_code = stdout.channel.recv_exit_status()
+            
+            if exit_code != 0:
+                error = stderr.read().decode()
+                raise RuntimeError(f"Failed to create workspace: {error}")
+            
+            console.print(f"✅ Workspace created at: {workspace_path}")
+    
     def create_worktree(self, client: paramiko.SSHClient, repo_name: str) -> str:
         """Create git worktree for this job."""
         
@@ -292,6 +359,68 @@ class GitDeployment:
                 except Exception as e:
                     logger.warning(f"Failed to cleanup: {e}")
             
+            client.close()
+    
+    def deploy_to_workspace(self, workspace_path: str = "~/.bifrost/workspace") -> str:
+        """Deploy code to shared workspace directory.
+        
+        This method:
+        1. Detects git repository and current commit
+        2. Sets up remote .bifrost directory structure  
+        3. Pushes code to remote bare repository
+        4. Creates or updates shared workspace directory
+        5. Installs Python dependencies if detected
+        
+        Args:
+            workspace_path: Path to workspace directory (default: ~/.bifrost/workspace)
+            
+        Returns:
+            Path to workspace directory
+            
+        Raises:
+            ValueError: If not in a git repository
+            RuntimeError: If deployment fails
+        """
+        # Detect git repo
+        repo_name, commit_hash = self.detect_git_repo()
+        
+        # Create SSH client
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        
+        try:
+            # Connect to remote
+            console.print(f"🔗 Connecting to {self.ssh_user}@{self.ssh_host}:{self.ssh_port}")
+            client.connect(hostname=self.ssh_host, port=self.ssh_port, username=self.ssh_user)
+            
+            # Set up remote structure  
+            bare_repo_path = self.setup_remote_structure(client, repo_name)
+            
+            # Push code to main branch instead of job-specific branch
+            self.push_code_to_main(repo_name, commit_hash, bare_repo_path)
+            
+            # Create or update workspace
+            self.create_or_update_workspace(client, bare_repo_path, workspace_path)
+            
+            # Install dependencies
+            bootstrap_cmd = self.detect_bootstrap_command(client, workspace_path)
+            if bootstrap_cmd:
+                bootstrap_only = bootstrap_cmd.rstrip(" && ")
+                console.print(f"🔄 Installing dependencies: {bootstrap_only}")
+                
+                stdin, stdout, stderr = client.exec_command(f"cd {workspace_path} && {bootstrap_only}")
+                exit_code = stdout.channel.recv_exit_status()
+                
+                if exit_code != 0:
+                    error = stderr.read().decode()
+                    console.print(f"⚠️  Dependency installation warning: {error}")
+                else:
+                    console.print("✅ Dependencies installed successfully")
+            
+            console.print(f"🎉 Code deployed successfully to workspace: {workspace_path}")
+            return workspace_path
+            
+        finally:
             client.close()
     
     def deploy_code_only(self, target_dir: Optional[str] = None) -> str:
