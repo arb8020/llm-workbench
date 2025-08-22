@@ -57,8 +57,7 @@ def deploy_interpretability_server(min_vram: int = 12, max_price: float = 0.60) 
     print("   Note: Using uv lock and sync for consistent dependency resolution")
     
     # Install engine with interpretability dependencies using uv
-    bifrost_client.exec("uv sync")
-    result = bifrost_client.exec("uv add --editable '.[interp]'")
+    result = bifrost_client.exec("uv sync --extra interp")
     if result and ("Project synced" in result or "already up-to-date" in result.lower()):
         print("✅ engine[interp] installed successfully")
         print("   Includes: nnsight, vLLM 0.9.2, FastAPI, uvicorn with resolved transformers")
