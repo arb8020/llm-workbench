@@ -52,35 +52,24 @@ def deploy_interpretability_server(min_vram: int = 12, max_price: float = 0.60) 
     bifrost_client.exec("echo 'Codebase deployed successfully'")
     print(f"✅ Code deployed to: {workspace_path}")
     
-    # 3. INSTALL INTERPRETABILITY DEPENDENCIES
-    print("🔧 Installing nnsight and interpretability dependencies...")
-    print("   Note: This requires specific vLLM version (0.6.4.post1) for nnsight compatibility")
+    # 3. INSTALL ENGINE WITH INTERPRETABILITY DEPENDENCIES
+    print("🔧 Installing engine[interp] with nnsight and interpretability dependencies...")
+    print("   Note: This uses the engine module's optional [interp] dependencies")
     
-    # First, remove any existing vllm installation that might conflict
-    cleanup_cmd = (
-        "uv remove vllm || echo 'No existing vllm to remove' && "
-        "echo 'Cleaned up potential version conflicts'"
-    )
-    bifrost_client.exec(cleanup_cmd)
-    
-    # Install the specific versions required by nnsight
-    install_cmd = (
-        "uv add 'nnsight>=0.4' 'vllm==0.6.4.post1' 'triton==3.1.0' fastapi uvicorn && "
-        "echo 'Dependencies installed successfully'"
-    )
+    # Use uv to install engine with interpretability dependencies
+    install_cmd = "uv pip install -e '.[interp]'"
     result = bifrost_client.exec(install_cmd)
-    if result and "successfully" in result:
-        print("✅ nnsight-compatible dependencies installed")
-        print("   vLLM version: 0.6.4.post1 (required for nnsight)")
-        print("   Triton version: 3.1.0 (required for nnsight)")
+    if result and "Successfully installed" in result:
+        print("✅ engine[interp] installed successfully")
+        print("   Includes: nnsight, vLLM 0.6.4.post1, triton 3.1.0, FastAPI, uvicorn")
     else:
-        print("⚠️  Dependency installation may have issues - check logs")
+        print("⚠️  engine[interp] installation may have issues - check logs")
     
     # 4. START SERVER IN TMUX
     print("🌟 Starting interpretability server in tmux session...")
     
     # Create tmux session and start interpretability server with persistent logging
-    tmux_cmd = "tmux new-session -d -s interp 'python examples/deploy_inference_server/simple_vllm_nnsight/start_server.py 2>&1 | tee ~/interp_server.log'"
+    tmux_cmd = "tmux new-session -d -s interp 'python -m engine.scripts.deploy_simple.interp 2>&1 | tee ~/interp_server.log'"
     bifrost_client.exec(tmux_cmd)
     
     print("✅ Interpretability server starting in tmux session 'interp'")
