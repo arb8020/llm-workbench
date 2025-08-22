@@ -44,13 +44,26 @@ python examples/deploy_inference_server/simple_vllm_nnsight/deploy.py --min-vram
 ## Usage Patterns
 
 ### Deploy and Test
+
+#### Quick Test with Universal Client
 ```bash
 # Deploy any server type
-python examples/deploy_inference_server/simple_vllm/deploy.py --json > vllm_info.json
+python examples/deploy_inference_server/simple_vllm/deploy.py --json > server_info.json
+SERVER_URL=$(jq -r '.url' server_info.json)
 
-# Extract connection info
-SERVER_URL=$(jq -r '.url' vllm_info.json)
+# Test with universal client (no external dependencies needed)
+python examples/deploy_inference_server/test_client.py --url $SERVER_URL --prompt "The capital of France is"
 
+# Test streaming
+python examples/deploy_inference_server/test_client.py --url $SERVER_URL --prompt "Write a haiku about coding" --stream
+
+# Test with activation collection (interpretability servers only)
+python examples/deploy_inference_server/test_client.py --url $SERVER_URL \
+  --prompt "The answer to 2+2 is" --collect-activations --activation-layers 6 12 --verbose
+```
+
+#### Manual cURL Testing  
+```bash
 # Test standard completion
 curl -X POST $SERVER_URL/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -151,6 +164,55 @@ broker terminate <instance-id>
 | simple_vllm_nnsight | 0.6.4.post1 | 3.1.0 | **Fixed versions required by nnsight** |
 
 **Isolation**: Each deployment creates a fresh GPU instance, so version conflicts are avoided. The interpretability server explicitly removes conflicting vLLM versions before installing nnsight-compatible versions.
+
+## Testing Guide
+
+### Universal Test Client
+
+The `test_client.py` script works with all server types and provides comprehensive testing:
+
+```bash
+# Basic usage
+python examples/deploy_inference_server/test_client.py --url http://server:8000 --prompt "Hello world"
+
+# All options
+python examples/deploy_inference_server/test_client.py \
+  --url http://server:8000 \
+  --prompt "Explain quantum computing" \
+  --system "You are a helpful physics tutor" \
+  --max-tokens 100 \
+  --temperature 0.7 \
+  --stream \
+  --collect-activations \
+  --activation-layers 6 12 18 \
+  --activation-hooks output input \
+  --json \
+  --verbose
+```
+
+### Testing Different Server Types
+
+```bash
+# Test vLLM server
+python test_client.py --url http://vllm-server:8000 --prompt "2+2 equals"
+
+# Test SGLang server  
+python test_client.py --url http://sglang-server:8000 --prompt "2+2 equals"
+
+# Test interpretability server with activation collection
+python test_client.py --url http://interp-server:8000 --prompt "2+2 equals" \
+  --collect-activations --activation-layers 6 12 --verbose
+```
+
+### Performance Comparison
+
+```bash
+# Benchmark different servers
+for server in vllm-url sglang-url interp-url; do
+  echo "Testing $server:"
+  time python test_client.py --url $server --prompt "Write a short story about AI" --max-tokens 100
+done
+```
 
 ## Coming Soon
 

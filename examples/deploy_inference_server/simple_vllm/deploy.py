@@ -98,7 +98,7 @@ def deploy_vllm(min_vram: int = 8, max_price: float = 0.40) -> dict:
         time.sleep(10)
     
     if not server_ready:
-        print("❌ Server failed to start within timeout")
+        print(f"❌ Server failed to start within timeout: {time.time() - start_time}s elapsed")
         print("   Check logs with:")
         print(f"   # Persistent log file: bifrost exec {ssh_connection} 'cat ~/vllm_server.log'")
         print(f"   # tmux session logs: bifrost exec {ssh_connection} 'tmux capture-pane -t vllm -p'")
