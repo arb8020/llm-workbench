@@ -20,8 +20,7 @@ def attn(x_BMD: jax.Array, w_qkv_3DD: jax.Array, w_out_DD: jax.Array, training: 
 
     # split W_qkv
     w_qkv_3DHK = einops.rearrange(w_qkv_3DD, 'THREE D (H K) -> THREE D H K', H=H, K=K)
-
-    w_q_DHK, w_k_DHK, w_v_DHK = jnp.split(w_qkv_3DHK, 3, axis=0)
+    w_q_DHK, w_k_DHK, w_v_DHK = w_qkv_3DHK[0], w_qkv_3DHK[1], w_qkv_3DHK[2]
 
     # split into heads
 
