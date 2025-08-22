@@ -78,10 +78,14 @@ class SSHConnectionInfo:
     @classmethod
     def from_string(cls, conn_str: str, key_path: Optional[str] = None, 
                    timeout: int = 30) -> 'SSHConnectionInfo':
-        """Parse SSH connection string like 'user@host:port'
+        """Parse SSH connection string in multiple formats
+        
+        Supports:
+        - 'user@host:port' format
+        - 'ssh -p port user@host' format (standard SSH command)
         
         Args:
-            conn_str: Connection string in format 'user@host:port'
+            conn_str: Connection string in supported format
             key_path: Optional path to SSH private key file
             timeout: Connection timeout in seconds
             
@@ -91,8 +95,13 @@ class SSHConnectionInfo:
         Raises:
             ValueError: If connection string format is invalid
         """
+        # Handle standard SSH command format: "ssh -p port user@host"
+        if conn_str.startswith('ssh '):
+            return cls._parse_ssh_command(conn_str, key_path, timeout)
+        
+        # Handle user@host:port format
         if '@' not in conn_str or ':' not in conn_str:
-            raise ValueError(f"Invalid SSH format: {conn_str}. Expected: user@host:port")
+            raise ValueError(f"Invalid SSH format: {conn_str}. Expected: user@host:port or ssh -p port user@host")
         
         user_host, port_str = conn_str.rsplit(':', 1)
         username, hostname = user_host.split('@', 1)
@@ -101,6 +110,51 @@ class SSHConnectionInfo:
             port = int(port_str)
         except ValueError:
             raise ValueError(f"Invalid port number: {port_str}")
+        
+        return cls(
+            hostname=hostname,
+            port=port,
+            username=username,
+            key_path=key_path,
+            timeout=timeout
+        )
+    
+    @classmethod
+    def _parse_ssh_command(cls, ssh_cmd: str, key_path: Optional[str] = None, 
+                          timeout: int = 30) -> 'SSHConnectionInfo':
+        """Parse SSH command format: 'ssh -p port user@host'"""
+        import shlex
+        
+        try:
+            parts = shlex.split(ssh_cmd)
+        except ValueError as e:
+            raise ValueError(f"Failed to parse SSH command: {e}")
+        
+        if not parts or parts[0] != 'ssh':
+            raise ValueError(f"Invalid SSH command: {ssh_cmd}")
+        
+        port = 22  # default SSH port
+        user_host = None
+        
+        # Parse SSH command arguments
+        i = 1
+        while i < len(parts):
+            if parts[i] == '-p' and i + 1 < len(parts):
+                try:
+                    port = int(parts[i + 1])
+                    i += 2
+                except ValueError:
+                    raise ValueError(f"Invalid port in SSH command: {parts[i + 1]}")
+            elif '@' in parts[i]:
+                user_host = parts[i]
+                break
+            else:
+                i += 1
+        
+        if not user_host or '@' not in user_host:
+            raise ValueError(f"No user@host found in SSH command: {ssh_cmd}")
+        
+        username, hostname = user_host.split('@', 1)
         
         return cls(
             hostname=hostname,
