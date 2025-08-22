@@ -54,14 +54,14 @@ def deploy_interpretability_server(min_vram: int = 12, max_price: float = 0.60) 
     
     # 3. INSTALL ENGINE WITH INTERPRETABILITY DEPENDENCIES
     print("🔧 Installing engine[interp] with nnsight and interpretability dependencies...")
-    print("   Note: Using uv with pinned transformers version to avoid aimv2 conflict")
+    print("   Note: Using uv lock and sync for consistent dependency resolution")
     
-    # Install engine with interpretability dependencies using uv
-    install_cmd = "uv pip install -e '.[interp]'"
-    result = bifrost_client.exec(install_cmd)
-    if result and ("Successfully installed" in result or "already satisfied" in result.lower()):
+    # Install engine with interpretability dependencies using uv lock/sync
+    bifrost_client.exec("uv lock --extra interp")
+    result = bifrost_client.exec("uv sync --extra interp")
+    if result and ("Project synced" in result or "already up-to-date" in result.lower()):
         print("✅ engine[interp] installed successfully")
-        print("   Includes: nnsight, vLLM 0.9.2, transformers 4.44.2, FastAPI, uvicorn")
+        print("   Includes: nnsight, vLLM 0.9.2, FastAPI, uvicorn with resolved transformers")
     else:
         print("⚠️  engine[interp] installation may have issues - check logs")
     

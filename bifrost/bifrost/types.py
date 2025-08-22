@@ -24,9 +24,19 @@ class SSHConnection:
     
     @classmethod
     def from_string(cls, ssh_string: str) -> 'SSHConnection':
-        """Parse SSH string like 'user@host:port' into connection info."""
+        """Parse SSH string in multiple formats.
+        
+        Supports:
+        - 'user@host:port' format
+        - 'ssh -p port user@host' format (standard SSH command)
+        """
+        # Handle standard SSH command format: "ssh -p port user@host"
+        if ssh_string.startswith('ssh '):
+            return cls._parse_ssh_command(ssh_string)
+        
+        # Handle user@host:port format
         if '@' not in ssh_string or ':' not in ssh_string:
-            raise ValueError(f"Invalid SSH format: {ssh_string}. Expected: user@host:port")
+            raise ValueError(f"Invalid SSH format: {ssh_string}. Expected: user@host:port or ssh -p port user@host")
         
         user_host, port_str = ssh_string.rsplit(':', 1)
         user, host = user_host.split('@', 1)
@@ -35,6 +45,44 @@ class SSHConnection:
             port = int(port_str)
         except ValueError:
             raise ValueError(f"Invalid port: {port_str}")
+        
+        return cls(user=user, host=host, port=port)
+    
+    @classmethod
+    def _parse_ssh_command(cls, ssh_cmd: str) -> 'SSHConnection':
+        """Parse SSH command format: 'ssh -p port user@host'"""
+        import shlex
+        
+        try:
+            parts = shlex.split(ssh_cmd)
+        except ValueError as e:
+            raise ValueError(f"Failed to parse SSH command: {e}")
+        
+        if not parts or parts[0] != 'ssh':
+            raise ValueError(f"Invalid SSH command: {ssh_cmd}")
+        
+        port = 22  # default SSH port
+        user_host = None
+        
+        # Parse SSH command arguments
+        i = 1
+        while i < len(parts):
+            if parts[i] == '-p' and i + 1 < len(parts):
+                try:
+                    port = int(parts[i + 1])
+                    i += 2
+                except ValueError:
+                    raise ValueError(f"Invalid port in SSH command: {parts[i + 1]}")
+            elif '@' in parts[i]:
+                user_host = parts[i]
+                break
+            else:
+                i += 1
+        
+        if not user_host or '@' not in user_host:
+            raise ValueError(f"No user@host found in SSH command: {ssh_cmd}")
+        
+        user, host = user_host.split('@', 1)
         
         return cls(user=user, host=host, port=port)
     
