@@ -2,14 +2,6 @@ import jax
 import jax.numpy as jnp
 import einops 
 
-B = 2 # batch_sz
-L = 1 # seq_len: 1 during decoding, equal to M. so L <= M
-M = 7 # mem_len: sequence length being attended to 
-D = 12 # model_dim: also known as d_model/embedding_dim. vocab size -> model_dim
-V = 9 # vocab_size
-F = 48 # ffn dim
-H = 3 # attention heads
-K = 4 # D/H, size of each attention key or value
 
 def attn(x_BMD: jax.Array, w_qkv_3DD: jax.Array, w_out_DD: jax.Array, training: bool = False):
   
@@ -39,7 +31,9 @@ def attn(x_BMD: jax.Array, w_qkv_3DD: jax.Array, w_out_DD: jax.Array, training: 
 
     # causal mask ? i forgot
 
-    block_upper_LM = jnp.triu(jnp.ones((L, M)), k=1) # triu takes in a matrix as input
+    l, m = scaled_score_BHLM.shape[-2:]
+
+    block_upper_LM = jnp.triu(jnp.ones((l, m)), k=1) # triu takes in a matrix as input
     causal_mask_LM = jnp.where(block_upper_LM == 1, -jnp.inf, 0.0) # -inf for blocked values, 0 otherwise
 
     causal_mask_BHLM = einops.rearrange(causal_mask_LM, 'L M -> 1 1 L M')
@@ -61,6 +55,14 @@ def attn(x_BMD: jax.Array, w_qkv_3DD: jax.Array, w_out_DD: jax.Array, training: 
 
 
 if __name__ == "__main__":
+    B = 2 # batch_sz
+    L = 1 # seq_len: 1 during decoding, equal to M. so L <= M
+    M = 7 # mem_len: sequence length being attended to 
+    D = 12 # model_dim: also known as d_model/embedding_dim. vocab size -> model_dim
+    V = 9 # vocab_size
+    F = 48 # ffn dim
+    H = 3 # attention heads
+    K = 4 # D/H, size of each attention key or value
 
     key = jax.random.PRNGKey(42)
 
