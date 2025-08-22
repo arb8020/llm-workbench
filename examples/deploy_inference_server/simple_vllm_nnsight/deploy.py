@@ -54,16 +54,28 @@ def deploy_interpretability_server(min_vram: int = 12, max_price: float = 0.60) 
     
     # 3. INSTALL ENGINE WITH INTERPRETABILITY DEPENDENCIES
     print("🔧 Installing engine[interp] with nnsight and interpretability dependencies...")
-    print("   Note: This uses the engine module's optional [interp] dependencies")
+    print("   Note: Using pip due to uv dependency resolution issues with vLLM 0.9.2")
     
-    # Use uv to install engine with interpretability dependencies
-    install_cmd = "uv pip install -e '.[interp]'"
-    result = bifrost_client.exec(install_cmd)
-    if result and "Successfully installed" in result:
-        print("✅ engine[interp] installed successfully")
-        print("   Includes: nnsight, vLLM 0.6.4.post1, triton 3.1.0, FastAPI, uvicorn")
+    # Install engine first
+    install_engine_cmd = "uv pip install -e ."
+    result = bifrost_client.exec(install_engine_cmd)
+    if result and ("Successfully installed" in result or "already satisfied" in result.lower()):
+        print("✅ engine base package installed")
     else:
-        print("⚠️  engine[interp] installation may have issues - check logs")
+        print("⚠️  engine installation may have issues - check logs")
+    
+    # Install interpretability dependencies with pip to avoid uv conflicts
+    install_interp_cmd = "pip install 'fastapi>=0.100.0' 'uvicorn>=0.20.0' 'nnsight>=0.4' 'vllm==0.9.2' --no-deps"
+    result = bifrost_client.exec(install_interp_cmd)
+    if result and "Successfully installed" in result:
+        print("✅ interpretability dependencies installed")
+        print("   Includes: nnsight, vLLM 0.9.2, FastAPI, uvicorn")
+    else:
+        print("⚠️  interpretability dependencies installation may have issues - check logs")
+        
+    # Install remaining dependencies that vLLM needs
+    install_deps_cmd = "pip install torch torchaudio torchvision transformers tokenizers pydantic requests aiohttp"
+    bifrost_client.exec(install_deps_cmd)
     
     # 4. START SERVER IN TMUX
     print("🌟 Starting interpretability server in tmux session...")

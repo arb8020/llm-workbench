@@ -15,9 +15,9 @@ import uvicorn
 
 # nnsight for interpretability
 try:
-    from nnsight import VLLM
+    from nnsight.modeling.vllm import VLLM
 except ImportError:
-    print("❌ nnsight not installed. Install with: uv add 'nnsight>=0.4'")
+    print("❌ nnsight not installed or incompatible vLLM version. Install with: pip install 'nnsight>=0.4' 'vllm==0.9.2'")
     sys.exit(1)
 
 
