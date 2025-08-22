@@ -534,7 +534,8 @@ def instances_list(
             console.print("📭 No instances found")
         elif json_output:
             print("[]")
-        return
+        # Exit with code 1 for scripting when no instances found
+        sys.exit(1)
     
     # SSH-only output format for scripting
     if ssh_only:

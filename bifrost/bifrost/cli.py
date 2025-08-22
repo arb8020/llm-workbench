@@ -141,14 +141,22 @@ def _execute_command(
 
 def parse_ssh_info(ssh_info: str):
     """Parse SSH connection string into components."""
-    # Format: user@host:port or user@host (default port 22)
-    match = re.match(r'^([^@]+)@([^:]+)(?::(\d+))?$', ssh_info)
-    if not match:
-        raise ValueError(f"Invalid SSH connection string: {ssh_info}")
+    # Format: "ssh -p PORT user@host" or "user@host:port" or "user@host" (default port 22)
     
-    user, host, port = match.groups()
-    port = int(port) if port else 22
-    return user, host, port
+    # Check for SSH command format: "ssh -p PORT user@host"
+    ssh_cmd_match = re.match(r'^ssh\s+-p\s+(\d+)\s+([^@]+)@(.+)$', ssh_info.strip())
+    if ssh_cmd_match:
+        port_str, user, host = ssh_cmd_match.groups()
+        return user, host, int(port_str)
+    
+    # Check for standard format: user@host:port or user@host
+    standard_match = re.match(r'^([^@\s]+)@([^:\s]+)(?::(\d+))?$', ssh_info)
+    if standard_match:
+        user, host, port = standard_match.groups()
+        port = int(port) if port else 22
+        return user, host, port
+    
+    raise ValueError(f"Invalid SSH format: {ssh_info}. Expected: user@host:port or ssh -p port user@host")
 
 
 @app.command()
@@ -223,7 +231,7 @@ def exec(
 
 @app.command()
 def deploy(
-    ssh_connection: str = typer.Argument(..., help="SSH connection string (user@host:port)"),
+    ssh_connection: str = typer.Argument(..., help="SSH connection string (user@host:port or 'ssh -p port user@host')"),
     command: str = typer.Argument(..., help="Command to execute after deployment"),
     env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables (KEY=value)"),
     ssh_key: Optional[str] = typer.Option(None, "--ssh-key", help="Path to SSH private key file"),
@@ -275,20 +283,6 @@ def run(
     console.print("   This command will be removed in v0.2.0", style="dim")
     _execute_command(ssh_info, command, env, env_file, dotenv, no_deploy, detach)
 
-@app.command()
-def launch(
-    ssh_info: str = typer.Argument(..., help="SSH connection string (user@host:port)"),
-    command: str = typer.Argument(..., help="Command to execute remotely"),
-    env: Optional[List[str]] = typer.Option(None, "--env", "-e", help="Environment variables (KEY=VALUE) or KEY to copy from local env"),
-    env_file: Optional[List[Path]] = typer.Option(None, "--env-file", "-f", help="Read environment variables from .env file(s)"),
-    dotenv: bool = typer.Option(False, "--dotenv", help="Load .env from current working directory if present"),
-    no_deploy: bool = typer.Option(False, "--no-deploy", help="Skip git deployment (legacy mode)"),
-    detach: bool = typer.Option(False, "--detach", help="Run job in background (detached mode)"),
-):
-    """DEPRECATED: Use 'deploy' instead. Launch a command on remote GPU instance with automatic code deployment."""
-    console.print("⚠️  WARNING: 'bifrost launch' is deprecated. Use 'bifrost deploy' instead.", style="yellow")
-    console.print("   This command will be removed in v0.2.0", style="dim")
-    _execute_command(ssh_info, command, env, env_file, dotenv, no_deploy, detach)
 
 
 @app.command()
