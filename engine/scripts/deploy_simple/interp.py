@@ -138,23 +138,39 @@ async def chat_completions(request: ChatCompletionRequest):
         if not prompt.endswith("Assistant: "):
             prompt += "Assistant: "
         
-        # Standard inference path (no activation collection)
+        # Standard inference path (no activation collection)  
         if not request.collect_activations:
-            # Try using the tracer invoke return value
+            # Correct nnsight pattern with nested context
             with model.trace(
                 temperature=request.temperature,
                 top_p=request.top_p,
                 max_tokens=request.max_tokens
             ) as tracer:
-                result = tracer.invoke(prompt)
-                print(f"🔍 Debug - tracer.invoke result type: {type(result)}")
-                print(f"🔍 Debug - tracer.invoke result: {result}")
-                
-                # Try to extract text from the result
-                if result is not None:
-                    generated_text = str(result)
+                with tracer.invoke(prompt) as invoker:
+                    # Let the model generate - the generated text should be available after the context
+                    pass
+                    
+            # Now try to access the generated text - maybe through the invoker or tracer
+            try:
+                # Try different ways to get the generated text
+                if hasattr(invoker, 'output'):
+                    generated_text = str(invoker.output)
+                    print(f"🔍 Debug - invoker.output: {generated_text}")
+                elif hasattr(tracer, 'output'):
+                    generated_text = str(tracer.output) 
+                    print(f"🔍 Debug - tracer.output: {generated_text}")
                 else:
-                    generated_text = ""
+                    # Try the old samples approach
+                    if hasattr(model, 'samples'):
+                        samples = model.samples
+                        generated_text = str(samples) if samples else ""
+                        print(f"🔍 Debug - model.samples: {generated_text}")
+                    else:
+                        generated_text = ""
+                        print("🔍 Debug - No output found")
+            except Exception as e:
+                print(f"🔍 Debug - Error accessing output: {e}")
+                generated_text = ""
             
             # Clean up the response (remove prompt)
             if generated_text.startswith(prompt):
