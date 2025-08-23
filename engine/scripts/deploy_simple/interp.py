@@ -140,23 +140,13 @@ async def chat_completions(request: ChatCompletionRequest):
         
         # Standard inference path (no activation collection)
         if not request.collect_activations:
-            with model.trace(
+            # Use the model's generate method for text generation
+            generated_text = model.generate(
+                prompt,
                 temperature=request.temperature,
                 top_p=request.top_p,
                 max_tokens=request.max_tokens
-            ) as tracer:
-                with tracer.invoke(prompt):
-                    # Save the model output
-                    output = model.output.save()
-            
-            # Extract generated text from saved output
-            generated_text = ""
-            if output is not None:
-                try:
-                    # output is a tuple, first element contains the generated text
-                    generated_text = output[0] if isinstance(output[0], str) else str(output[0])
-                except (IndexError, TypeError):
-                    generated_text = str(output)
+            )
             
             # Clean up the response (remove prompt)
             if generated_text.startswith(prompt):
@@ -189,15 +179,8 @@ async def chat_completions(request: ChatCompletionRequest):
             
             collected_activations = {}
             
-            with model.trace(
-                temperature=request.temperature,
-                top_p=request.top_p,
-                max_tokens=request.max_tokens
-            ) as tracer:
+            with model.trace() as tracer:
                 with tracer.invoke(prompt):
-                    # Save the model output
-                    output = model.output.save()
-                    
                     # Collect requested activations
                     for layer_idx in layers:
                         for hook_point in hook_points:
@@ -224,14 +207,13 @@ async def chat_completions(request: ChatCompletionRequest):
                             except Exception as e:
                                 print(f"⚠️  Failed to collect {key}: {e}")
             
-            # Extract generated text from saved output
-            generated_text = ""
-            if output is not None:
-                try:
-                    # output is a tuple, first element contains the generated text
-                    generated_text = output[0] if isinstance(output[0], str) else str(output[0])
-                except (IndexError, TypeError):
-                    generated_text = str(output)
+            # Generate text with the same model after collecting activations
+            generated_text = model.generate(
+                prompt,
+                temperature=request.temperature,
+                top_p=request.top_p,
+                max_tokens=request.max_tokens
+            )
             
             # Clean up the response
             if generated_text.startswith(prompt):
