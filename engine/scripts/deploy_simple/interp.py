@@ -140,33 +140,33 @@ async def chat_completions(request: ChatCompletionRequest):
         
         # Standard inference path (no activation collection)
         if not request.collect_activations:
-            # Use a working but simple approach - let's just call the underlying vLLM directly
+            # Use proper nnsight VLLM API for text generation
+            with model.trace(
+                [prompt],
+                temperature=request.temperature,
+                top_p=request.top_p,
+                max_tokens=request.max_tokens
+            ) as tracer:
+                # Save the logits for decoding
+                logits = model.logits.output.save()
+            
+            # Decode the generated tokens to text
             try:
-                # Access the vLLM engine directly for generation
-                from vllm import SamplingParams
-                sampling_params = SamplingParams(
-                    temperature=request.temperature,
-                    top_p=request.top_p,
-                    max_tokens=request.max_tokens
-                )
+                # Get the generated token IDs (argmax of logits)
+                generated_token_ids = logits.argmax(dim=-1)
                 
-                # Try to find the vLLM engine in the nnsight wrapper
-                if hasattr(model, 'model') and hasattr(model.model, 'generate'):
-                    outputs = model.model.generate([prompt], sampling_params)
-                    generated_text = outputs[0].outputs[0].text if outputs and outputs[0].outputs else ""
-                    print(f"🔍 Debug - Generated via model.model.generate: {generated_text}")
-                elif hasattr(model, 'engine'):
-                    outputs = model.engine.generate([prompt], sampling_params)  
-                    generated_text = outputs[0].outputs[0].text if outputs and outputs[0].outputs else ""
-                    print(f"🔍 Debug - Generated via model.engine.generate: {generated_text}")
-                else:
-                    # If we can't access vLLM directly, fall back to a simple response for now
-                    generated_text = " there! This is a test response."
-                    print("🔍 Debug - Using fallback response")
+                # Decode to text using the model's tokenizer
+                generated_text = model.tokenizer.decode(generated_token_ids, skip_special_tokens=True)
+                
+                # Remove the original prompt from the generated text
+                if generated_text.startswith(prompt):
+                    generated_text = generated_text[len(prompt):]
                     
+                print(f"🔍 Debug - Generated text: '{generated_text}'")
+                
             except Exception as e:
-                print(f"🔍 Debug - vLLM generation error: {e}")
-                generated_text = " there! This is a fallback response due to error."
+                print(f"❌ Error decoding generated text: {e}")
+                raise HTTPException(status_code=500, detail=f"Text generation failed: {str(e)}")
             
             # Clean up the response (remove prompt)
             if generated_text.startswith(prompt):
@@ -229,33 +229,33 @@ async def chat_completions(request: ChatCompletionRequest):
                             except Exception as e:
                                 print(f"⚠️  Failed to collect {key}: {e}")
             
-            # Then generate text using the same approach as non-activation path
+            # Generate text using proper nnsight VLLM API (same as non-activation path)
+            with model.trace(
+                [prompt],
+                temperature=request.temperature,
+                top_p=request.top_p,
+                max_tokens=request.max_tokens
+            ) as tracer:
+                # Save the logits for decoding
+                logits = model.logits.output.save()
+            
+            # Decode the generated tokens to text
             try:
-                # Access the vLLM engine directly for generation
-                from vllm import SamplingParams
-                sampling_params = SamplingParams(
-                    temperature=request.temperature,
-                    top_p=request.top_p,
-                    max_tokens=request.max_tokens
-                )
+                # Get the generated token IDs (argmax of logits)
+                generated_token_ids = logits.argmax(dim=-1)
                 
-                # Try to find the vLLM engine in the nnsight wrapper
-                if hasattr(model, 'model') and hasattr(model.model, 'generate'):
-                    outputs = model.model.generate([prompt], sampling_params)
-                    generated_text = outputs[0].outputs[0].text if outputs and outputs[0].outputs else ""
-                    print(f"🔍 Debug - Generated via model.model.generate (with activations): {generated_text}")
-                elif hasattr(model, 'engine'):
-                    outputs = model.engine.generate([prompt], sampling_params)  
-                    generated_text = outputs[0].outputs[0].text if outputs and outputs[0].outputs else ""
-                    print(f"🔍 Debug - Generated via model.engine.generate (with activations): {generated_text}")
-                else:
-                    # If we can't access vLLM directly, fall back to a simple response for now
-                    generated_text = " there! This is a test response with activations."
-                    print("🔍 Debug - Using fallback response (with activations)")
+                # Decode to text using the model's tokenizer
+                generated_text = model.tokenizer.decode(generated_token_ids, skip_special_tokens=True)
+                
+                # Remove the original prompt from the generated text
+                if generated_text.startswith(prompt):
+                    generated_text = generated_text[len(prompt):]
                     
+                print(f"🔍 Debug - Generated text (with activations): '{generated_text}'")
+                
             except Exception as e:
-                print(f"🔍 Debug - vLLM generation error (with activations): {e}")
-                generated_text = " there! This is a fallback response due to error (with activations)."
+                print(f"❌ Error decoding generated text (with activations): {e}")
+                raise HTTPException(status_code=500, detail=f"Text generation with activations failed: {str(e)}")
             
             # Clean up the response
             if generated_text.startswith(prompt):
