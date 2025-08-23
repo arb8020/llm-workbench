@@ -141,6 +141,7 @@ async def chat_completions(request: ChatCompletionRequest):
         # Standard inference path (no activation collection)
         if not request.collect_activations:
             # Use proper nnsight VLLM API for multi-token text generation
+            all_logits = []
             with model.trace(
                 [prompt],
                 temperature=request.temperature,
@@ -148,7 +149,6 @@ async def chat_completions(request: ChatCompletionRequest):
                 max_tokens=request.max_tokens
             ) as tracer:
                 # Collect logits for all generated tokens
-                all_logits = []
                 with tracer.iter[0:request.max_tokens]:
                     all_logits.append(model.logits.output.save())
             
