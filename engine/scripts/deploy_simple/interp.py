@@ -140,6 +140,7 @@ async def chat_completions(request: ChatCompletionRequest):
         
         # Standard inference path (no activation collection)
         if not request.collect_activations:
+            generated_samples = None
             with model.trace(
                 temperature=request.temperature,
                 top_p=request.top_p,
@@ -192,6 +193,7 @@ async def chat_completions(request: ChatCompletionRequest):
             hook_points = request.collect_activations.hook_points
             
             collected_activations = {}
+            generated_samples = None
             
             # Combine text generation and activation collection in single trace
             with model.trace(
