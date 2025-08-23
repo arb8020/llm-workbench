@@ -140,9 +140,27 @@ async def chat_completions(request: ChatCompletionRequest):
         
         # Standard inference path (no activation collection)
         if not request.collect_activations:
-            # For now, return a simple response to test the server is working
-            # TODO: Implement proper nnsight text generation
-            generated_text = " Paris" if "France" in prompt else " World!"
+            with model.trace(
+                temperature=request.temperature,
+                top_p=request.top_p,
+                max_tokens=request.max_tokens
+            ) as tracer:
+                with tracer.invoke(prompt):
+                    # Get generated samples from nnsight
+                    generated_samples = model.samples.output
+            
+            # Extract text from samples
+            generated_text = ""
+            if generated_samples is not None:
+                try:
+                    # samples.output should contain the generated text
+                    if hasattr(generated_samples, '__iter__') and len(generated_samples) > 0:
+                        generated_text = str(generated_samples[0])
+                    else:
+                        generated_text = str(generated_samples)
+                except Exception as e:
+                    print(f"⚠️  Error extracting generated text: {e}")
+                    generated_text = ""
             
             # Clean up the response (remove prompt)
             if generated_text.startswith(prompt):
@@ -175,8 +193,16 @@ async def chat_completions(request: ChatCompletionRequest):
             
             collected_activations = {}
             
-            with model.trace() as tracer:
+            # Combine text generation and activation collection in single trace
+            with model.trace(
+                temperature=request.temperature,
+                top_p=request.top_p,
+                max_tokens=request.max_tokens
+            ) as tracer:
                 with tracer.invoke(prompt):
+                    # Get generated samples
+                    generated_samples = model.samples.output
+                    
                     # Collect requested activations
                     for layer_idx in layers:
                         for hook_point in hook_points:
@@ -203,9 +229,18 @@ async def chat_completions(request: ChatCompletionRequest):
                             except Exception as e:
                                 print(f"⚠️  Failed to collect {key}: {e}")
             
-            # For now, return a simple response to test activation collection
-            # TODO: Implement proper nnsight text generation with activations
-            generated_text = " Paris (with activations)" if "France" in prompt else " World (with activations)!"
+            # Extract text from samples
+            generated_text = ""
+            if generated_samples is not None:
+                try:
+                    # samples.output should contain the generated text
+                    if hasattr(generated_samples, '__iter__') and len(generated_samples) > 0:
+                        generated_text = str(generated_samples[0])
+                    else:
+                        generated_text = str(generated_samples)
+                except Exception as e:
+                    print(f"⚠️  Error extracting generated text: {e}")
+                    generated_text = ""
             
             # Clean up the response
             if generated_text.startswith(prompt):
