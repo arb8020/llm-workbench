@@ -140,33 +140,21 @@ async def chat_completions(request: ChatCompletionRequest):
         
         # Standard inference path (no activation collection)
         if not request.collect_activations:
-            generated_samples = None
+            # Try using the tracer invoke return value
             with model.trace(
                 temperature=request.temperature,
                 top_p=request.top_p,
                 max_tokens=request.max_tokens
             ) as tracer:
-                with tracer.invoke(prompt):
-                    # Get generated samples from nnsight
-                    generated_samples = model.samples.output
-            
-            # Extract text from samples
-            generated_text = ""
-            if generated_samples is not None:
-                try:
-                    print(f"🔍 Debug - generated_samples type: {type(generated_samples)}")
-                    print(f"🔍 Debug - generated_samples: {generated_samples}")
-                    
-                    # samples.output should contain the generated text
-                    if hasattr(generated_samples, '__iter__') and len(generated_samples) > 0:
-                        generated_text = str(generated_samples[0])
-                    else:
-                        generated_text = str(generated_samples)
-                except Exception as e:
-                    print(f"⚠️  Error extracting generated text: {e}")
+                result = tracer.invoke(prompt)
+                print(f"🔍 Debug - tracer.invoke result type: {type(result)}")
+                print(f"🔍 Debug - tracer.invoke result: {result}")
+                
+                # Try to extract text from the result
+                if result is not None:
+                    generated_text = str(result)
+                else:
                     generated_text = ""
-            else:
-                print("🔍 Debug - generated_samples is None")
             
             # Clean up the response (remove prompt)
             if generated_text.startswith(prompt):
