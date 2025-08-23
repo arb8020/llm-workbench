@@ -140,29 +140,36 @@ async def chat_completions(request: ChatCompletionRequest):
         
         # Standard inference path (no activation collection)
         if not request.collect_activations:
-            # Use proper nnsight VLLM API for text generation
+            # Use proper nnsight VLLM API for multi-token text generation
             with model.trace(
                 [prompt],
                 temperature=request.temperature,
                 top_p=request.top_p,
                 max_tokens=request.max_tokens
             ) as tracer:
-                # Save the logits for decoding
-                logits = model.logits.output.save()
+                # Collect logits for all generated tokens
+                all_logits = []
+                with tracer.iter[0:request.max_tokens]:
+                    all_logits.append(model.logits.output.save())
             
-            # Decode the generated tokens to text
+            # Decode all generated tokens to text
             try:
-                # Get the generated token IDs (argmax of logits)
-                generated_token_ids = logits.argmax(dim=-1)
+                # Get the generated token IDs for all steps
+                generated_token_ids = []
+                for logits in all_logits:
+                    token_id = logits.argmax(dim=-1)
+                    generated_token_ids.append(token_id)
                 
-                # Decode to text using the model's tokenizer
-                generated_text = model.tokenizer.decode(generated_token_ids, skip_special_tokens=True)
-                
-                # Remove the original prompt from the generated text
-                if generated_text.startswith(prompt):
-                    generated_text = generated_text[len(prompt):]
+                # Convert to tensor for batch decoding  
+                import torch
+                if generated_token_ids:
+                    token_tensor = torch.stack(generated_token_ids)
+                    # Decode the generated tokens
+                    generated_text = model.tokenizer.decode(token_tensor, skip_special_tokens=True)
+                else:
+                    generated_text = ""
                     
-                print(f"🔍 Debug - Generated text: '{generated_text}'")
+                print(f"🔍 Debug - Generated {len(generated_token_ids)} tokens: '{generated_text}'")
                 
             except Exception as e:
                 print(f"❌ Error decoding generated text: {e}")
@@ -229,29 +236,36 @@ async def chat_completions(request: ChatCompletionRequest):
                             except Exception as e:
                                 print(f"⚠️  Failed to collect {key}: {e}")
             
-            # Generate text using proper nnsight VLLM API (same as non-activation path)
+            # Generate text using proper nnsight VLLM API for multi-token generation
             with model.trace(
                 [prompt],
                 temperature=request.temperature,
                 top_p=request.top_p,
                 max_tokens=request.max_tokens
             ) as tracer:
-                # Save the logits for decoding
-                logits = model.logits.output.save()
+                # Collect logits for all generated tokens
+                all_logits = []
+                with tracer.iter[0:request.max_tokens]:
+                    all_logits.append(model.logits.output.save())
             
-            # Decode the generated tokens to text
+            # Decode all generated tokens to text
             try:
-                # Get the generated token IDs (argmax of logits)
-                generated_token_ids = logits.argmax(dim=-1)
+                # Get the generated token IDs for all steps
+                generated_token_ids = []
+                for logits in all_logits:
+                    token_id = logits.argmax(dim=-1)
+                    generated_token_ids.append(token_id)
                 
-                # Decode to text using the model's tokenizer
-                generated_text = model.tokenizer.decode(generated_token_ids, skip_special_tokens=True)
-                
-                # Remove the original prompt from the generated text
-                if generated_text.startswith(prompt):
-                    generated_text = generated_text[len(prompt):]
+                # Convert to tensor for batch decoding  
+                import torch
+                if generated_token_ids:
+                    token_tensor = torch.stack(generated_token_ids)
+                    # Decode the generated tokens
+                    generated_text = model.tokenizer.decode(token_tensor, skip_special_tokens=True)
+                else:
+                    generated_text = ""
                     
-                print(f"🔍 Debug - Generated text (with activations): '{generated_text}'")
+                print(f"🔍 Debug - Generated {len(generated_token_ids)} tokens (with activations): '{generated_text}'")
                 
             except Exception as e:
                 print(f"❌ Error decoding generated text (with activations): {e}")
