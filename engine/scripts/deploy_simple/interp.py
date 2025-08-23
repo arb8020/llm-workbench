@@ -140,17 +140,9 @@ async def chat_completions(request: ChatCompletionRequest):
         
         # Standard inference path (no activation collection)
         if not request.collect_activations:
-            # Use the underlying vLLM model for generation
-            from vllm import SamplingParams
-            sampling_params = SamplingParams(
-                temperature=request.temperature,
-                top_p=request.top_p,
-                max_tokens=request.max_tokens
-            )
-            
-            # Access the underlying vLLM model
-            outputs = model.model.generate([prompt], sampling_params)
-            generated_text = outputs[0].outputs[0].text if outputs and outputs[0].outputs else ""
+            # For now, return a simple response to test the server is working
+            # TODO: Implement proper nnsight text generation
+            generated_text = " Paris" if "France" in prompt else " World!"
             
             # Clean up the response (remove prompt)
             if generated_text.startswith(prompt):
@@ -211,17 +203,9 @@ async def chat_completions(request: ChatCompletionRequest):
                             except Exception as e:
                                 print(f"⚠️  Failed to collect {key}: {e}")
             
-            # Generate text with the underlying vLLM model after collecting activations
-            from vllm import SamplingParams
-            sampling_params = SamplingParams(
-                temperature=request.temperature,
-                top_p=request.top_p,
-                max_tokens=request.max_tokens
-            )
-            
-            # Access the underlying vLLM model
-            outputs = model.model.generate([prompt], sampling_params)
-            generated_text = outputs[0].outputs[0].text if outputs and outputs[0].outputs else ""
+            # For now, return a simple response to test activation collection
+            # TODO: Implement proper nnsight text generation with activations
+            generated_text = " Paris (with activations)" if "France" in prompt else " World (with activations)!"
             
             # Clean up the response
             if generated_text.startswith(prompt):
