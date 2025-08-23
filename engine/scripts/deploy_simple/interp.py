@@ -140,13 +140,17 @@ async def chat_completions(request: ChatCompletionRequest):
         
         # Standard inference path (no activation collection)
         if not request.collect_activations:
-            # Use the model's generate method for text generation
-            generated_text = model.generate(
-                prompt,
+            # Use the underlying vLLM model for generation
+            from vllm import SamplingParams
+            sampling_params = SamplingParams(
                 temperature=request.temperature,
                 top_p=request.top_p,
                 max_tokens=request.max_tokens
             )
+            
+            # Access the underlying vLLM model
+            outputs = model.model.generate([prompt], sampling_params)
+            generated_text = outputs[0].outputs[0].text if outputs and outputs[0].outputs else ""
             
             # Clean up the response (remove prompt)
             if generated_text.startswith(prompt):
@@ -207,13 +211,17 @@ async def chat_completions(request: ChatCompletionRequest):
                             except Exception as e:
                                 print(f"⚠️  Failed to collect {key}: {e}")
             
-            # Generate text with the same model after collecting activations
-            generated_text = model.generate(
-                prompt,
+            # Generate text with the underlying vLLM model after collecting activations
+            from vllm import SamplingParams
+            sampling_params = SamplingParams(
                 temperature=request.temperature,
                 top_p=request.top_p,
                 max_tokens=request.max_tokens
             )
+            
+            # Access the underlying vLLM model
+            outputs = model.model.generate([prompt], sampling_params)
+            generated_text = outputs[0].outputs[0].text if outputs and outputs[0].outputs else ""
             
             # Clean up the response
             if generated_text.startswith(prompt):
