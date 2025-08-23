@@ -187,7 +187,8 @@ async def chat_completions(request: ChatCompletionRequest):
                         message=Message(role="assistant", content=generated_text),
                         finish_reason="stop"
                     )
-                ]
+                ],
+                activations={}  # Empty dict when no activations collected
             )
             
             return response
@@ -294,7 +295,7 @@ async def chat_completions(request: ChatCompletionRequest):
                         finish_reason="stop"
                     )
                 ],
-                activations=serialized_activations  # Include activation data
+                activations=serialized_activations if serialized_activations else None  # Include activation data
             )
             
             return response
