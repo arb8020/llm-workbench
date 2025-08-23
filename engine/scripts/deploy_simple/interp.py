@@ -151,12 +151,12 @@ async def chat_completions(request: ChatCompletionRequest):
             
             # Extract generated text from saved output
             generated_text = ""
-            if output:
+            if output is not None:
                 try:
                     # output is a tuple, first element contains the generated text
                     generated_text = output[0] if isinstance(output[0], str) else str(output[0])
                 except (IndexError, TypeError):
-                    generated_text = str(output) if output else ""
+                    generated_text = str(output)
             
             # Clean up the response (remove prompt)
             if generated_text.startswith(prompt):
@@ -226,12 +226,12 @@ async def chat_completions(request: ChatCompletionRequest):
             
             # Extract generated text from saved output
             generated_text = ""
-            if output:
+            if output is not None:
                 try:
                     # output is a tuple, first element contains the generated text
                     generated_text = output[0] if isinstance(output[0], str) else str(output[0])
                 except (IndexError, TypeError):
-                    generated_text = str(output) if output else ""
+                    generated_text = str(output)
             
             # Clean up the response
             if generated_text.startswith(prompt):
