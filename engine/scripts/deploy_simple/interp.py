@@ -150,11 +150,13 @@ async def chat_completions(request: ChatCompletionRequest):
                     output = model.output.save()
             
             # Extract generated text from saved output
-            if output and len(output) > 0:
-                # output is a tuple, first element contains the generated text
-                generated_text = output[0] if isinstance(output[0], str) else str(output[0])
-            else:
-                generated_text = ""
+            generated_text = ""
+            if output:
+                try:
+                    # output is a tuple, first element contains the generated text
+                    generated_text = output[0] if isinstance(output[0], str) else str(output[0])
+                except (IndexError, TypeError):
+                    generated_text = str(output) if output else ""
             
             # Clean up the response (remove prompt)
             if generated_text.startswith(prompt):
@@ -203,19 +205,33 @@ async def chat_completions(request: ChatCompletionRequest):
                             
                             try:
                                 if hook_point == "output":
-                                    collected_activations[key] = model.model.transformer.h[layer_idx].output.save()
+                                    # Try different model paths based on nnsight-vLLM structure
+                                    if hasattr(model, 'model') and hasattr(model.model, 'transformer'):
+                                        collected_activations[key] = model.model.transformer.h[layer_idx].output.save()
+                                    elif hasattr(model, 'transformer'):
+                                        collected_activations[key] = model.transformer.h[layer_idx].output.save()
+                                    else:
+                                        # Try to find the layers through model structure
+                                        collected_activations[key] = model.model.layers[layer_idx].output.save()
                                 elif hook_point == "input":
-                                    collected_activations[key] = model.model.transformer.h[layer_idx].input.save()
+                                    if hasattr(model, 'model') and hasattr(model.model, 'transformer'):
+                                        collected_activations[key] = model.model.transformer.h[layer_idx].input.save()
+                                    elif hasattr(model, 'transformer'):
+                                        collected_activations[key] = model.transformer.h[layer_idx].input.save()
+                                    else:
+                                        collected_activations[key] = model.model.layers[layer_idx].input.save()
                                 # Add more hook points as needed
                             except Exception as e:
                                 print(f"⚠️  Failed to collect {key}: {e}")
             
             # Extract generated text from saved output
-            if output and len(output) > 0:
-                # output is a tuple, first element contains the generated text
-                generated_text = output[0] if isinstance(output[0], str) else str(output[0])
-            else:
-                generated_text = ""
+            generated_text = ""
+            if output:
+                try:
+                    # output is a tuple, first element contains the generated text
+                    generated_text = output[0] if isinstance(output[0], str) else str(output[0])
+                except (IndexError, TypeError):
+                    generated_text = str(output) if output else ""
             
             # Clean up the response
             if generated_text.startswith(prompt):
