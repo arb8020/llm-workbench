@@ -146,10 +146,15 @@ async def chat_completions(request: ChatCompletionRequest):
                 max_tokens=request.max_tokens
             ) as tracer:
                 with tracer.invoke(prompt):
-                    pass  # Just generate normally
+                    # Save the model output
+                    output = model.output.save()
             
-            # Extract generated text
-            generated_text = tracer.output[0] if tracer.output else ""
+            # Extract generated text from saved output
+            if output and len(output) > 0:
+                # output is a tuple, first element contains the generated text
+                generated_text = output[0] if isinstance(output[0], str) else str(output[0])
+            else:
+                generated_text = ""
             
             # Clean up the response (remove prompt)
             if generated_text.startswith(prompt):
@@ -188,6 +193,9 @@ async def chat_completions(request: ChatCompletionRequest):
                 max_tokens=request.max_tokens
             ) as tracer:
                 with tracer.invoke(prompt):
+                    # Save the model output
+                    output = model.output.save()
+                    
                     # Collect requested activations
                     for layer_idx in layers:
                         for hook_point in hook_points:
@@ -202,8 +210,12 @@ async def chat_completions(request: ChatCompletionRequest):
                             except Exception as e:
                                 print(f"⚠️  Failed to collect {key}: {e}")
             
-            # Extract generated text
-            generated_text = tracer.output[0] if tracer.output else ""
+            # Extract generated text from saved output
+            if output and len(output) > 0:
+                # output is a tuple, first element contains the generated text
+                generated_text = output[0] if isinstance(output[0], str) else str(output[0])
+            else:
+                generated_text = ""
             
             # Clean up the response
             if generated_text.startswith(prompt):
