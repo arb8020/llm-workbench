@@ -29,7 +29,9 @@ def deploy_interpretability_server(min_vram: int = 12, max_price: float = 0.60) 
         exposed_ports=[8000],  # Expose port 8000 for server
         enable_http_proxy=True,  # Enable RunPod proxy
         name="interp-server",
-        cloud_type="secure"
+        cloud_type="secure",
+        sort=lambda x: x.vram_gb / x.price_per_hour,  # Best GB per dollar
+        reverse=True
     )
     
     print(f"✅ GPU ready: {gpu_instance.id}")
@@ -68,7 +70,7 @@ def deploy_interpretability_server(min_vram: int = 12, max_price: float = 0.60) 
     print("🌟 Starting interpretability server in tmux session...")
     
     # Create tmux session and start interpretability server with persistent logging
-    tmux_cmd = "tmux new-session -d -s interp 'python -m engine.scripts.deploy_simple.interp 2>&1 | tee ~/interp_server.log'"
+    tmux_cmd = "tmux new-session -d -s interp 'cd ~/.bifrost/workspace && uv run python -m engine.scripts.deploy_simple.interp 2>&1 | tee ~/interp_server.log'"
     bifrost_client.exec(tmux_cmd)
     
     print("✅ Interpretability server starting in tmux session 'interp'")
