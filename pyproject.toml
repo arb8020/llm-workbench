@@ -25,6 +25,16 @@ local = [
     "leyline"
 ]
 
+# Interpretability features - includes engine with nnsight
+interp = [
+    "rollouts",
+    "broker", 
+    "bifrost",
+    "leyline",
+    "engine[interp]",
+    "interp"
+]
+
 [tool.uv.sources]
 rollouts = { workspace = true }
 broker = { workspace = true }
