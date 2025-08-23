@@ -154,6 +154,9 @@ async def chat_completions(request: ChatCompletionRequest):
             generated_text = ""
             if generated_samples is not None:
                 try:
+                    print(f"🔍 Debug - generated_samples type: {type(generated_samples)}")
+                    print(f"🔍 Debug - generated_samples: {generated_samples}")
+                    
                     # samples.output should contain the generated text
                     if hasattr(generated_samples, '__iter__') and len(generated_samples) > 0:
                         generated_text = str(generated_samples[0])
@@ -162,6 +165,8 @@ async def chat_completions(request: ChatCompletionRequest):
                 except Exception as e:
                     print(f"⚠️  Error extracting generated text: {e}")
                     generated_text = ""
+            else:
+                print("🔍 Debug - generated_samples is None")
             
             # Clean up the response (remove prompt)
             if generated_text.startswith(prompt):
@@ -235,6 +240,9 @@ async def chat_completions(request: ChatCompletionRequest):
             generated_text = ""
             if generated_samples is not None:
                 try:
+                    print(f"🔍 Debug - generated_samples type: {type(generated_samples)}")
+                    print(f"🔍 Debug - generated_samples: {generated_samples}")
+                    
                     # samples.output should contain the generated text
                     if hasattr(generated_samples, '__iter__') and len(generated_samples) > 0:
                         generated_text = str(generated_samples[0])
@@ -243,6 +251,8 @@ async def chat_completions(request: ChatCompletionRequest):
                 except Exception as e:
                     print(f"⚠️  Error extracting generated text: {e}")
                     generated_text = ""
+            else:
+                print("🔍 Debug - generated_samples is None")
             
             # Clean up the response
             if generated_text.startswith(prompt):
