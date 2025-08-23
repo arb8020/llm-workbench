@@ -30,7 +30,9 @@ def deploy_vllm(min_vram: int = 8, max_price: float = 0.40) -> dict:
         exposed_ports=[8000],  # Expose port 8000 for vLLM
         enable_http_proxy=True,  # Enable RunPod proxy
         name="vllm-server",
-        cloud_type="secure"
+        cloud_type="secure",
+        sort=lambda x: x.price_per_hour,  # Sort by price (cheapest first)
+        reverse=False
     )
     
     print(f"✅ GPU ready: {gpu_instance.id}")

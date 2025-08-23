@@ -11,42 +11,91 @@ from broker.client import GPUClient
 from bifrost.client import BifrostClient
 
 
-def deploy_interpretability_server(min_vram: int = 12, max_price: float = 0.60) -> dict:
-    """Deploy interpretability-enabled vLLM server on GPU and return connection info."""
+def deploy_interpretability_server(min_vram: int = 12, max_price: float = 0.60, force_new_gpu: bool = False) -> dict:
+    """Deploy interpretability-enabled vLLM server on GPU and return connection info.
+    
+    This function implements smart GPU reuse:
+    - Reuses existing 'interp-server' GPU instances that meet requirements (saves cost & time)
+    - Always redeploys code, reinstalls dependencies, and restarts server (ensures freshness)
+    - Use force_new_gpu=True to provision brand new GPU hardware
+    
+    Args:
+        min_vram: Minimum VRAM required in GB
+        max_price: Maximum price per hour
+        force_new_gpu: If True, always create new GPU instance instead of reusing
+    
+    Returns:
+        Connection info dict with URL, instance ID, SSH details, etc.
+    """
     
     print("🚀 Starting interpretability server deployment...")
     print("🧠 This server includes activation collection and intervention capabilities")
     
-    # 1. PROVISION GPU (needs more VRAM for interpretability features)
-    print(f"📡 Creating GPU instance (min {min_vram}GB VRAM, max ${max_price}/hr)...")
     gpu_client = GPUClient()
+    gpu_instance = None
     
-    # Build query for GPU with minimum VRAM and max price
-    query = (gpu_client.vram_gb >= min_vram) & (gpu_client.price_per_hour <= max_price)
+    # 1. CHECK FOR EXISTING INSTANCE (unless force_new_gpu is True)
+    if not force_new_gpu:
+        print("🔍 Checking for existing interp-server instances...")
+        existing_instances = gpu_client.list_instances()
+        
+        # Look for running interp-server instances that meet our requirements
+        suitable_instances = []
+        for instance in existing_instances:
+            if (instance.name == "interp-server" and 
+                instance.status == "running" and
+                hasattr(instance, 'vram_gb') and instance.vram_gb >= min_vram and
+                hasattr(instance, 'price_per_hour') and instance.price_per_hour <= max_price):
+                suitable_instances.append(instance)
+        
+        if suitable_instances:
+            # Use the first suitable instance
+            gpu_instance = suitable_instances[0]
+            print(f"✨ Found existing suitable interp-server: {gpu_instance.id}")
+            print(f"   GPU: {getattr(gpu_instance, 'gpu_type', 'Unknown')}")
+            print(f"   VRAM: {getattr(gpu_instance, 'vram_gb', 'Unknown')}GB")
+            print(f"   Price: ${getattr(gpu_instance, 'price_per_hour', 'Unknown')}/hr")
+            print("🔄 Will redeploy code, dependencies, and server on existing GPU")
+        else:
+            print("📝 No suitable existing interp-server instances found")
     
-    gpu_instance = gpu_client.create(
-        query=query,
-        exposed_ports=[8000],  # Expose port 8000 for server
-        enable_http_proxy=True,  # Enable RunPod proxy
-        name="interp-server",
-        cloud_type="secure",
-        sort=lambda x: x.vram_gb / x.price_per_hour,  # Best GB per dollar
-        reverse=True
-    )
-    
-    print(f"✅ GPU ready: {gpu_instance.id}")
-    
-    # Wait for SSH to be ready
-    print("⏳ Waiting for SSH connection to be ready...")
-    if not gpu_instance.wait_until_ssh_ready(timeout=300):  # 5 minutes
-        print("❌ Failed to get SSH connection ready")
-        sys.exit(1)
+    # 2. PROVISION NEW GPU (if no existing instance or force_new_gpu)
+    if gpu_instance is None:
+        print(f"📡 Creating new GPU instance (min {min_vram}GB VRAM, max ${max_price}/hr)...")
+        
+        # Build query for GPU with minimum VRAM and max price
+        query = (gpu_client.vram_gb >= min_vram) & (gpu_client.price_per_hour <= max_price)
+        
+        gpu_instance = gpu_client.create(
+            query=query,
+            exposed_ports=[8000],  # Expose port 8000 for server
+            enable_http_proxy=True,  # Enable RunPod proxy
+            name="interp-server",
+            cloud_type="secure",
+            sort=lambda x: x.price_per_hour,  # Sort by price (cheapest first)
+            reverse=False
+        )
+        
+        print(f"✅ GPU ready: {gpu_instance.id}")
+        
+        # Wait for SSH to be ready
+        print("⏳ Waiting for SSH connection to be ready...")
+        if not gpu_instance.wait_until_ssh_ready(timeout=300):  # 5 minutes
+            print("❌ Failed to get SSH connection ready")
+            sys.exit(1)
+    else:
+        # For existing instances, verify SSH is still ready
+        print("⏳ Verifying SSH connection to existing instance...")
+        if not gpu_instance.wait_until_ssh_ready(timeout=60):  # Shorter timeout for existing
+            print("❌ SSH connection to existing instance failed")
+            print("💡 Try running with --force-new-gpu to create a fresh instance")
+            sys.exit(1)
     
     ssh_connection = gpu_instance.ssh_connection_string()
     print(f"✅ SSH ready: {ssh_connection}")
     
-    # 2. DEPLOY CODE
-    print("📦 Deploying codebase...")
+    # 2. DEPLOY CODE (always fresh)
+    print("📦 Deploying fresh codebase...")
     bifrost_client = BifrostClient(ssh_connection)
     
     # Deploy the codebase to remote workspace
@@ -54,8 +103,8 @@ def deploy_interpretability_server(min_vram: int = 12, max_price: float = 0.60) 
     bifrost_client.exec("echo 'Codebase deployed successfully'")
     print(f"✅ Code deployed to: {workspace_path}")
     
-    # 3. INSTALL ENGINE WITH INTERPRETABILITY DEPENDENCIES
-    print("🔧 Installing engine[interp] with nnsight and interpretability dependencies...")
+    # 3. INSTALL ENGINE WITH INTERPRETABILITY DEPENDENCIES (always fresh)
+    print("🔧 Installing fresh engine[interp] with nnsight and interpretability dependencies...")
     print("   Note: Using uv lock and sync for consistent dependency resolution")
     
     # Install engine with interpretability dependencies using uv
@@ -66,8 +115,11 @@ def deploy_interpretability_server(min_vram: int = 12, max_price: float = 0.60) 
     else:
         print("⚠️  engine[interp] installation may have issues - check logs")
     
-    # 4. START SERVER IN TMUX
-    print("🌟 Starting interpretability server in tmux session...")
+    # 4. RESTART INTERPRETABILITY SERVER (always fresh)
+    print("🌟 Starting fresh interpretability server in tmux session...")
+    
+    # Kill any existing tmux session first  
+    bifrost_client.exec("tmux kill-session -t interp 2>/dev/null || true")
     
     # Create tmux session and start interpretability server with persistent logging
     tmux_cmd = "tmux new-session -d -s interp 'cd ~/.bifrost/workspace && uv run python -m engine.scripts.deploy_simple.interp 2>&1 | tee ~/interp_server.log'"
@@ -163,15 +215,19 @@ def main():
     """Main deployment function."""
     import argparse
     
-    parser = argparse.ArgumentParser(description="Deploy interpretability-enabled vLLM server on remote GPU")
+    parser = argparse.ArgumentParser(
+        description="Deploy interpretability-enabled vLLM server on remote GPU",
+        epilog="Default behavior: Reuse existing 'interp-server' GPU if available, always redeploy code/deps/server"
+    )
     parser.add_argument("--min-vram", type=int, default=12, help="Minimum VRAM in GB (default: 12 for interpretability features)")
     parser.add_argument("--max-price", type=float, default=0.60, help="Maximum price per hour (default: 0.60)")
+    parser.add_argument("--force-new-gpu", action="store_true", help="Force creation of new GPU instance instead of reusing existing one")
     parser.add_argument("--json", action="store_true", help="Output connection info as JSON")
     
     args = parser.parse_args()
     
     try:
-        connection_info = deploy_interpretability_server(args.min_vram, args.max_price)
+        connection_info = deploy_interpretability_server(args.min_vram, args.max_price, args.force_new_gpu)
         
         if args.json:
             print(json.dumps(connection_info, indent=2))

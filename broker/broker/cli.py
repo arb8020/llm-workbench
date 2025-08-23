@@ -30,7 +30,7 @@ app.add_typer(providers_app, name="providers")
 
 
 def _internal_search(gpu_type=None, max_price=None, min_vram=None, provider=None, 
-                   cloud_type=None, cuda_version=None, sort_by="price", reverse=False):
+                   cloud_type=None, cuda_version=None, sort_by="value", reverse=False):
     """Internal search function that doesn't trigger analysis"""
     # Build pandas-style query using client interface to avoid TypeError
     client = GPUClient()
@@ -79,7 +79,7 @@ def search(
     provider: Optional[str] = typer.Option(None, "--provider", help="Specific provider to search"),
     cloud_type: Optional[str] = typer.Option(None, "--cloud-type", help="Cloud type: 'secure' or 'community'"),
     cuda_version: Optional[str] = typer.Option(None, "--cuda-version", help="CUDA version filter (e.g., '12.0', '11.8')"),
-    sort_by: Optional[str] = typer.Option("price", "--sort", help="Sort by: 'price', 'memory', 'value' (memory/price)"),
+    sort_by: Optional[str] = typer.Option("value", "--sort", help="Sort by: 'price', 'memory', 'value' (memory/price)"),
     reverse: bool = typer.Option(False, "--reverse", help="Sort in descending order"),
     analysis: bool = typer.Option(False, "--analysis", help="Show availability analysis by cloud type")
 ):
@@ -226,7 +226,7 @@ def create(
     min_vram: Optional[int] = typer.Option(None, "--min-vram", help="Minimum VRAM in GB"),
     image: str = typer.Option("runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04", "--image", help="Docker image"),
     name: Optional[str] = typer.Option(None, "--name", help="Instance name"),
-    sort_by: Optional[str] = typer.Option("price", "--sort", help="Sort by: 'price', 'memory', 'value' (memory/price)"),
+    sort_by: Optional[str] = typer.Option("value", "--sort", help="Sort by: 'price', 'memory', 'value' (memory/price)"),
     max_attempts: int = typer.Option(3, "--max-attempts", help="Try up to N offers before giving up"),
     print_ssh: bool = typer.Option(False, "--print-ssh", help="Print SSH connection string when ready (for piping to bifrost)"),
     allow_proxy: bool = typer.Option(False, "--allow-proxy", help="Allow proxy SSH connections (default: wait for direct SSH)"),
