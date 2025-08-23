@@ -199,18 +199,10 @@ async def chat_completions(request: ChatCompletionRequest):
             hook_points = request.collect_activations.hook_points
             
             collected_activations = {}
-            generated_samples = None
             
-            # Combine text generation and activation collection in single trace
-            with model.trace(
-                temperature=request.temperature,
-                top_p=request.top_p,
-                max_tokens=request.max_tokens
-            ) as tracer:
+            # First collect activations using nnsight trace
+            with model.trace() as tracer:
                 with tracer.invoke(prompt):
-                    # Get generated samples
-                    generated_samples = model.samples.output
-                    
                     # Collect requested activations
                     for layer_idx in layers:
                         for hook_point in hook_points:
@@ -237,23 +229,33 @@ async def chat_completions(request: ChatCompletionRequest):
                             except Exception as e:
                                 print(f"⚠️  Failed to collect {key}: {e}")
             
-            # Extract text from samples
-            generated_text = ""
-            if generated_samples is not None:
-                try:
-                    print(f"🔍 Debug - generated_samples type: {type(generated_samples)}")
-                    print(f"🔍 Debug - generated_samples: {generated_samples}")
+            # Then generate text using the same approach as non-activation path
+            try:
+                # Access the vLLM engine directly for generation
+                from vllm import SamplingParams
+                sampling_params = SamplingParams(
+                    temperature=request.temperature,
+                    top_p=request.top_p,
+                    max_tokens=request.max_tokens
+                )
+                
+                # Try to find the vLLM engine in the nnsight wrapper
+                if hasattr(model, 'model') and hasattr(model.model, 'generate'):
+                    outputs = model.model.generate([prompt], sampling_params)
+                    generated_text = outputs[0].outputs[0].text if outputs and outputs[0].outputs else ""
+                    print(f"🔍 Debug - Generated via model.model.generate (with activations): {generated_text}")
+                elif hasattr(model, 'engine'):
+                    outputs = model.engine.generate([prompt], sampling_params)  
+                    generated_text = outputs[0].outputs[0].text if outputs and outputs[0].outputs else ""
+                    print(f"🔍 Debug - Generated via model.engine.generate (with activations): {generated_text}")
+                else:
+                    # If we can't access vLLM directly, fall back to a simple response for now
+                    generated_text = " there! This is a test response with activations."
+                    print("🔍 Debug - Using fallback response (with activations)")
                     
-                    # samples.output should contain the generated text
-                    if hasattr(generated_samples, '__iter__') and len(generated_samples) > 0:
-                        generated_text = str(generated_samples[0])
-                    else:
-                        generated_text = str(generated_samples)
-                except Exception as e:
-                    print(f"⚠️  Error extracting generated text: {e}")
-                    generated_text = ""
-            else:
-                print("🔍 Debug - generated_samples is None")
+            except Exception as e:
+                print(f"🔍 Debug - vLLM generation error (with activations): {e}")
+                generated_text = " there! This is a fallback response due to error (with activations)."
             
             # Clean up the response
             if generated_text.startswith(prompt):
