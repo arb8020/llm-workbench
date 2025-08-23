@@ -239,6 +239,7 @@ async def chat_completions(request: ChatCompletionRequest):
                                 print(f"⚠️  Failed to collect {key}: {e}")
             
             # Generate text using proper nnsight VLLM API for multi-token generation
+            all_logits = []
             with model.trace(
                 [prompt],
                 temperature=request.temperature,
@@ -246,7 +247,6 @@ async def chat_completions(request: ChatCompletionRequest):
                 max_tokens=request.max_tokens
             ) as tracer:
                 # Collect logits for all generated tokens
-                all_logits = []
                 with tracer.iter[0:request.max_tokens]:
                     all_logits.append(model.logits.output.save())
             
