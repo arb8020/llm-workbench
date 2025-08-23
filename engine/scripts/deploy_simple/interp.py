@@ -158,21 +158,23 @@ async def chat_completions(request: ChatCompletionRequest):
                 generated_token_ids = []
                 for logits in all_logits:
                     token_id = logits.argmax(dim=-1)
-                    generated_token_ids.append(token_id)
+                    # Convert to Python int for tokenizer
+                    generated_token_ids.append(int(token_id.item()))
                 
-                # Convert to tensor for batch decoding  
-                import torch
+                # Decode the generated tokens using the token IDs list
                 if generated_token_ids:
-                    token_tensor = torch.stack(generated_token_ids)
-                    # Decode the generated tokens
-                    generated_text = model.tokenizer.decode(token_tensor, skip_special_tokens=True)
+                    generated_text = model.tokenizer.decode(generated_token_ids, skip_special_tokens=True)
                 else:
                     generated_text = ""
                     
-                print(f"🔍 Debug - Generated {len(generated_token_ids)} tokens: '{generated_text}'")
+                print(f"🔍 Debug - Generated {len(generated_token_ids)} tokens: {generated_token_ids} -> '{generated_text}'")
                 
             except Exception as e:
                 print(f"❌ Error decoding generated text: {e}")
+                # Add more debug info
+                print(f"🔍 Debug - all_logits length: {len(all_logits)}")
+                if all_logits:
+                    print(f"🔍 Debug - first logits shape: {all_logits[0].shape if hasattr(all_logits[0], 'shape') else 'no shape'}")
                 raise HTTPException(status_code=500, detail=f"Text generation failed: {str(e)}")
             
             # Clean up the response (remove prompt)
@@ -254,21 +256,23 @@ async def chat_completions(request: ChatCompletionRequest):
                 generated_token_ids = []
                 for logits in all_logits:
                     token_id = logits.argmax(dim=-1)
-                    generated_token_ids.append(token_id)
+                    # Convert to Python int for tokenizer
+                    generated_token_ids.append(int(token_id.item()))
                 
-                # Convert to tensor for batch decoding  
-                import torch
+                # Decode the generated tokens using the token IDs list
                 if generated_token_ids:
-                    token_tensor = torch.stack(generated_token_ids)
-                    # Decode the generated tokens
-                    generated_text = model.tokenizer.decode(token_tensor, skip_special_tokens=True)
+                    generated_text = model.tokenizer.decode(generated_token_ids, skip_special_tokens=True)
                 else:
                     generated_text = ""
                     
-                print(f"🔍 Debug - Generated {len(generated_token_ids)} tokens (with activations): '{generated_text}'")
+                print(f"🔍 Debug - Generated {len(generated_token_ids)} tokens (with activations): {generated_token_ids} -> '{generated_text}'")
                 
             except Exception as e:
                 print(f"❌ Error decoding generated text (with activations): {e}")
+                # Add more debug info
+                print(f"🔍 Debug - all_logits length (with activations): {len(all_logits)}")
+                if all_logits:
+                    print(f"🔍 Debug - first logits shape (with activations): {all_logits[0].shape if hasattr(all_logits[0], 'shape') else 'no shape'}")
                 raise HTTPException(status_code=500, detail=f"Text generation with activations failed: {str(e)}")
             
             # Clean up the response
