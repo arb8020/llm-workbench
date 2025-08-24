@@ -21,6 +21,109 @@ except ImportError:
     sys.exit(1)
 
 
+# ── Activation Collection Validation ────────────────────────────────────────────
+class ModelStructureError(Exception):
+    """Raised when model structure doesn't match expected patterns."""
+    pass
+
+class ActivationCollectionError(Exception):
+    """Raised when activation collection fails."""
+    pass
+
+def introspect_model_structure(model) -> Dict[str, Any]:
+    """Introspect model structure to understand available paths."""
+    structure = {
+        "has_model_attr": hasattr(model, 'model'),
+        "has_transformer_attr": hasattr(model, 'transformer'),
+        "model_type": type(model).__name__,
+        "available_attributes": [],
+        "layer_structure": None,
+        "max_layers": None
+    }
+    
+    # Get all available attributes
+    structure["available_attributes"] = [attr for attr in dir(model) if not attr.startswith('_')]
+    
+    # Try to determine layer structure
+    try:
+        if hasattr(model, 'model') and hasattr(model.model, 'transformer'):
+            if hasattr(model.model.transformer, 'h'):
+                structure["layer_structure"] = "model.model.transformer.h"
+                structure["max_layers"] = len(model.model.transformer.h)
+        elif hasattr(model, 'transformer'):
+            if hasattr(model.transformer, 'h'):
+                structure["layer_structure"] = "model.transformer.h"  
+                structure["max_layers"] = len(model.transformer.h)
+        elif hasattr(model, 'model') and hasattr(model.model, 'layers'):
+            structure["layer_structure"] = "model.model.layers"
+            structure["max_layers"] = len(model.model.layers)
+    except Exception as e:
+        structure["introspection_error"] = str(e)
+    
+    return structure
+
+def validate_activation_request(request: ActivationCollectionRequest, model) -> None:
+    """Validate activation collection request against model capabilities."""
+    errors = []
+    
+    # Introspect model structure
+    structure = introspect_model_structure(model)
+    
+    if structure["max_layers"] is None:
+        errors.append(f"Could not determine model layer structure. Available attributes: {structure['available_attributes'][:10]}")
+    
+    # Validate layer indices
+    if structure["max_layers"]:
+        for layer_idx in request.layers:
+            if layer_idx < 0 or layer_idx >= structure["max_layers"]:
+                errors.append(f"Layer {layer_idx} is out of range. Model has {structure['max_layers']} layers (0-{structure['max_layers']-1})")
+    
+    # Validate hook points
+    supported_hooks = ["input", "output", "attn.output", "mlp.output"]
+    for hook in request.hook_points:
+        if hook not in supported_hooks:
+            errors.append(f"Hook point '{hook}' not supported. Supported: {supported_hooks}")
+    
+    if errors:
+        error_msg = "Activation collection validation failed:\n" + "\n".join(f"  • {err}" for err in errors)
+        error_msg += f"\n\nModel structure:\n  • Type: {structure['model_type']}\n  • Layer structure: {structure['layer_structure']}\n  • Max layers: {structure['max_layers']}"
+        raise ActivationCollectionError(error_msg)
+
+def get_activation_tensor(model, layer_idx: int, hook_point: str):
+    """Get activation tensor for specific layer and hook point with explicit error handling."""
+    structure = introspect_model_structure(model)
+    
+    try:
+        if hook_point == "output":
+            if structure["layer_structure"] == "model.model.transformer.h":
+                return model.model.transformer.h[layer_idx].output.save()
+            elif structure["layer_structure"] == "model.transformer.h":
+                return model.transformer.h[layer_idx].output.save()
+            elif structure["layer_structure"] == "model.model.layers":
+                return model.model.layers[layer_idx].output.save()
+            else:
+                raise ModelStructureError(f"Unknown layer structure: {structure['layer_structure']}")
+                
+        elif hook_point == "input":
+            if structure["layer_structure"] == "model.model.transformer.h":
+                return model.model.transformer.h[layer_idx].input.save()
+            elif structure["layer_structure"] == "model.transformer.h":
+                return model.transformer.h[layer_idx].input.save()
+            elif structure["layer_structure"] == "model.model.layers":
+                return model.model.layers[layer_idx].input.save()
+            else:
+                raise ModelStructureError(f"Unknown layer structure: {structure['layer_structure']}")
+        else:
+            raise ActivationCollectionError(f"Hook point '{hook_point}' not yet implemented")
+            
+    except IndexError as e:
+        raise ActivationCollectionError(f"Layer {layer_idx} not accessible: {e}")
+    except AttributeError as e:
+        raise ActivationCollectionError(f"Attribute error accessing layer {layer_idx} {hook_point}: {e}")
+    except Exception as e:
+        raise ActivationCollectionError(f"Unexpected error collecting layer {layer_idx} {hook_point}: {type(e).__name__}: {e}")
+
+
 # ── Request/Response Models ──────────────────────────────────────────────────
 class Message(BaseModel):
     role: str
@@ -50,6 +153,17 @@ class Usage(BaseModel):
     completion_tokens: int = 0
     total_tokens: int = 0
 
+class ActivationCollectionStatus(BaseModel):
+    """Metadata about activation collection success/failure."""
+    requested: bool = False
+    successful: bool = False
+    requested_layers: List[int] = field(default_factory=list)
+    requested_hooks: List[str] = field(default_factory=list)
+    collected_keys: List[str] = field(default_factory=list)
+    failed_keys: List[str] = field(default_factory=list)
+    error_message: Optional[str] = None
+    model_structure: Optional[Dict[str, Any]] = None
+
 class ChatCompletionResponse(BaseModel):
     id: str
     object: str = "chat.completion"
@@ -58,6 +172,7 @@ class ChatCompletionResponse(BaseModel):
     usage: Usage
     choices: List[Choice]
     activations: Optional[Dict[str, Any]] = None  # Interpretability extension
+    activation_collection_status: Optional[ActivationCollectionStatus] = None  # Collection metadata
 
 
 # ── Global Model Instance ───────────────────────────────────────────────────
@@ -197,46 +312,92 @@ async def chat_completions(request: ChatCompletionRequest):
                         finish_reason="stop"
                     )
                 ],
-                activations={}  # Empty dict when no activations collected
+                activations={},  # Empty dict when no activations collected
+                activation_collection_status=ActivationCollectionStatus(requested=False)  # Not requested
             )
             
             return response
         
         # Enhanced path with activation collection
         else:
-            layers = request.collect_activations.layers
-            hook_points = request.collect_activations.hook_points
+            # Initialize activation collection status tracking
+            activation_status = ActivationCollectionStatus(
+                requested=True,
+                requested_layers=request.collect_activations.layers,
+                requested_hooks=request.collect_activations.hook_points,
+                model_structure=introspect_model_structure(model)
+            )
             
-            collected_activations = {}
-            
-            # First collect activations using nnsight trace
-            with model.trace() as tracer:
-                with tracer.invoke(prompt):
-                    # Collect requested activations
-                    for layer_idx in layers:
-                        for hook_point in hook_points:
-                            key = f"layer_{layer_idx}_{hook_point}"
-                            
-                            try:
-                                if hook_point == "output":
-                                    # Try different model paths based on nnsight-vLLM structure
-                                    if hasattr(model, 'model') and hasattr(model.model, 'transformer'):
-                                        collected_activations[key] = model.model.transformer.h[layer_idx].output.save()
-                                    elif hasattr(model, 'transformer'):
-                                        collected_activations[key] = model.transformer.h[layer_idx].output.save()
-                                    else:
-                                        # Try to find the layers through model structure
-                                        collected_activations[key] = model.model.layers[layer_idx].output.save()
-                                elif hook_point == "input":
-                                    if hasattr(model, 'model') and hasattr(model.model, 'transformer'):
-                                        collected_activations[key] = model.model.transformer.h[layer_idx].input.save()
-                                    elif hasattr(model, 'transformer'):
-                                        collected_activations[key] = model.transformer.h[layer_idx].input.save()
-                                    else:
-                                        collected_activations[key] = model.model.layers[layer_idx].input.save()
-                                # Add more hook points as needed
-                            except Exception as e:
-                                print(f"⚠️  Failed to collect {key}: {e}")
+            try:
+                # Validate activation collection request first
+                validate_activation_request(request.collect_activations, model)
+                print(f"✅ Activation collection validation passed for layers {request.collect_activations.layers} hooks {request.collect_activations.hook_points}")
+                
+                layers = request.collect_activations.layers
+                hook_points = request.collect_activations.hook_points
+                
+                collected_activations = {}
+                failed_keys = []
+                
+                # First collect activations using nnsight trace
+                with model.trace() as tracer:
+                    with tracer.invoke(prompt):
+                        # Collect requested activations with explicit error handling
+                        for layer_idx in layers:
+                            for hook_point in hook_points:
+                                key = f"layer_{layer_idx}_{hook_point}"
+                                
+                                try:
+                                    activation_tensor = get_activation_tensor(model, layer_idx, hook_point)
+                                    collected_activations[key] = activation_tensor
+                                    activation_status.collected_keys.append(key)
+                                    print(f"✅ Successfully collected {key}")
+                                except (ActivationCollectionError, ModelStructureError) as e:
+                                    failed_keys.append(key)
+                                    activation_status.failed_keys.append(key)
+                                    error_msg = f"❌ Failed to collect {key}: {str(e)}"
+                                    print(error_msg)
+                                    # For any activation collection failure, raise HTTP error
+                                    activation_status.error_message = str(e)
+                                    raise HTTPException(
+                                        status_code=400, 
+                                        detail=f"Activation collection failed for {key}: {str(e)}"
+                                    )
+                
+                # Check if we collected any activations
+                if not collected_activations:
+                    activation_status.successful = False
+                    activation_status.error_message = "No activations were successfully collected"
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Activation collection completely failed - no activations collected"
+                    )
+                elif failed_keys:
+                    # Partial failure - some activations collected but others failed
+                    activation_status.successful = False
+                    activation_status.error_message = f"Partial activation collection failure: {len(failed_keys)} failed, {len(collected_activations)} succeeded"
+                    raise HTTPException(
+                        status_code=400,
+                        detail=activation_status.error_message
+                    )
+                else:
+                    # Complete success
+                    activation_status.successful = True
+                    print(f"🎉 All activation collection successful: {len(collected_activations)} activations collected")
+                    
+            except ActivationCollectionError as e:
+                activation_status.successful = False
+                activation_status.error_message = str(e)
+                print(f"❌ Activation collection validation failed: {e}")
+                raise HTTPException(status_code=400, detail=f"Activation collection error: {str(e)}")
+            except HTTPException:
+                # Re-raise HTTP exceptions
+                raise
+            except Exception as e:
+                activation_status.successful = False
+                activation_status.error_message = f"Unexpected error: {str(e)}"
+                print(f"❌ Unexpected activation collection error: {e}")
+                raise HTTPException(status_code=500, detail=f"Unexpected activation collection error: {str(e)}")
             
             # Generate text using proper nnsight VLLM API for multi-token generation
             all_logits = []
@@ -279,25 +440,61 @@ async def chat_completions(request: ChatCompletionRequest):
             if generated_text.startswith(prompt):
                 generated_text = generated_text[len(prompt):].strip()
             
-            # Process collected activations for JSON serialization
+            # Process collected activations for JSON serialization with explicit error handling
             serialized_activations = {}
+            serialization_errors = []
+            
             for key, activation_tensor in collected_activations.items():
-                if activation_tensor is not None:
+                try:
+                    if activation_tensor is None:
+                        serialization_errors.append(f"Activation tensor for {key} is None")
+                        continue
+                        
                     # Convert to list for JSON serialization (limit size for demo)
                     if hasattr(activation_tensor, 'tolist'):
-                        # Limit to first 10 elements to avoid huge JSON responses
-                        activation_list = activation_tensor.tolist()
-                        if isinstance(activation_list, list) and len(activation_list) > 0:
-                            # If it's a nested list, take first 10 of the last dimension
-                            if isinstance(activation_list[0], list):
-                                serialized_activations[key] = [row[:10] if isinstance(row, list) else row 
-                                                             for row in activation_list]
+                        try:
+                            # Limit to first 10 elements to avoid huge JSON responses
+                            activation_list = activation_tensor.tolist()
+                            if isinstance(activation_list, list) and len(activation_list) > 0:
+                                # If it's a nested list, take first 10 of the last dimension
+                                if isinstance(activation_list[0], list):
+                                    serialized_activations[key] = [row[:10] if isinstance(row, list) else row 
+                                                                 for row in activation_list]
+                                else:
+                                    serialized_activations[key] = activation_list[:10]
                             else:
-                                serialized_activations[key] = activation_list[:10]
-                        else:
-                            serialized_activations[key] = activation_list
+                                serialized_activations[key] = activation_list
+                            print(f"✅ Successfully serialized {key} (shape: {getattr(activation_tensor, 'shape', 'unknown')})")
+                        except Exception as e:
+                            serialization_errors.append(f"Failed to convert {key} to list: {e}")
+                            # Fallback to shape information
+                            serialized_activations[key] = {
+                                "error": f"Serialization failed: {str(e)}",
+                                "shape": list(activation_tensor.shape) if hasattr(activation_tensor, 'shape') else "unknown",
+                                "type": str(type(activation_tensor))
+                            }
                     else:
-                        serialized_activations[key] = f"tensor_shape_{list(activation_tensor.shape) if hasattr(activation_tensor, 'shape') else 'unknown'}"
+                        serialization_errors.append(f"Activation tensor for {key} has no tolist() method")
+                        serialized_activations[key] = {
+                            "error": "No tolist() method available",
+                            "shape": list(activation_tensor.shape) if hasattr(activation_tensor, 'shape') else "unknown",
+                            "type": str(type(activation_tensor))
+                        }
+                        
+                except Exception as e:
+                    serialization_errors.append(f"Unexpected error serializing {key}: {e}")
+                    serialized_activations[key] = {
+                        "error": f"Serialization error: {str(e)}",
+                        "type": str(type(activation_tensor)) if activation_tensor is not None else "None"
+                    }
+            
+            # Report serialization errors but don't fail the request
+            if serialization_errors:
+                print(f"⚠️  Activation serialization warnings: {len(serialization_errors)} issues")
+                for error in serialization_errors[:5]:  # Show first 5 errors
+                    print(f"   • {error}")
+                if len(serialization_errors) > 5:
+                    print(f"   • ... and {len(serialization_errors) - 5} more errors")
             
             response = ChatCompletionResponse(
                 id=f"chatcmpl-{hash(prompt) % 100000}",
@@ -315,7 +512,8 @@ async def chat_completions(request: ChatCompletionRequest):
                         finish_reason="stop"
                     )
                 ],
-                activations=serialized_activations if serialized_activations else None  # Include activation data
+                activations=serialized_activations,  # Always include (may be empty dict)
+                activation_collection_status=activation_status  # Include detailed status
             )
             
             return response
