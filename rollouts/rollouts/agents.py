@@ -412,7 +412,7 @@ async def rollout_openai(actor: Actor, on_chunk: Callable[[StreamChunk], Awaitab
     # Convert messages to OpenAI format
     messages = [_message_to_openai(m) for m in actor.trajectory.messages]
     
-    # Prepare API call parameters - always streaming
+    # Prepare API call parameters
     params = {
         "model": actor.endpoint.model,
         "messages": messages,
@@ -435,10 +435,14 @@ async def rollout_openai(actor: Actor, on_chunk: Callable[[StreamChunk], Awaitab
     if actor.endpoint.reasoning_effort is not None:
         params["reasoning_effort"] = actor.endpoint.reasoning_effort
     
-    # Stream the response
+    # Add extra_params if available (for custom endpoints like amplified sampling)
+    if hasattr(actor.endpoint, 'extra_params') and actor.endpoint.extra_params:
+        params.update(actor.endpoint.extra_params)
+    
     try:
         # Stream the response
         stream = await client.chat.completions.create(**params)
+        completion = await aggregate_stream(stream, on_chunk)
         
     except Exception as e:
         # Dump the exact request on error
@@ -451,7 +455,6 @@ async def rollout_openai(actor: Actor, on_chunk: Callable[[StreamChunk], Awaitab
         print("="*80)
         raise  # Re-raise the exception
     
-    completion = await aggregate_stream(stream, on_chunk)
     completion = replace(completion, model=actor.endpoint.model)
     final_message = completion.choices[0].message
 
