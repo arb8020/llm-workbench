@@ -62,6 +62,60 @@ def introspect_model_structure(model) -> Dict[str, Any]:
     
     return structure
 
+
+# ── Request/Response Models ──────────────────────────────────────────────────
+class Message(BaseModel):
+    role: str
+    content: str
+
+class ActivationCollectionRequest(BaseModel):
+    layers: List[int] = field(default_factory=list)
+    hook_points: List[str] = field(default_factory=lambda: ["output"])
+    positions: List[int] = field(default_factory=lambda: [-1])  # -1 = last token
+    return_activations: bool = True
+
+class ChatCompletionRequest(BaseModel):
+    model: str
+    messages: List[Message]
+    max_tokens: int = 50
+    temperature: float = 0.1
+    top_p: float = 1.0
+    collect_activations: Optional[ActivationCollectionRequest] = None
+
+class Choice(BaseModel):
+    index: int
+    message: Message
+    finish_reason: str
+
+class Usage(BaseModel):
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+class ActivationCollectionStatus(BaseModel):
+    """Metadata about activation collection success/failure."""
+    requested: bool = False
+    successful: bool = False
+    requested_layers: List[int] = field(default_factory=list)
+    requested_hooks: List[str] = field(default_factory=list)
+    collected_keys: List[str] = field(default_factory=list)
+    failed_keys: List[str] = field(default_factory=list)
+    error_message: Optional[str] = None
+    model_structure: Optional[Dict[str, Any]] = None
+
+class ChatCompletionResponse(BaseModel):
+    id: str
+    object: str = "chat.completion"
+    created: int
+    model: str
+    usage: Usage
+    choices: List[Choice]
+    activations: Optional[Dict[str, Any]] = None  # Interpretability extension
+    activation_collection_status: Optional[ActivationCollectionStatus] = None  # Collection metadata
+
+
+
+# ── Activation Collection Validation Functions ─────────────────────────────
 def validate_activation_request(request: ActivationCollectionRequest, model) -> None:
     """Validate activation collection request against model capabilities."""
     errors = []
@@ -122,57 +176,6 @@ def get_activation_tensor(model, layer_idx: int, hook_point: str):
         raise ActivationCollectionError(f"Attribute error accessing layer {layer_idx} {hook_point}: {e}")
     except Exception as e:
         raise ActivationCollectionError(f"Unexpected error collecting layer {layer_idx} {hook_point}: {type(e).__name__}: {e}")
-
-
-# ── Request/Response Models ──────────────────────────────────────────────────
-class Message(BaseModel):
-    role: str
-    content: str
-
-class ActivationCollectionRequest(BaseModel):
-    layers: List[int] = field(default_factory=list)
-    hook_points: List[str] = field(default_factory=lambda: ["output"])
-    positions: List[int] = field(default_factory=lambda: [-1])  # -1 = last token
-    return_activations: bool = True
-
-class ChatCompletionRequest(BaseModel):
-    model: str
-    messages: List[Message]
-    max_tokens: int = 50
-    temperature: float = 0.1
-    top_p: float = 1.0
-    collect_activations: Optional[ActivationCollectionRequest] = None
-
-class Choice(BaseModel):
-    index: int
-    message: Message
-    finish_reason: str
-
-class Usage(BaseModel):
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_tokens: int = 0
-
-class ActivationCollectionStatus(BaseModel):
-    """Metadata about activation collection success/failure."""
-    requested: bool = False
-    successful: bool = False
-    requested_layers: List[int] = field(default_factory=list)
-    requested_hooks: List[str] = field(default_factory=list)
-    collected_keys: List[str] = field(default_factory=list)
-    failed_keys: List[str] = field(default_factory=list)
-    error_message: Optional[str] = None
-    model_structure: Optional[Dict[str, Any]] = None
-
-class ChatCompletionResponse(BaseModel):
-    id: str
-    object: str = "chat.completion"
-    created: int
-    model: str
-    usage: Usage
-    choices: List[Choice]
-    activations: Optional[Dict[str, Any]] = None  # Interpretability extension
-    activation_collection_status: Optional[ActivationCollectionStatus] = None  # Collection metadata
 
 
 # ── Global Model Instance ───────────────────────────────────────────────────
@@ -518,6 +521,9 @@ async def chat_completions(request: ChatCompletionRequest):
             
             return response
             
+    except HTTPException:
+        # Re-raise HTTP exceptions (like our 400 validation errors) as-is
+        raise
     except Exception as e:
         print(f"❌ Error during inference: {e}")
         raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
