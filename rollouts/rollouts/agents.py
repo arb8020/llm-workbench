@@ -184,6 +184,7 @@ async def aggregate_stream(
     
     # Tool call buffer for partial accumulation
     call_buf: dict[int, dict[str, Any]] = {}
+    next_auto_index = 0  # Auto-assign indexes when tool_call.index is None
     
     async for chunk in stream:
         choice = chunk.choices[0]
@@ -202,7 +203,12 @@ async def aggregate_stream(
         # Handle tool calls with better accumulation
         if delta.tool_calls:
             for tool_call in delta.tool_calls:
+                # FIXED: Handle None index properly for Gemini compatibility
                 idx = tool_call.index
+                if idx is None:
+                    # Gemini sends tool calls with index=None - auto-assign unique indexes
+                    idx = next_auto_index
+                    next_auto_index += 1
                 
                 # Initialize if needed
                 if idx not in call_buf:
