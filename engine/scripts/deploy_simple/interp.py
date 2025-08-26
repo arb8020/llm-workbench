@@ -4,6 +4,7 @@
 import os
 import sys
 import asyncio
+import argparse
 from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass, field
 
@@ -181,17 +182,18 @@ def get_activation_tensor(model, layer_idx: int, hook_point: str):
 # ── Global Model Instance ───────────────────────────────────────────────────
 app = FastAPI(title="Interpretability-Enabled vLLM Server", version="0.1.0")
 model = None
+MODEL_NAME = "openai-community/gpt2"  # Default model, can be overridden by command line
 
 
 def initialize_model():
     """Initialize nnsight VLLM model."""
     global model
     print("🧠 Loading model with nnsight.VLLM integration...")
-    print("   Model: openai-community/gpt2")
+    print(f"   Model: {MODEL_NAME}")
     print("   Features: activation collection, interventions")
     
     try:
-        model = VLLM("openai-community/gpt2", device="auto", dispatch=True)
+        model = VLLM(MODEL_NAME, device="auto", dispatch=True)
         print("✅ Model loaded successfully")
         return True
     except Exception as e:
@@ -208,7 +210,7 @@ async def list_models():
         "object": "list",
         "data": [
             {
-                "id": "openai-community/gpt2",
+                "id": MODEL_NAME,
                 "object": "model",
                 "created": 1677649963,
                 "owned_by": "openai-community"
@@ -222,7 +224,7 @@ async def get_capabilities():
     return {
         "activation_collection": True,
         "activation_patching": True,
-        "supported_models": ["openai-community/gpt2"],
+        "supported_models": [MODEL_NAME],
         "supported_layers": list(range(12)),  # GPT-2 has 12 layers
         "supported_hook_points": ["input", "output", "attn.output", "mlp.output"],
         "max_tokens": 512,
@@ -541,10 +543,25 @@ async def startup_event():
 
 def main():
     """Start the interpretability server."""
+    global MODEL_NAME
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Interpretability-Enabled vLLM Server")
+    parser.add_argument("--model", default="openai-community/gpt2", 
+                       help="Model to load (default: openai-community/gpt2)")
+    parser.add_argument("--host", default="0.0.0.0", 
+                       help="Host to bind to (default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=8000, 
+                       help="Port to run on (default: 8000)")
+    
+    args = parser.parse_args()
+    MODEL_NAME = args.model
+    
     print("🚀 Starting Interpretability-Enabled vLLM Server")
     print("🧠 Features: activation collection, OpenAI-compatible API")
-    print("📡 Server will be available at: http://0.0.0.0:8000")
-    print("📚 Documentation: http://0.0.0.0:8000/docs")
+    print(f"📡 Server will be available at: http://{args.host}:{args.port}")
+    print(f"📚 Documentation: http://{args.host}:{args.port}/docs")
+    print(f"🎯 Model: {MODEL_NAME}")
     
     # Check GPU availability
     try:
@@ -560,8 +577,8 @@ def main():
     # Start server
     uvicorn.run(
         app,
-        host="0.0.0.0",
-        port=8000,
+        host=args.host,
+        port=args.port,
         log_level="info"
     )
 

@@ -11,22 +11,31 @@ from broker.client import GPUClient
 from bifrost.client import BifrostClient
 
 
-def deploy_interpretability_server(min_vram: int = 12, max_price: float = 0.60, force_new_gpu: bool = False) -> dict:
+def deploy_interpretability_server(min_vram: int = 12, max_price: float = 0.60, force_new_gpu: bool = False, 
+                                   existing_only: bool = False, model: str = "openai-community/gpt2") -> dict:
     """Deploy interpretability-enabled vLLM server on GPU and return connection info.
     
     This function implements smart GPU reuse:
     - Reuses existing 'interp-server' GPU instances that meet requirements (saves cost & time)
     - Always redeploys code, reinstalls dependencies, and restarts server (ensures freshness)
     - Use force_new_gpu=True to provision brand new GPU hardware
+    - Use existing_only=True to only use existing GPUs (fail if none found)
     
     Args:
         min_vram: Minimum VRAM required in GB
         max_price: Maximum price per hour
         force_new_gpu: If True, always create new GPU instance instead of reusing
+        existing_only: If True, only use existing instances, fail if none found
     
     Returns:
         Connection info dict with URL, instance ID, SSH details, etc.
     """
+    
+    # Handle special modes
+    if existing_only:
+        print("🎯 EXISTING-ONLY MODE: Will only use existing instances, fail if none found")
+    if force_new_gpu:
+        print("⚡ FORCE-NEW-GPU MODE: Will create new instance regardless of existing ones")
     
     print("🚀 Starting interpretability server deployment...")
     print("🧠 This server includes activation collection and intervention capabilities")
@@ -37,27 +46,77 @@ def deploy_interpretability_server(min_vram: int = 12, max_price: float = 0.60, 
     # 1. CHECK FOR EXISTING INSTANCE (unless force_new_gpu is True)
     if not force_new_gpu:
         print("🔍 Checking for existing interp-server instances...")
+        print(f"   Looking for instances with:")
+        print(f"     • Name: 'interp-server'")
+        print(f"     • Status: 'running'")
+        print(f"     • Min VRAM: {min_vram}GB")
+        print(f"     • Max price: ${max_price}/hr")
+        
         existing_instances = gpu_client.list_instances()
+        print(f"📋 Found {len(existing_instances)} total instances")
         
         # Look for running interp-server instances that meet our requirements
         suitable_instances = []
-        for instance in existing_instances:
-            if (instance.name == "interp-server" and 
-                instance.status == "running" and
-                hasattr(instance, 'vram_gb') and instance.vram_gb >= min_vram and
-                hasattr(instance, 'price_per_hour') and instance.price_per_hour <= max_price):
+        
+        for i, instance in enumerate(existing_instances):
+            print(f"\n🔍 Instance {i+1}/{len(existing_instances)}:")
+            print(f"   • ID: {getattr(instance, 'id', 'Unknown')}")
+            print(f"   • Name: '{getattr(instance, 'name', 'Unknown')}'")
+            print(f"   • Status: '{getattr(instance, 'status', 'Unknown')}'")
+            print(f"   • VRAM: {getattr(instance, 'vram_gb', 'Unknown')}GB")
+            print(f"   • Price: ${getattr(instance, 'price_per_hour', 'Unknown')}/hr")
+            print(f"   • GPU Type: {getattr(instance, 'gpu_type', 'Unknown')}")
+            
+            # Check each requirement individually for better debugging
+            name_match = instance.name == "interp-server"
+            status_match = instance.status == "running"
+            has_vram = hasattr(instance, 'vram_gb')
+            vram_sufficient = has_vram and instance.vram_gb >= min_vram
+            has_price = hasattr(instance, 'price_per_hour')
+            price_acceptable = has_price and instance.price_per_hour <= max_price
+            
+            print(f"   • Name matches 'interp-server': {name_match}")
+            print(f"   • Status is 'running': {status_match}")
+            print(f"   • Has VRAM attribute: {has_vram}")
+            if has_vram:
+                print(f"   • VRAM sufficient (>={min_vram}GB): {vram_sufficient}")
+            else:
+                print(f"   • VRAM sufficient (>={min_vram}GB): Skipped (existing running instance assumed sufficient)")
+                vram_sufficient = True  # Assume existing running instance has sufficient VRAM
+            print(f"   • Has price attribute: {has_price}")
+            print(f"   • Price acceptable (<=${max_price}): {price_acceptable}")
+            
+            all_requirements_met = (name_match and status_match and 
+                                   vram_sufficient and 
+                                   has_price and price_acceptable)
+            print(f"   • ✅ All requirements met: {all_requirements_met}")
+            
+            if all_requirements_met:
                 suitable_instances.append(instance)
+                print(f"   → Added to suitable instances")
+        
+        print(f"\n📊 Summary: Found {len(suitable_instances)} suitable instances out of {len(existing_instances)} total")
         
         if suitable_instances:
             # Use the first suitable instance
             gpu_instance = suitable_instances[0]
-            print(f"✨ Found existing suitable interp-server: {gpu_instance.id}")
+            print(f"✨ Selected existing interp-server: {gpu_instance.id}")
             print(f"   GPU: {getattr(gpu_instance, 'gpu_type', 'Unknown')}")
             print(f"   VRAM: {getattr(gpu_instance, 'vram_gb', 'Unknown')}GB")
             print(f"   Price: ${getattr(gpu_instance, 'price_per_hour', 'Unknown')}/hr")
             print("🔄 Will redeploy code, dependencies, and server on existing GPU")
         else:
             print("📝 No suitable existing interp-server instances found")
+            if len(existing_instances) == 0:
+                print("   → No instances exist at all")
+            else:
+                print("   → Instances exist but none meet all requirements")
+            
+            # If existing_only mode is enabled, fail here instead of creating new GPU
+            if existing_only:
+                print("❌ EXISTING-ONLY MODE: No suitable existing instances found, failing as requested")
+                print("💡 To create a new GPU instance, run without --existing-only flag")
+                sys.exit(1)
     
     # 2. PROVISION NEW GPU (if no existing instance or force_new_gpu)
     if gpu_instance is None:
@@ -122,7 +181,7 @@ def deploy_interpretability_server(min_vram: int = 12, max_price: float = 0.60, 
     bifrost_client.exec("tmux kill-session -t interp 2>/dev/null || true")
     
     # Create tmux session and start interpretability server with persistent logging
-    tmux_cmd = "tmux new-session -d -s interp 'cd ~/.bifrost/workspace && uv run python -m engine.scripts.deploy_simple.interp 2>&1 | tee ~/interp_server.log'"
+    tmux_cmd = f"tmux new-session -d -s interp 'cd ~/.bifrost/workspace && uv run python -m engine.scripts.deploy_simple.interp --model {model} 2>&1 | tee ~/interp_server.log'"
     bifrost_client.exec(tmux_cmd)
     
     print("✅ Interpretability server starting in tmux session 'interp'")
@@ -222,12 +281,13 @@ def main():
     parser.add_argument("--min-vram", type=int, default=12, help="Minimum VRAM in GB (default: 12 for interpretability features)")
     parser.add_argument("--max-price", type=float, default=0.60, help="Maximum price per hour (default: 0.60)")
     parser.add_argument("--force-new-gpu", action="store_true", help="Force creation of new GPU instance instead of reusing existing one")
+    parser.add_argument("--existing-only", action="store_true", help="Only use existing GPU instances, fail if none suitable found (no new GPU creation)")
     parser.add_argument("--json", action="store_true", help="Output connection info as JSON")
     
     args = parser.parse_args()
     
     try:
-        connection_info = deploy_interpretability_server(args.min_vram, args.max_price, args.force_new_gpu)
+        connection_info = deploy_interpretability_server(args.min_vram, args.max_price, args.force_new_gpu, args.existing_only)
         
         if args.json:
             print(json.dumps(connection_info, indent=2))
