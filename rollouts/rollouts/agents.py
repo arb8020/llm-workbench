@@ -313,6 +313,10 @@ async def rollout_vllm(actor: Actor, on_chunk: Callable[[StreamChunk], Awaitable
     if actor.tools:
         params["tools"] = [_tool_to_openai(t) for t in actor.tools]
         params["tool_choice"] = "auto"
+    
+    # Add extra_params if available (for custom endpoints like amplified sampling)  
+    if hasattr(actor.endpoint, 'extra_params') and actor.endpoint.extra_params:
+        params.update(actor.endpoint.extra_params)
 
     api_base = actor.endpoint.api_base 
     if not api_base.endswith('/v1/chat/completions'):
@@ -956,11 +960,20 @@ FullAuto = RunConfig(
 async def rollout(actor: Actor, on_chunk: Callable[[StreamChunk], Awaitable[None]]=stdout_handler, 
                   user_message_for_thinking: Optional[str] = None, turn_idx: int = 0, inline_thinking: Optional[str] = None) -> Actor:
     provider = actor.endpoint.provider
+    print(f"🔥🔥🔥 EMERGENCY DEBUG: MODIFIED ROLLOUT FUNCTION CALLED! Provider={provider}")
+    print(f"🔥🔥🔥 Model={actor.endpoint.model}, api_base={actor.endpoint.api_base}")
+    print(f"🔥🔥🔥 Endpoint type: {type(actor.endpoint)}")
+    if hasattr(actor.endpoint, 'extra_params'):
+        print(f"🔥🔥🔥 Has extra_params: {actor.endpoint.extra_params}")
+    import sys; sys.stdout.flush()  # Force immediate output
     if provider == "openai":
+        print("🔥 ROUTING TO rollout_openai")
         new_actor = await rollout_openai(actor, on_chunk)
     elif provider == "moonshot":
+        print("🔥 ROUTING TO rollout_moonshot")
         new_actor = await rollout_moonshot(actor, on_chunk)
     elif provider == "vllm":
+        print("🔥 ROUTING TO rollout_vllm")
         new_actor = await rollout_vllm(actor, on_chunk)
     elif provider == "anthropic":
         new_actor = await rollout_anthropic(actor, on_chunk, user_message_for_thinking, turn_idx, inline_thinking)
