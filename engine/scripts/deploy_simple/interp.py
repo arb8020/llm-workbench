@@ -347,26 +347,63 @@ async def chat_completions(request: ChatCompletionRequest):
                 # First collect activations using nnsight trace
                 with model.trace() as tracer:
                     with tracer.invoke(prompt):
-                        # Collect requested activations with explicit error handling
+                        # Collect requested activations with tuple handling (based on working example)
+                        saved_activation_proxies = {}
+                        
+                        # Set up .save() calls inside trace context for nnsight
                         for layer_idx in layers:
                             for hook_point in hook_points:
                                 key = f"layer_{layer_idx}_{hook_point}"
                                 
                                 try:
-                                    activation_tensor = get_activation_tensor(model, layer_idx, hook_point)
-                                    collected_activations[key] = activation_tensor
-                                    activation_status.collected_keys.append(key)
-                                    print(f"✅ Successfully collected {key}")
-                                except (ActivationCollectionError, ModelStructureError) as e:
-                                    failed_keys.append(key)
+                                    # Get the activation proxy and call .save() INSIDE trace context
+                                    if hook_point == "output":
+                                        activation_proxy = model.model.layers[layer_idx].output.save()
+                                    elif hook_point == "input":
+                                        activation_proxy = model.model.layers[layer_idx].input.save()
+                                    else:
+                                        raise Exception(f"Hook point '{hook_point}' not yet implemented")
+                                    
+                                    saved_activation_proxies[key] = activation_proxy
+                                    print(f"✅ Set up activation collection for {key}")
+                                    
+                                except Exception as e:
                                     activation_status.failed_keys.append(key)
-                                    error_msg = f"❌ Failed to collect {key}: {str(e)}"
-                                    print(error_msg)
-                                    # For any activation collection failure, raise HTTP error
                                     activation_status.error_message = str(e)
-                                    raise HTTPException(
-                                        status_code=400, 
-                                        detail=f"Activation collection failed for {key}: {str(e)}"
+                                    print(f"❌ Failed to set up collection for {key}: {e}")
+                                    raise HTTPException(status_code=400, detail=f"Activation collection setup failed for {key}: {str(e)}")
+                        
+                        # After trace context, extract actual tensor values from proxies
+                        for key, activation_proxy in saved_activation_proxies.items():
+                            try:
+                                # Extract the value - handle different possible structures (TUPLE FIX)
+                                if hasattr(activation_proxy, 'value'):
+                                    value = activation_proxy.value
+                                    # If it's a tuple (hidden_states, attention_weights, etc), take the first element
+                                    if isinstance(value, tuple) and len(value) > 0:
+                                        # For transformer outputs, first element is usually the hidden states tensor
+                                        collected_activations[key] = value[0]
+                                        print(f"✅ Extracted tensor from tuple for {key}: shape={getattr(value[0], 'shape', 'unknown')}")
+                                    else:
+                                        collected_activations[key] = value
+                                        print(f"✅ Extracted value for {key}: type={type(value)}")
+                                elif isinstance(activation_proxy, tuple) and len(activation_proxy) > 0:
+                                    # nnsight+vLLM returns activation proxy as direct tuple
+                                    print(f"🔍 TUPLE FIX {key}: tuple len={len(activation_proxy)}, item types={[type(item).__name__ for item in activation_proxy[:3]]}")
+                                    tensor_item = activation_proxy[0]  # First item is usually hidden states
+                                    collected_activations[key] = tensor_item
+                                    print(f"✅ Extracted tensor from tuple for {key}: shape={getattr(tensor_item, 'shape', 'unknown')}, type={type(tensor_item)}")
+                                else:
+                                    # Fallback: use the proxy itself
+                                    collected_activations[key] = activation_proxy  
+                                    print(f"⚠️  Using proxy directly for {key}")
+                                    
+                                activation_status.collected_keys.append(key)
+                                
+                            except Exception as e:
+                                activation_status.failed_keys.append(key)
+                                activation_status.error_message = str(e)
+                                print(f"❌ Failed to extract activation data for {key}: {e}"
                                     )
                 
                 # Check if we collected any activations
@@ -445,61 +482,131 @@ async def chat_completions(request: ChatCompletionRequest):
             if generated_text.startswith(prompt):
                 generated_text = generated_text[len(prompt):].strip()
             
-            # Process collected activations for JSON serialization with explicit error handling
+            # Robust tensor serialization with comprehensive metadata (based on working example)
+            import numpy as np
+            import time
             serialized_activations = {}
-            serialization_errors = []
             
             for key, activation_tensor in collected_activations.items():
                 try:
-                    if activation_tensor is None:
-                        serialization_errors.append(f"Activation tensor for {key} is None")
-                        continue
+                    print(f"🔍 Processing {key}: type={type(activation_tensor)}")
+                    
+                    # Extract the actual tensor from nnsight wrapper
+                    actual_tensor = None
+                    tensor_source = "unknown"
+                    
+                    # Try multiple ways to extract the underlying tensor
+                    if hasattr(activation_tensor, 'value'):
+                        actual_tensor = activation_tensor.value
+                        tensor_source = "nnsight.value"
+                        print(f"🔍 Extracted from nnsight.value: {type(actual_tensor)}")
                         
-                    # Convert to list for JSON serialization (limit size for demo)
-                    if hasattr(activation_tensor, 'tolist'):
-                        try:
-                            # Limit to first 10 elements to avoid huge JSON responses
-                            activation_list = activation_tensor.tolist()
-                            if isinstance(activation_list, list) and len(activation_list) > 0:
-                                # If it's a nested list, take first 10 of the last dimension
-                                if isinstance(activation_list[0], list):
-                                    serialized_activations[key] = [row[:10] if isinstance(row, list) else row 
-                                                                 for row in activation_list]
-                                else:
-                                    serialized_activations[key] = activation_list[:10]
-                            else:
-                                serialized_activations[key] = activation_list
-                            print(f"✅ Successfully serialized {key} (shape: {getattr(activation_tensor, 'shape', 'unknown')})")
-                        except Exception as e:
-                            serialization_errors.append(f"Failed to convert {key} to list: {e}")
-                            # Fallback to shape information
-                            serialized_activations[key] = {
-                                "error": f"Serialization failed: {str(e)}",
-                                "shape": list(activation_tensor.shape) if hasattr(activation_tensor, 'shape') else "unknown",
-                                "type": str(type(activation_tensor))
-                            }
+                        if hasattr(actual_tensor, 'detach'):
+                            actual_tensor = actual_tensor.detach()
+                            tensor_source += ".detach()"
+                        if hasattr(actual_tensor, 'cpu'):
+                            actual_tensor = actual_tensor.cpu()
+                            tensor_source += ".cpu()"
+                            
+                    elif hasattr(activation_tensor, 'detach'):
+                        actual_tensor = activation_tensor.detach().cpu()
+                        tensor_source = "pytorch.detach().cpu()"
+                    elif hasattr(activation_tensor, 'cpu'):
+                        actual_tensor = activation_tensor.cpu()  
+                        tensor_source = "pytorch.cpu()"
                     else:
-                        serialization_errors.append(f"Activation tensor for {key} has no tolist() method")
+                        actual_tensor = activation_tensor
+                        tensor_source = "direct"
+                    
+                    print(f"🔍 Tensor source: {tensor_source}")
+                    
+                    # Now serialize the tensor with comprehensive metadata
+                    if actual_tensor is not None and hasattr(actual_tensor, 'numpy'):
+                        # Convert to numpy for serialization
+                        import torch
+                        if hasattr(actual_tensor, 'dtype') and actual_tensor.dtype == torch.bfloat16:
+                            print(f"🔄 Converting BFloat16 to Float32 for {key} (numpy compatibility)")
+                            numpy_array = actual_tensor.float().numpy()
+                        else:
+                            numpy_array = actual_tensor.numpy()
+                        
+                        # Comprehensive metadata
+                        original_dtype = str(actual_tensor.dtype) if hasattr(actual_tensor, 'dtype') else "unknown"
+                        shape = list(numpy_array.shape)
+                        dtype_str = str(numpy_array.dtype)
+                        total_size = int(numpy_array.size)
+                        memory_mb = (numpy_array.nbytes / 1024 / 1024)
+                        
+                        # Statistical summary for large tensors
+                        stats = None
+                        if total_size > 100:
+                            stats = {
+                                "mean": float(numpy_array.mean()),
+                                "std": float(numpy_array.std()),
+                                "min": float(numpy_array.min()),
+                                "max": float(numpy_array.max()),
+                                "norm": float(np.linalg.norm(numpy_array.flatten()))
+                            }
+                        
+                        # For TalkTuner demo, provide manageable amount of data
+                        if total_size > 1000:
+                            # Sample first 100 elements for demo
+                            flat = numpy_array.flatten()
+                            sample_data = flat[:100].tolist()
+                            
+                            serialized_activations[key] = {
+                                "format": "sampled_tensor",
+                                "shape": shape,
+                                "dtype": dtype_str,
+                                "original_dtype": original_dtype,
+                                "total_elements": total_size,
+                                "memory_mb": round(memory_mb, 3),
+                                "statistics": stats,
+                                "sample_data": sample_data,
+                                "sample_info": "first_100_elements",
+                                "tensor_source": tensor_source,
+                                "blob_storage_ready": True
+                            }
+                        else:
+                            # Small tensor - include all data
+                            serialized_activations[key] = {
+                                "format": "complete_tensor", 
+                                "shape": shape,
+                                "dtype": dtype_str,
+                                "original_dtype": original_dtype,
+                                "total_elements": total_size,
+                                "memory_mb": round(memory_mb, 3),
+                                "statistics": stats,
+                                "data": numpy_array.tolist(),
+                                "tensor_source": tensor_source,
+                                "blob_storage_ready": True
+                            }
+                        
+                        print(f"✅ Serialized {key}: {serialized_activations[key]['format']}, shape={shape}, size={total_size}, mem={memory_mb:.1f}MB")
+                        
+                    else:
+                        # Fallback for non-numpy convertible tensors
+                        shape = list(actual_tensor.shape) if hasattr(actual_tensor, 'shape') else "unknown"
+                        
                         serialized_activations[key] = {
-                            "error": "No tolist() method available",
-                            "shape": list(activation_tensor.shape) if hasattr(activation_tensor, 'shape') else "unknown",
-                            "type": str(type(activation_tensor))
+                            "format": "metadata_only",
+                            "shape": shape,
+                            "type": str(type(actual_tensor)),
+                            "tensor_source": tensor_source,
+                            "error": "Could not convert to numpy array for serialization",
+                            "blob_storage_ready": False
                         }
+                        print(f"⚠️  Could not serialize {key}: no numpy conversion available")
                         
                 except Exception as e:
-                    serialization_errors.append(f"Unexpected error serializing {key}: {e}")
+                    error_msg = str(e)
+                    print(f"❌ Error serializing {key}: {error_msg}")
                     serialized_activations[key] = {
-                        "error": f"Serialization error: {str(e)}",
-                        "type": str(type(activation_tensor)) if activation_tensor is not None else "None"
+                        "format": "error",
+                        "error": f"Serialization failed: {error_msg}",
+                        "type": str(type(activation_tensor)) if activation_tensor is not None else "None",
+                        "blob_storage_ready": False
                     }
-            
-            # Report serialization errors but don't fail the request
-            if serialization_errors:
-                print(f"⚠️  Activation serialization warnings: {len(serialization_errors)} issues")
-                for error in serialization_errors[:5]:  # Show first 5 errors
-                    print(f"   • {error}")
-                if len(serialization_errors) > 5:
-                    print(f"   • ... and {len(serialization_errors) - 5} more errors")
             
             response = ChatCompletionResponse(
                 id=f"chatcmpl-{hash(prompt) % 100000}",
