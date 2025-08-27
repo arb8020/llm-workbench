@@ -548,8 +548,8 @@ async def chat_completions(request: ChatCompletionRequest):
                                 "norm": float(np.linalg.norm(numpy_array.flatten()))
                             }
                         
-                        # For TalkTuner demo, provide manageable amount of data
-                        if total_size > 1000:
+                        # For TalkTuner, provide complete data for training up to reasonable size
+                        if total_size > 50000:  # Only sample for very large tensors (>50k elements)
                             # Sample first 100 elements for demo
                             flat = numpy_array.flatten()
                             sample_data = flat[:100].tolist()
@@ -568,7 +568,7 @@ async def chat_completions(request: ChatCompletionRequest):
                                 "blob_storage_ready": True
                             }
                         else:
-                            # Small tensor - include all data
+                            # Medium/small tensor - include all data for TalkTuner training
                             serialized_activations[key] = {
                                 "format": "complete_tensor", 
                                 "shape": shape,
