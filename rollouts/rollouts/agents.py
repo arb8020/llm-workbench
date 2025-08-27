@@ -319,18 +319,30 @@ async def rollout_vllm(actor: Actor, on_chunk: Callable[[StreamChunk], Awaitable
         params.update(actor.endpoint.extra_params)
 
     api_base = actor.endpoint.api_base 
-    if not api_base.endswith('/v1/chat/completions'):
-        api_base = api_base.rstrip('/') + '/v1/chat/completions'
+    if not api_base.endswith('/chat/completions'):
+        if api_base.endswith('/v1'):
+            api_base = api_base.rstrip('/') + '/chat/completions'
+        else:
+            api_base = api_base.rstrip('/') + '/v1/chat/completions'
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json"
     }
     completion = None
-    # Stream the response
-    async with aiohttp.ClientSession() as session:
+    # Add debugging before HTTP call
+    print(f"🔥 Making HTTP POST to: {api_base}")
+    print(f"🔥 Headers: {headers}")
+    print(f"🔥 Request params keys: {list(params.keys())}")
+    import sys; sys.stdout.flush()  # Force immediate output
+    
+    # Stream the response with timeout
+    timeout = aiohttp.ClientTimeout(total=30)  # 30 second timeout
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         # Stream the response
         for attempt in range(1, max_api_retries + 1):
             try:
+                print(f"🔥 Attempt {attempt}: Sending HTTP request...")
+                sys.stdout.flush()
                 async with session.post(api_base, json=params, headers=headers) as response:
                     response.raise_for_status()
                     completion = await response.json()
