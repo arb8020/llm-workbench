@@ -127,8 +127,12 @@ def setup_openai_routes(
                 "n": request.n or 1
             }
             
-            # Generate text using provided function
-            generated_text = generate_fn(request.prompt, gen_params)
+            # Generate text using provided function (handle both sync and async)
+            import asyncio
+            if asyncio.iscoroutinefunction(generate_fn):
+                generated_text = await generate_fn(request.prompt, gen_params)
+            else:
+                generated_text = generate_fn(request.prompt, gen_params)
             
             # Create response
             return create_completion_response(
@@ -164,8 +168,12 @@ def setup_openai_routes(
                 "n": request.n or 1
             }
             
-            # Generate text using provided function
-            generated_text = generate_fn(full_prompt, gen_params)
+            # Generate text using provided function (handle both sync and async)
+            import asyncio
+            if asyncio.iscoroutinefunction(generate_fn):
+                generated_text = await generate_fn(full_prompt, gen_params)
+            else:
+                generated_text = generate_fn(full_prompt, gen_params)
             
             # Create response
             return create_chat_completion_response(
