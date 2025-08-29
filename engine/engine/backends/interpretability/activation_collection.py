@@ -243,7 +243,7 @@ class ActivationCollector:
                 if activation_tensor is not None:
                     # Convert to numpy for serialization
                     if hasattr(activation_tensor, 'cpu'):
-                        activation_np = activation_tensor.cpu().numpy()
+                        activation_np = activation_tensor.detach().cpu().numpy()
                     else:
                         activation_np = np.array(activation_tensor)
                     
