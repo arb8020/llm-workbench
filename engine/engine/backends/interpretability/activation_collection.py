@@ -147,8 +147,8 @@ class ActivationCollector:
             if token_id.numel() == 1:
                 generated_token_ids.append(int(token_id.item()))
             else:
-                # Take the last token for sequences
-                generated_token_ids.append(int(token_id[-1].item()))
+                # Take the first token for sequences (or flatten and take first)
+                generated_token_ids.append(int(token_id.flatten()[0].item()))
         
         generated_text = self.model.tokenizer.decode(
             generated_token_ids, 
@@ -319,8 +319,8 @@ class ActivationCollector:
             if token_id.numel() == 1:
                 generated_token_ids.append(int(token_id.item()))
             else:
-                # Take the last token for sequences
-                generated_token_ids.append(int(token_id[-1].item()))
+                # Take the first token for sequences (or flatten and take first)
+                generated_token_ids.append(int(token_id.flatten()[0].item()))
         
         generated_text = self.model.tokenizer.decode(
             generated_token_ids, 
