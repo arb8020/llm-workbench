@@ -6,11 +6,15 @@ import time
 import json
 from pathlib import Path
 
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
 # Import broker and bifrost modules
 # Note: Run with PYTHONPATH=/path/to/broker:/path/to/bifrost for clean imports
 
 from broker.client import GPUClient
 from bifrost.client import BifrostClient
+from engine.engine.deployment import wait_for_server_ready
 
 
 def deploy_vllm(min_vram: int = 8, max_price: float = 0.40) -> dict:
@@ -67,40 +71,10 @@ def deploy_vllm(min_vram: int = 8, max_price: float = 0.40) -> dict:
     # 4. POLL UNTIL READY
     print("⏳ Waiting for server to be ready (this may take 2-3 minutes for model loading)...")
     
-    max_wait_time = 600  # 10 minutes max
-    start_time = time.time()
-    server_ready = False
-    
-    while not server_ready and (time.time() - start_time) < max_wait_time:
-        try:
-            # Check if OpenAI-compatible server is responding
-            models_check = bifrost_client.exec("curl -s --connect-timeout 5 http://localhost:8000/v1/models")
-            if models_check and "gpt2" in models_check.lower():
-                server_ready = True
-                break
-                
-            # Fallback: try a simple completions request
-            test_completion = bifrost_client.exec(
-                'curl -s --connect-timeout 5 -X POST http://localhost:8000/v1/completions '
-                '-H "Content-Type: application/json" '
-                '-d \'{"model":"openai-community/gpt2","prompt":"test","max_tokens":1}\''
-            )
-            if test_completion and ("choices" in test_completion.lower() or "text" in test_completion.lower()):
-                server_ready = True
-                break
-                
-        except Exception as e:
-            # Server not ready yet, continue waiting
-            pass
-        
-        elapsed = int(time.time() - start_time)
-        if elapsed % 30 == 0:  # Print update every 30 seconds
-            print(f"   Still loading model... ({elapsed}s elapsed)")
-            
-        time.sleep(10)
+    server_ready = wait_for_server_ready(bifrost_client, "gpt2", timeout=600)
     
     if not server_ready:
-        print(f"❌ Server failed to start within timeout: {time.time() - start_time}s elapsed")
+        print(f"❌ Server failed to start within timeout")
         print("   Check logs with:")
         print(f"   # Persistent log file: bifrost exec {ssh_connection} 'cat ~/vllm_server.log'")
         print(f"   # tmux session logs: bifrost exec {ssh_connection} 'tmux capture-pane -t vllm -p'")

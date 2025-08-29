@@ -1,0 +1,46 @@
+# Fix for Gemini multi-tool calling support in rollouts
+# 
+# ISSUE: Gemini's OpenAI-compatible endpoint sends tool calls with index=None,
+# causing the original aggregate_stream function to incorrectly concatenate
+# arguments from multiple tool calls, resulting in JSON parsing errors.
+#
+# SOLUTION: Auto-assign unique indexes when tool_call.index is None and
+# handle Gemini's single-chunk argument format properly.
+
+--- a/rollouts/agents.py
++++ b/rollouts/agents.py
+@@ -183,6 +183,7 @@ async def aggregate_stream(
+     
+     # Tool call buffer for partial accumulation
+     call_buf: dict[int, dict[str, Any]] = {}
++    next_auto_index = 0  # Auto-assign indexes when tool_call.index is None
+     
+     async for chunk in stream:
+         choice = chunk.choices[0]
+@@ -202,7 +203,12 @@ async def aggregate_stream(
+         if delta.tool_calls:
+             for tool_call in delta.tool_calls:
+-                idx = tool_call.index
++                # FIXED: Handle None index properly for Gemini compatibility
++                idx = tool_call.index
++                if idx is None:
++                    # Gemini sends tool calls with index=None - auto-assign unique indexes
++                    idx = next_auto_index
++                    next_auto_index += 1
+                 
+                 # Initialize if needed
+                 if idx not in call_buf:
+@@ -217,8 +223,11 @@ async def aggregate_stream(
+                 if tool_call.function:
+                     if tool_call.function.name:
+                         call_buf[idx]["function"]["name"] = tool_call.function.name
+                     if tool_call.function.arguments:
+-                        call_buf[idx]["function"]["arguments"] += tool_call.function.arguments
++                        # FIXED: Gemini sends complete arguments in one chunk, don't concatenate
++                        if call_buf[idx]["function"]["arguments"]:
++                            call_buf[idx]["function"]["arguments"] += tool_call.function.arguments
++                        else:
++                            call_buf[idx]["function"]["arguments"] = tool_call.function.arguments
+             
+             # Emit partial tool call event
+             await on_chunk(StreamChunk("tool_call_partial", {"calls": list(call_buf.values())}))

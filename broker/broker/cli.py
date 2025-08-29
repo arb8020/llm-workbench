@@ -5,7 +5,7 @@ Command-line interface for GPU cloud operations
 import json
 import subprocess
 import sys
-from typing import Optional
+from typing import Optional, List
 
 import typer
 from rich import box
@@ -373,67 +373,81 @@ def instances_status(instance_id: str):
 
 @instances_app.command("terminate")  
 def instances_terminate(
-    instance_id: Optional[str] = typer.Argument(None, help="Instance ID or partial ID to search for and terminate"),
-    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+    instance_ids: List[str] = typer.Argument(..., help="Instance ID(s) or partial IDs to search for and terminate"),
+    force: bool = typer.Option(False, "--force", "-f", "--yes", "-y", help="Skip confirmation prompt"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be terminated without actually doing it")
 ):
-    """Search for an instance by ID and terminate it"""
-    if not instance_id:
-        console.print("❌ Instance ID is required")
-        console.print("💡 Usage: broker instances terminate <instance_id>")
+    """Search for instances by ID and terminate them"""
+    if not instance_ids:
+        console.print("❌ At least one instance ID is required")
+        console.print("💡 Usage: broker instances terminate <instance_id> [instance_id2] ...")
         return
     
-    console.print(f"🔍 Searching for instance: {instance_id}")
-    
     client = GPUClient()
+    instances_to_terminate = []
     
-    # Try exact match first
-    instance = client.get_instance(instance_id)
-    
-    # If not found, try partial ID match
-    if not instance:
-        instances = client.list_instances()
-        matching_instances = [inst for inst in instances if inst.id.startswith(instance_id)]
+    # Resolve all instance IDs
+    for instance_id in instance_ids:
+        console.print(f"🔍 Searching for instance: {instance_id}")
         
-        if len(matching_instances) == 0:
-            console.print(f"❌ No instances found matching '{instance_id}'")
-            return
-        elif len(matching_instances) > 1:
-            console.print(f"❌ Multiple instances match '{instance_id}':")
-            for inst in matching_instances:
-                console.print(f"   {inst.id} - {inst.status}")
-            console.print("💡 Please use a more specific ID")
-            return
-        else:
-            instance = matching_instances[0]
+        # Try exact match first
+        instance = client.get_instance(instance_id)
+        
+        # If not found, try partial ID match
+        if not instance:
+            instances = client.list_instances()
+            matching_instances = [inst for inst in instances if inst.id.startswith(instance_id)]
+            
+            if len(matching_instances) == 0:
+                console.print(f"❌ No instances found matching '{instance_id}'")
+                continue
+            elif len(matching_instances) > 1:
+                console.print(f"❌ Multiple instances match '{instance_id}':")
+                for inst in matching_instances:
+                    console.print(f"   {inst.id} - {inst.status}")
+                console.print("💡 Please use a more specific ID")
+                continue
+            else:
+                instance = matching_instances[0]
+        
+        instances_to_terminate.append(instance)
+        console.print(f"✅ Found instance: {instance.id}")
+        console.print(f"   Status: {instance.status}")
+        console.print(f"   GPU: {instance.gpu_type} x{instance.gpu_count}")
+        console.print(f"   Price: ${instance.price_per_hour:.3f}/hr")
     
-    # Display instance details
-    console.print(f"✅ Found instance: {instance.id}")
-    console.print(f"   Status: {instance.status}")
-    console.print(f"   GPU: {instance.gpu_type} x{instance.gpu_count}")
-    console.print(f"   Price: ${instance.price_per_hour:.3f}/hr")
+    if not instances_to_terminate:
+        console.print("❌ No valid instances found to terminate")
+        return
     
     if dry_run:
-        console.print("🔥 [DRY RUN] Would terminate this instance")
+        console.print(f"🔥 [DRY RUN] Would terminate {len(instances_to_terminate)} instance(s)")
         return
     
     # Confirmation unless force is used
     if not force:
-        console.print("\n⚠️  This will terminate the instance and stop all billing")
+        plural = "s" if len(instances_to_terminate) > 1 else ""
+        console.print(f"\n⚠️  This will terminate {len(instances_to_terminate)} instance{plural} and stop all billing")
         response = typer.confirm("Are you sure you want to proceed?")
         if not response:
             console.print("❌ Termination cancelled")
             return
     
-    # Perform termination
-    console.print(f"🗑️ Terminating instance: {instance.id}")
-    success = client.terminate_instance(instance.id)
+    # Perform termination for all instances
+    success_count = 0
+    for instance in instances_to_terminate:
+        console.print(f"🗑️ Terminating instance: {instance.id}")
+        success = client.terminate_instance(instance.id)
+        
+        if success:
+            console.print(f"✅ Instance {instance.id} terminated successfully")
+            success_count += 1
+        else:
+            console.print(f"❌ Failed to terminate instance {instance.id}")
     
-    if success:
-        console.print("✅ Instance terminated successfully")
-        console.print("💰 Billing for this instance has been stopped")
-    else:
-        console.print("❌ Failed to terminate instance")
+    console.print(f"\n🎉 Successfully terminated {success_count}/{len(instances_to_terminate)} instances")
+    if success_count > 0:
+        console.print("💰 Billing for terminated instances has been stopped")
 
 
 @instances_app.command("cleanup")

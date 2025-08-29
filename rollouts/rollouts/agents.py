@@ -344,9 +344,29 @@ async def rollout_vllm(actor: Actor, on_chunk: Callable[[StreamChunk], Awaitable
                 print(f"🔥 Attempt {attempt}: Sending HTTP request...")
                 sys.stdout.flush()
                 async with session.post(api_base, json=params, headers=headers) as response:
-                    response.raise_for_status()
-                    completion = await response.json()
-                    break
+                    if response.status != 200:
+                        error_body = await response.text()
+                        print(f"❌ Server returned {response.status}: {error_body}")
+                        
+                        # Parse and provide helpful guidance for common errors
+                        if "maximum context length" in error_body.lower():
+                            print(f"💡 CONTEXT LENGTH ERROR DETECTED:")
+                            print(f"   • This is NOT a server startup failure - server is working correctly")
+                            print(f"   • Your max_tokens ({params.get('max_tokens')}) exceeds server's limit")
+                            print(f"   • FIX: Reduce max_tokens to a smaller value (try {params.get('max_tokens', 8192) // 2})")
+                            print(f"   • OR: Redeploy server with larger --max-model-len")
+                            print(f"🛑 Stopping retries - context length errors cannot be fixed by retrying")
+                            raise Exception(f"Context length exceeded: {error_body}")
+                        elif "not a valid parameter" in error_body.lower():
+                            print(f"💡 PARAMETER ERROR DETECTED:")
+                            print(f"   • Server doesn't support one of your parameters")
+                            print(f"   • Your parameters: {list(params.keys())}")
+                            print(f"   • Try removing 'logprobs' or 'echo' parameters")
+                        
+                        response.raise_for_status()
+                    else:
+                        completion = await response.json()
+                        break
             except Exception as e:
                 print(f"llm_call failed with {e}")
                 if attempt < max_api_retries:  # back-off & retry
@@ -370,8 +390,11 @@ async def rollout_vllm(actor: Actor, on_chunk: Callable[[StreamChunk], Awaitable
         message["tool_calls"] = conformed_tool_calls
     print(completion)
     completion = from_dict(ChatCompletion, completion)
-    assert completion.prompt_logprobs
-    print(completion.prompt_logprobs)
+    # Skip logprobs assertion for amplified sampling server - it doesn't provide prompt_logprobs
+    if completion.prompt_logprobs:
+        print(f"🔥 prompt_logprobs available: {len(completion.prompt_logprobs)} items")
+    else:
+        print("🔥 No prompt_logprobs (expected for amplified sampling server)")
     completion = replace(completion, model=actor.endpoint.model)
     final_message = completion.choices[0].message
 

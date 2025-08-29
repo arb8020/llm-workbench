@@ -99,6 +99,15 @@ class ActivationCollector:
                 "layer_count": 0
             }
             logger.warning("Could not detect model layer structure")
+        
+        # Detect logits/output head structure
+        if hasattr(self.model, 'logits'):
+            self._model_structure["logits_attr"] = "logits"
+        elif hasattr(self.model, 'lm_head'):
+            self._model_structure["logits_attr"] = "lm_head"
+        else:
+            self._model_structure["logits_attr"] = "unknown"
+            logger.warning("Could not detect model logits structure")
     
     def generate_standard(
         self,
@@ -111,6 +120,8 @@ class ActivationCollector:
         logger.info(f"Generating standard completion for: {prompt[:50]}...")
         
         all_logits = []
+        logits_attr = self._model_structure.get("logits_attr", "logits")
+        
         with self.model.trace(
             [prompt],
             temperature=temperature,
@@ -118,7 +129,16 @@ class ActivationCollector:
             max_tokens=max_tokens
         ) as tracer:
             with tracer.iter[0:max_tokens]:
-                all_logits.append(self.model.logits.output.save())
+                if logits_attr == "logits":
+                    all_logits.append(self.model.logits.output.save())
+                elif logits_attr == "lm_head":
+                    all_logits.append(self.model.lm_head.output.save())
+                else:
+                    logger.error("Unknown logits attribute - trying fallback")
+                    try:
+                        all_logits.append(self.model.logits.output.save())
+                    except:
+                        all_logits.append(self.model.lm_head.output.save())
         
         # Decode generated text
         generated_token_ids = []
@@ -248,6 +268,8 @@ class ActivationCollector:
         
         # Generate text (same as standard generation)
         all_logits = []
+        logits_attr = self._model_structure.get("logits_attr", "logits")
+        
         with self.model.trace(
             [prompt],
             temperature=temperature,
@@ -255,7 +277,16 @@ class ActivationCollector:
             max_tokens=max_tokens
         ) as tracer:
             with tracer.iter[0:max_tokens]:
-                all_logits.append(self.model.logits.output.save())
+                if logits_attr == "logits":
+                    all_logits.append(self.model.logits.output.save())
+                elif logits_attr == "lm_head":
+                    all_logits.append(self.model.lm_head.output.save())
+                else:
+                    logger.error("Unknown logits attribute - trying fallback")
+                    try:
+                        all_logits.append(self.model.logits.output.save())
+                    except:
+                        all_logits.append(self.model.lm_head.output.save())
         
         # Decode generated text
         generated_token_ids = []

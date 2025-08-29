@@ -1,0 +1,53 @@
+{
+  "eval_name": "gsm8k_remote_no_tools_nsamples_2_20250824_185309",
+  "dataset_path": "examples/gsm8k_remote/assets/gsm8k_no_tools.jsonl",
+  "total_samples": 2,
+  "summary_metrics": {
+    "mean_correctness": 0.0,
+    "min_correctness": 0.0,
+    "max_correctness": 0.0,
+    "std_correctness": 0.0,
+    "mean_format": 0.5,
+    "min_format": 0.0,
+    "max_format": 1.0,
+    "std_format": 0.5,
+    "mean_efficiency": 0.26466666666666666,
+    "min_efficiency": 0.0,
+    "max_efficiency": 0.5293333333333333,
+    "std_efficiency": 0.26466666666666666,
+    "total_samples": 2,
+    "avg_turns": 1.0,
+    "avg_tokens": 1876.0,
+    "mean_total_reward": 0.7646666666666666
+  },
+  "config": {
+    "endpoint": {
+      "provider": "openai",
+      "model": "willcb/Qwen3-0.6B",
+      "api_base": "https://h9n3ax9wd7mohq-8000.proxy.runpod.net/v1",
+      "api_key": "dummy",
+      "max_tokens": 500,
+      "temperature": 0.1,
+      "tool_choice": null,
+      "parallel_tool_calls": null,
+      "reasoning_effort": null,
+      "max_completion_tokens": null,
+      "thinking": null
+    },
+    "max_turns": 1,
+    "max_samples": 2,
+    "max_concurrent": 1,
+    "reward_functions": [
+      "correctness",
+      "format",
+      "efficiency"
+    ],
+    "evaluation_timestamp": "2025-08-24T18:57:12.005987",
+    "dataset_format": "auto-detected"
+  },
+  "timestamp": "2025-08-24T18:57:12.006001",
+  "sample_ids": [
+    "gsm8k_0001",
+    "gsm8k_0002"
+  ]
+}
