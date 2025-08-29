@@ -143,7 +143,12 @@ class ActivationCollector:
         generated_token_ids = []
         for logits in all_logits:
             token_id = logits.argmax(dim=-1)
-            generated_token_ids.append(int(token_id.item()))
+            # Handle both single token and sequence cases
+            if token_id.numel() == 1:
+                generated_token_ids.append(int(token_id.item()))
+            else:
+                # Take the last token for sequences
+                generated_token_ids.append(int(token_id[-1].item()))
         
         generated_text = self.model.tokenizer.decode(
             generated_token_ids, 
@@ -310,7 +315,12 @@ class ActivationCollector:
         generated_token_ids = []
         for logits in all_logits:
             token_id = logits.argmax(dim=-1)
-            generated_token_ids.append(int(token_id.item()))
+            # Handle both single token and sequence cases
+            if token_id.numel() == 1:
+                generated_token_ids.append(int(token_id.item()))
+            else:
+                # Take the last token for sequences
+                generated_token_ids.append(int(token_id[-1].item()))
         
         generated_text = self.model.tokenizer.decode(
             generated_token_ids, 
