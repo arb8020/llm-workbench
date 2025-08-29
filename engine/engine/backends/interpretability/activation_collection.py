@@ -100,14 +100,16 @@ class ActivationCollector:
             }
             logger.warning("Could not detect model layer structure")
         
-        # Detect logits/output head structure
-        if hasattr(self.model, 'logits'):
-            self._model_structure["logits_attr"] = "logits"
-        elif hasattr(self.model, 'lm_head'):
-            self._model_structure["logits_attr"] = "lm_head"
-        else:
-            self._model_structure["logits_attr"] = "unknown"
-            logger.warning("Could not detect model logits structure")
+        # Use dynamic module detection for output head
+        self._model_structure["output_name"] = None
+        for name, module in self.model.named_modules():
+            if name.endswith(('lm_head', 'logits', 'output')):
+                self._model_structure["output_name"] = name
+                logger.info(f"Found output module: {name}")
+                break
+        
+        if self._model_structure["output_name"] is None:
+            logger.warning("Could not detect output module")
     
     def generate_standard(
         self,
@@ -120,7 +122,6 @@ class ActivationCollector:
         logger.info(f"Generating standard completion for: {prompt[:50]}...")
         
         all_logits = []
-        logits_attr = self._model_structure.get("logits_attr", "logits")
         
         with self.model.trace(
             [prompt],
@@ -129,16 +130,14 @@ class ActivationCollector:
             max_tokens=max_tokens
         ) as tracer:
             with tracer.iter[0:max_tokens]:
-                if logits_attr == "logits":
-                    all_logits.append(self.model.logits.output.save())
-                elif logits_attr == "lm_head":
+                # Use nnsight's dynamic attribute access
+                try:
                     all_logits.append(self.model.lm_head.output.save())
-                else:
-                    logger.error("Unknown logits attribute - trying fallback")
+                except AttributeError:
                     try:
                         all_logits.append(self.model.logits.output.save())
-                    except:
-                        all_logits.append(self.model.lm_head.output.save())
+                    except AttributeError:
+                        logger.error("Could not find output layer (tried lm_head and logits)")
         
         # Decode generated text
         generated_token_ids = []
@@ -209,7 +208,9 @@ class ActivationCollector:
                         logger.debug(f"Set up activation hook: {key}")
                         
                     except Exception as e:
-                        logger.warning(f"Failed to set up hook {key}: {e}")
+                        logger.error(f"Failed to set up hook {key}: {e}")
+                        import traceback
+                        logger.error(f"Full traceback: {traceback.format_exc()}")
                         continue
         
         # Step 2: Extract saved activations
@@ -218,8 +219,26 @@ class ActivationCollector:
         
         for key, proxy in saved_activation_proxies.items():
             try:
-                # Get the actual tensor data
-                activation_tensor = proxy.value
+                # Get the actual tensor data - handle multiple cases
+                import torch
+                if isinstance(proxy, torch.Tensor):
+                    # It's already a tensor
+                    activation_tensor = proxy
+                    logger.info(f"Using direct tensor for {key}: shape={activation_tensor.shape}")
+                elif isinstance(proxy, tuple) and len(proxy) > 0:
+                    # nnsight+vLLM returns activation proxy as direct tuple
+                    activation_tensor = proxy[0]  # First item is usually hidden states
+                    logger.info(f"Extracted tensor from direct tuple for {key}: shape={getattr(activation_tensor, 'shape', 'unknown')}")
+                elif hasattr(proxy, 'value'):
+                    value = proxy.value
+                    # If it's a tuple (hidden_states, attention_weights, etc), take the first element
+                    if isinstance(value, tuple) and len(value) > 0:
+                        activation_tensor = value[0]  # First element is usually hidden states
+                        logger.info(f"Extracted tensor from tuple for {key}: shape={getattr(activation_tensor, 'shape', 'unknown')}")
+                    else:
+                        activation_tensor = value
+                else:
+                    activation_tensor = proxy
                 
                 if activation_tensor is not None:
                     # Convert to numpy for serialization
@@ -264,11 +283,12 @@ class ActivationCollector:
                     
             except Exception as e:
                 logger.error(f"Failed to extract activation {key}: {e}")
+                import traceback
+                logger.error(f"Full traceback: {traceback.format_exc()}")
                 continue
         
         # Generate text (same as standard generation)
         all_logits = []
-        logits_attr = self._model_structure.get("logits_attr", "logits")
         
         with self.model.trace(
             [prompt],
@@ -277,16 +297,14 @@ class ActivationCollector:
             max_tokens=max_tokens
         ) as tracer:
             with tracer.iter[0:max_tokens]:
-                if logits_attr == "logits":
-                    all_logits.append(self.model.logits.output.save())
-                elif logits_attr == "lm_head":
+                # Use nnsight's dynamic attribute access
+                try:
                     all_logits.append(self.model.lm_head.output.save())
-                else:
-                    logger.error("Unknown logits attribute - trying fallback")
+                except AttributeError:
                     try:
                         all_logits.append(self.model.logits.output.save())
-                    except:
-                        all_logits.append(self.model.lm_head.output.save())
+                    except AttributeError:
+                        logger.error("Could not find output layer (tried lm_head and logits)")
         
         # Decode generated text
         generated_token_ids = []
