@@ -80,9 +80,10 @@ def test_secure_temp_ssh_key():
     """Test secure temporary SSH key handling"""
     print("🔐 Testing secure temporary SSH key handling...")
     
-    test_key = """-----BEGIN OPENSSH PRIVATE KEY-----
-b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAlwAAAAdzc2gtcn
------END OPENSSH PRIVATE KEY-----"""
+    test_key = """[TEST SSH KEY - NOT A REAL PRIVATE KEY - USED FOR TESTING ONLY]
+This is fake content used to test the secure_temp_ssh_key function.
+No actual cryptographic material is present here.
+[END FAKE TEST KEY]"""
     
     # Test basic functionality
     with secure_temp_ssh_key(test_key) as key_path:
