@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["bifrost", "broker", "engine", "interp", "leyline", "rollouts"]
+members = ["bifrost", "broker", "engine", "rollouts"]
 
 [project]
 name = "llm-workbench"
@@ -10,10 +10,8 @@ requires-python = ">=3.10"
 dependencies = [
     "rollouts",
     "broker",
-    "bifrost", 
-    "leyline",
-    "engine",
-    "interp"
+    "bifrost",
+    "engine"
 ]
 
 [project.optional-dependencies]
@@ -21,8 +19,7 @@ dependencies = [
 local = [
     "rollouts",
     "broker", 
-    "bifrost",
-    "leyline"
+    "bifrost"
 ]
 
 # Interpretability features - includes engine with nnsight
@@ -30,18 +27,14 @@ interp = [
     "rollouts",
     "broker", 
     "bifrost",
-    "leyline",
-    "engine[interp]",
-    "interp"
+    "engine[interp]"
 ]
 
 [tool.uv.sources]
 rollouts = { workspace = true }
 broker = { workspace = true }
 bifrost = { workspace = true }
-leyline = { workspace = true }
 engine = { workspace = true }
-interp = { workspace = true }
 
 [build-system]
 requires = ["setuptools>=61.0"]
