@@ -1,1 +1,0 @@
-# Example workers for leyline framework
