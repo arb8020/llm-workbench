@@ -312,39 +312,28 @@ class GitDeployment:
         client.exec_command(cmd)
     
     def deploy_and_execute(self, command: str, env_vars: Optional[Dict[str, str]] = None) -> int:
-        """Deploy code and execute command with proper cleanup."""
-        
-        # Detect git repo
-        repo_name, commit_hash = self.detect_git_repo()
+        """Deploy code and execute command using shared workspace for better Python imports."""
         
         # Create SSH client
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
-        worktree_path = None
         
         try:
             # Connect to remote
             console.print(f"🔗 Connecting to {self.ssh_user}@{self.ssh_host}:{self.ssh_port}")
             client.connect(hostname=self.ssh_host, port=self.ssh_port, username=self.ssh_user)
             
-            # Set up remote structure
-            bare_repo_path = self.setup_remote_structure(client, repo_name)
-            
-            # Push code
-            self.push_code(repo_name, commit_hash, bare_repo_path)
-            
-            # Create worktree
-            worktree_path = self.create_worktree(client, repo_name)
+            # Deploy to shared workspace instead of job-specific worktree
+            workspace_path = self.deploy_to_workspace()
             
             # Detect and add bootstrap command
-            bootstrap_cmd = self.detect_bootstrap_command(client, worktree_path)
+            bootstrap_cmd = self.detect_bootstrap_command(client, workspace_path)
             
             # Build full command with working directory and bootstrap
-            full_command = f"cd {worktree_path} && {bootstrap_cmd}{command}"
+            full_command = f"cd {workspace_path} && {bootstrap_cmd}{command}"
             
             # Execute command with secure environment injection
-            console.print(f"🔄 Executing in worktree: {command}")
+            console.print(f"🔄 Executing in workspace: {command}")
             exit_code, stdout_content, stderr_content = execute_with_env_injection(
                 client, full_command, env_vars
             )
@@ -362,14 +351,6 @@ class GitDeployment:
             return exit_code
             
         finally:
-            # Always cleanup
-            if worktree_path:
-                try:
-                    self.cleanup_job(client, repo_name, worktree_path)
-                    console.print("🧹 Cleaned up remote resources")
-                except Exception as e:
-                    logger.warning(f"Failed to cleanup: {e}")
-            
             client.close()
     
     def deploy_to_workspace(self, workspace_path: str = "~/.bifrost/workspace") -> str:
