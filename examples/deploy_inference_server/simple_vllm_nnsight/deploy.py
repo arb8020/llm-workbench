@@ -181,7 +181,7 @@ def deploy_interpretability_server(min_vram: int = 12, max_price: float = 0.60, 
     bifrost_client.exec("tmux kill-session -t interp 2>/dev/null || true")
     
     # Create tmux session and start interpretability server with persistent logging
-    tmux_cmd = f"tmux new-session -d -s interp 'cd ~/.bifrost/workspace && uv run python -m engine.scripts.deploy_simple.interp --model {model} 2>&1 | tee ~/interp_server.log'"
+    tmux_cmd = f"tmux new-session -d -s interp 'cd ~/.bifrost/workspace && uv run python -m engine.scripts.deploy.deploy_simple.interp --model {model} 2>&1 | tee ~/interp_server.log'"
     bifrost_client.exec(tmux_cmd)
     
     print("✅ Interpretability server starting in tmux session 'interp'")
