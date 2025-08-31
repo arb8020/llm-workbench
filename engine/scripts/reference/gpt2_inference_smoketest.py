@@ -19,7 +19,7 @@ def test_tokenizer():
     print("🔤 Testing GPT-2 tokenizer...")
     
     try:
-        from engine.utils.tokenizer import download_gpt2_assets, load_tokenizer_files, encode, decode
+        from engine.core.utils.tokenizer import download_gpt2_assets, load_tokenizer_files, encode, decode
         
         # Download tokenizer assets (cached after first run)
         assets_dir = download_gpt2_assets("gpt2")
