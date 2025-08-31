@@ -19,14 +19,7 @@ from pathlib import Path
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-try:
-    from engine.utils.comparison import compare_logits, get_hf_logits
-except ImportError:
-    print("Warning: Could not import comparison utilities")
-    def compare_logits(*args, **kwargs):
-        return {"message": "comparison not available"}
-    def get_hf_logits(*args, **kwargs):
-        return np.zeros((1, 5, 50257))  # dummy
+from engine.core.utils.comparison import compare_logits, get_hf_logits
 
 
 class DummyGPT2:
@@ -131,13 +124,9 @@ def test_gpt2_comparison():
     with jax.default_device(device):
         # Get HuggingFace reference logits
         print("\n📚 Getting HuggingFace reference logits...")
-        try:
-            hf_logits = get_hf_logits(test_input, model_name="gpt2")
-            print(f"HF logits shape: {hf_logits.shape}")
-            print(f"HF logits range: [{hf_logits.min():.3f}, {hf_logits.max():.3f}]")
-        except Exception as e:
-            print(f"Failed to get HF logits: {e}")
-            hf_logits = np.random.randn(1, 2, 50257) * 0.1  # dummy fallback
+        hf_logits = get_hf_logits(test_input, model_name="gpt2")
+        print(f"HF logits shape: {hf_logits.shape}")
+        print(f"HF logits range: [{hf_logits.min():.3f}, {hf_logits.max():.3f}]")
         
         # Get our JAX model logits  
         print("\n🔥 Getting JAX model logits...")
