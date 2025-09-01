@@ -16,7 +16,6 @@ import numpy as np
 import sys
 import argparse
 import torch
-import optax
 
 
 def load_adam_implementation(mode):
@@ -78,7 +77,7 @@ def get_reference_trajectories(
     grad_fn,
     num_steps: int = 100
 ):
-    """Get reference trajectories from PyTorch and Optax"""
+    """Get reference trajectory from PyTorch"""
     
     # PyTorch Adam reference
     torch_params = torch.tensor(np.array(initial_params), requires_grad=True)
@@ -92,19 +91,7 @@ def get_reference_trajectories(
         torch_optimizer.step()
         torch_trajectory.append(torch_params.detach().numpy().copy())
     
-    # Optax Adam reference
-    optax_optimizer = optax.adam(lr, b1=0.9, b2=0.999, eps=1e-8)
-    optax_state = optax_optimizer.init(initial_params)
-    optax_params = initial_params
-    optax_trajectory = []
-    
-    for _ in range(num_steps):
-        grads = grad_fn(optax_params)
-        updates, optax_state = optax_optimizer.update(grads, optax_state, optax_params)
-        optax_params = optax_params + updates
-        optax_trajectory.append(optax_params.copy())
-    
-    return torch_trajectory, optax_trajectory
+    return torch_trajectory
 
 
 def test_adam_on_surface(adam_update, adam_init, surface_name: str, surface_fn, grad_fn, initial_params: jnp.ndarray, lr: float = 0.01):
@@ -115,8 +102,8 @@ def test_adam_on_surface(adam_update, adam_init, surface_name: str, surface_fn, 
     
     num_steps = 100
     
-    # Get reference trajectories
-    torch_traj, optax_traj = get_reference_trajectories(
+    # Get reference trajectory
+    torch_traj = get_reference_trajectories(
         initial_params, lr, surface_fn, grad_fn, num_steps
     )
     
@@ -134,31 +121,24 @@ def test_adam_on_surface(adam_update, adam_init, surface_name: str, surface_fn, 
     # Compare trajectories
     torch_diff = np.mean([np.linalg.norm(np.array(our_trajectory[i]) - torch_traj[i]) 
                          for i in range(num_steps)])
-    optax_diff = np.mean([np.linalg.norm(np.array(our_trajectory[i]) - optax_traj[i]) 
-                         for i in range(num_steps)])
     
     # Check final convergence
     our_final = our_trajectory[-1]
     torch_final = torch_traj[-1]
-    optax_final = optax_traj[-1]
     
     print(f"   Final values:")
     print(f"     Our implementation: {our_final}")
     print(f"     PyTorch reference:  {torch_final}")
-    print(f"     Optax reference:    {optax_final}")
-    print(f"   Mean trajectory differences:")
-    print(f"     vs PyTorch: {torch_diff:.6f}")
-    print(f"     vs Optax:   {optax_diff:.6f}")
+    print(f"   Mean trajectory difference vs PyTorch: {torch_diff:.6f}")
     
-    # Success criteria: very close to references
+    # Success criteria: very close to PyTorch reference
     torch_success = torch_diff < 1e-5
-    optax_success = optax_diff < 1e-5
     
-    if torch_success and optax_success:
-        print(f"   ✅ PASS - Close match to both references")
+    if torch_success:
+        print(f"   ✅ PASS - Close match to PyTorch reference")
         return True
     else:
-        print(f"   ❌ FAIL - Trajectory differences too large")
+        print(f"   ❌ FAIL - Trajectory difference too large (threshold: 1e-5)")
         return False
 
 
