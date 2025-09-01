@@ -21,23 +21,7 @@ import argparse
 print(f"🔍 Current working directory: {Path.cwd()}")
 print(f"🔍 Python path: {sys.path[:3]}...")
 print(f"🔍 Attempting imports...")
-
-# Import comparison utilities
-try:
-    from engine.engine.core.utils.comparison import compare_logits, get_hf_logits
-    print("✅ Successfully imported from engine.engine.core.utils")
-except ImportError as e:
-    print(f"❌ Failed engine.engine.core.utils: {e}")
-    try:
-        from engine.core.utils.comparison import compare_logits, get_hf_logits
-        print("✅ Successfully imported from engine.core.utils")
-    except ImportError as e2:
-        print(f"❌ Failed engine.core.utils: {e2}")
-        print("🚨 Using fallback dummy implementations")
-        def compare_logits(*args, **kwargs):
-            return {"message": "comparison not available", "all_close": False, "max_abs_diff": float('inf')}
-        def get_hf_logits(*args, **kwargs):
-            return np.random.randn(args[0].shape[0], args[0].shape[1], 50257) * 0.1
+from engine.core.utils.comparison import compare_logits, get_hf_logits
 
 
 def load_gpt2_implementation(mode):
