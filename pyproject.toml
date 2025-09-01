@@ -1,6 +1,12 @@
 [tool.uv.workspace]
 members = ["bifrost", "broker", "engine", "rollouts"]
 
+[tool.uv]
+required-environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'darwin' and platform_machine == 'arm64'"
+]
+
 [project]
 name = "llm-workbench"
 version = "0.1.0"
