@@ -233,7 +233,7 @@ def transformer_block(x: Array, weights: Dict[str, Array], layer_idx: int,
 def gpt2_forward(weights: Dict[str, Array], input_ids: Array, 
                 config: GPT2Config) -> Array:
     """
-    Forward pass through dummy GPT-2.
+    Forward pass through GPT-2.
     
     Args:
         weights: Model weights dictionary
@@ -245,8 +245,27 @@ def gpt2_forward(weights: Dict[str, Array], input_ids: Array,
     """
     batch_size, seq_len = input_ids.shape
     
-    # PHASE 1: Return completely dummy logits
-    return phase1_dummy_logits(batch_size, seq_len, config)
+    # Token embeddings
+    token_embeddings = embedding_lookup(weights, input_ids, "wte")
+    
+    # Position embeddings
+    positions = jnp.arange(seq_len)[None, :]  # (1, seq_len)
+    position_embeddings = embedding_lookup(weights, positions, "wpe")
+    
+    # Combined embeddings
+    x = token_embeddings + position_embeddings
+    
+    # Pass through transformer blocks
+    for layer_idx in range(config.n_layers):
+        x = transformer_block(x, weights, layer_idx, config)
+    
+    # Final layer norm
+    x = layer_norm(x, weights, "ln_f", config.layer_norm_epsilon)
+    
+    # Language model head
+    logits = linear_transform(x, weights, "lm_head")
+    
+    return logits
 
 
 def phase1_dummy_logits(batch_size: int, seq_len: int, config: GPT2Config) -> Array:
@@ -310,12 +329,11 @@ def test_gpt2_comparison():
         print("\n📦 Loading real GPT-2 weights...")
         real_weights = load_and_print_real_weights()
         
-        # Get our JAX model logits with dummy weights
-        print("\n🔥 Getting JAX model logits (still using dummy weights)...")
+        # Get our JAX model logits with real weights
+        print("\n🔥 Getting JAX model logits with real weights...")
         config = GPT2Config()
-        dummy_weights = init_dummy_weights(config)
         jax_input = jnp.array(test_input)
-        jax_logits = gpt2_forward(dummy_weights, jax_input, config)
+        jax_logits = gpt2_forward(real_weights, jax_input, config)
         jax_logits_np = np.array(jax_logits)
         
         print(f"JAX logits shape: {jax_logits_np.shape}")
