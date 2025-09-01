@@ -36,6 +36,7 @@ from typing import Dict, Any, NamedTuple, Tuple, Optional
 from jax import Array
 import sys
 from pathlib import Path
+from dataclasses import dataclass
 
 # Force JAX to use the same precision as PyTorch
 jax.config.update("jax_enable_x64", False)  # Ensure we use float32 like PyTorch default
@@ -44,31 +45,14 @@ jax.config.update("jax_enable_x64", False)  # Ensure we use float32 like PyTorch
 print(f"🔍 Current working directory: {Path.cwd()}")
 print(f"🔍 Python path: {sys.path[:3]}...")  # First 3 entries
 print(f"🔍 Attempting imports...")
-
-try:
-    from engine.engine.core.utils.comparison import compare_logits, get_hf_logits
-    from engine.engine.core.utils.weights import load_gpt2_weights, download_gpt2_weights
-    print("✅ Successfully imported from engine.engine.core.utils")
-except ImportError as e:
-    print(f"❌ Failed engine.engine.core.utils: {e}")
-    try:
-        from engine.core.utils.comparison import compare_logits, get_hf_logits
-        from engine.core.utils.weights import load_gpt2_weights, download_gpt2_weights
-        print("✅ Successfully imported from engine.core.utils")
-    except ImportError as e2:
-        print(f"❌ Failed engine.core.utils: {e2}")
-        print("🚨 Using fallback dummy implementations")
-        def compare_logits(*args, **kwargs):
-            return {"message": "comparison not available", "all_close": False, "max_abs_diff": float('inf')}
-        def get_hf_logits(*args, **kwargs):
-            return np.random.randn(1, 2, 50257) * 0.1
-        def load_gpt2_weights(*args, **kwargs):
-            return None
-        def download_gpt2_weights(*args, **kwargs):
-            return None
+from engine.core.utils.comparison import compare_logits, get_hf_logits
+from engine.core.utils.weights import load_gpt2_weights, download_gpt2_weights
+print("✅ Successfully imported from engine.core.utils")
 
 
-class GPT2Config(NamedTuple):
+
+@dataclass(frozen=True)
+class GPT2Config:
     """Configuration for GPT-2 model."""
     vocab_size: int = 50257
     d_model: int = 768
@@ -77,9 +61,17 @@ class GPT2Config(NamedTuple):
     n_positions: int = 1024
     layer_norm_epsilon: float = 1e-5
     use_cache: bool = True
+    freqs_cis: Optional[Array] = None  # Rotary position embeddings (for RoPE-enabled variants)
+    
+    def __post_init__(self):
+        """Validate configuration parameters."""
+        assert self.d_model % self.n_heads == 0, f"d_model ({self.d_model}) must be divisible by n_heads ({self.n_heads})"
+        assert self.vocab_size > 0, "vocab_size must be positive"
+        assert self.n_layers > 0, "n_layers must be positive"
 
 
-class GPT2State(NamedTuple):
+@dataclass(frozen=True)
+class GPT2State:
     """
     Immutable state container for GPT-2 inference.
     
@@ -90,7 +82,7 @@ class GPT2State(NamedTuple):
     this may not be necessary - just pass weights, input_ids, config directly.
     """
     input_ids: Array
-    position: int
+    position: int = 0
     kv_cache: Optional[Array] = None
 
 
