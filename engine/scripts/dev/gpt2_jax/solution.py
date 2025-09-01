@@ -41,13 +41,8 @@ from dataclasses import dataclass
 # Force JAX to use the same precision as PyTorch
 jax.config.update("jax_enable_x64", False)  # Ensure we use float32 like PyTorch default
 
-# Debug prints for import resolution
-print(f"🔍 Current working directory: {Path.cwd()}")
-print(f"🔍 Python path: {sys.path[:3]}...")  # First 3 entries
-print(f"🔍 Attempting imports...")
 from engine.core.utils.comparison import compare_logits, get_hf_logits
 from engine.core.utils.weights import load_gpt2_weights, download_gpt2_weights
-print("✅ Successfully imported from engine.core.utils")
 
 
 
