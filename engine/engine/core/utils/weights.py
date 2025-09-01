@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, Tuple, Optional, Union
 import pathlib
 import numpy as np
+import re
 
 # -----------------------------
 # GPT-2 Weight Loading
@@ -118,6 +119,49 @@ def download_gpt2_weights(model_name: str = "gpt2", cache_dir: Optional[Union[st
     )
     
     return pathlib.Path(local_dir)
+
+def load_and_print_gpt2_weights_jax() -> Dict[str, Array]:
+    import jax
+    import jax.numpy as jnp
+    """Load and analyze model weights from any source."""
+    
+    model_dir = download_gpt2_weights("gpt2")
+    weights_obj = load_gpt2_weights(model_dir)
+    
+    # Convert to JAX arrays 
+    weights = {name: jnp.array(param) for name, param in weights_obj.params.items()}
+    
+    # Group parameters by layer type for cleaner printing
+    layer_groups = {}
+    for name, param in weights.items():
+        # Extract layer type and number using regex
+        match = re.match(r'h\.(\d+)\.(.+)', name)
+        if match:
+            layer_num, rest = match.groups()
+            # Take the full remaining path as the key to preserve nested names
+            key = rest
+            if key not in layer_groups:
+                layer_groups[key] = {}
+            layer_groups[key][int(layer_num)] = param.shape
+        else:
+            # Non-layer parameters (embeddings, etc)
+            layer_groups[name] = {0: param.shape}
+
+    # Print structured parameter info
+    print("\n🔍 Model Architecture:")
+    for group_name, layers in layer_groups.items():
+        # Get list of layer indices
+        indices = sorted(layers.keys())
+        # All shapes should be identical
+        shape = layers[indices[0]]
+        # Format indices as comma-separated list
+        idx_str = ",".join(str(i) for i in indices)
+        print(f"  {group_name}: {shape} (layers {idx_str})")
+    
+    total_params = sum(p.size for p in weights.values())
+    print(f"\nTotal parameters: {total_params:,}")
+    
+    return weights
 
 # -----------------------------
 # Weight shape inspection

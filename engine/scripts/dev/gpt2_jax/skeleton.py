@@ -10,10 +10,21 @@ Usage:
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 from typing import Dict, Optional
 from dataclasses import dataclass
 from jax import Array
+from engine.core.utils.weights import load_gpt2_weights, download_gpt2_weights, load_and_print_gpt2_weights_jax
+
+"""
+B: batch size
+L: sequence length
+M: memory length (length of sequence being attended to)
+D: model dimension (sometimes called d_model or embedding_dim)
+V: vocabulary size
+F: feed-forward subnetwork hidden size
+H: number of attention heads in a layer
+K: size of each attention key or value (sometimes called d_kv)
+"""
 
 
 @dataclass(frozen=True)
@@ -26,7 +37,7 @@ class GPT2Config:
     n_positions: int = 1024
     layer_norm_epsilon: float = 1e-5
     use_cache: bool = True
-    freqs_cis: Optional[Array] = None  # Rotary position embeddings (for RoPE-enabled variants)
+    freqs_cis: Optional[Array] = None  
     
     def __post_init__(self):
         """Validate configuration parameters."""
@@ -49,25 +60,25 @@ def gpt2_forward(weights: Dict[str, Array], input_ids: jnp.ndarray, config: GPT2
     """
     batch_size, seq_len = input_ids.shape
     
-    # TODO: Implement GPT-2 forward pass
-    # This should eventually match HuggingFace GPT-2 exactly
-    # Use weights and config to build the actual model
-    
-    # If using rotary embeddings, assert they're provided
-    # if config.freqs_cis is not None:
-    #     assert config.freqs_cis is not None, "freqs_cis must be provided in config for RoPE-enabled models"
-    
     # Placeholder: return random logits
+    # HINT: Look at the weight keys printed below to understand the model structure!
+    # Real weights are now loaded - you need to implement the forward pass to use them
     key = jax.random.PRNGKey(42)
     return jax.random.normal(key, (batch_size, seq_len, config.vocab_size)) * 0.1
 
-
 if __name__ == "__main__":
-    # Simple test
+    print("🚀 GPT-2 JAX Skeleton - Weight Explorer")
+    print("=" * 50)
+    
+    # Load and explore real GPT-2 weights
+    print("Loading real GPT-2 weights to help you understand the model structure...\n")
+    real_weights = load_and_print_gpt2_weights_jax() 
+    
+    # Test with skeleton implementation (still uses dummy forward pass)
+    print("\n🧪 Testing skeleton with real weights loaded:")
     config = GPT2Config()
-    dummy_weights = {}  # Skeleton uses dummy weights
     test_input = jnp.array([[15496, 995]])  # "Hello world" tokens
-    logits = gpt2_forward(dummy_weights, test_input, config)
-    print(f"Input shape: {test_input.shape}")
-    print(f"Output shape: {logits.shape}")
-    print(f"Logits range: [{logits.min():.3f}, {logits.max():.3f}]")
+    
+    # Note: gpt2_forward still returns random logits - students need to implement it!
+    logits = gpt2_forward(real_weights, test_input, config)
+    
