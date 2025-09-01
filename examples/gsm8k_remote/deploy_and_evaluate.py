@@ -12,12 +12,15 @@ Usage:
 
 import asyncio
 import json
+import logging
 import os
 import re
 import sys
 import time
 from pathlib import Path
 from typing import Dict, Any, List
+
+from shared.logging_config import setup_logging
 
 # Import broker and bifrost for deployment
 from broker.client import GPUClient
@@ -26,6 +29,8 @@ from bifrost.client import BifrostClient
 # Import rollouts evaluation framework
 from rollouts.evaluation import evaluate, load_jsonl, RewardFunction
 from rollouts.dtypes import Message, Endpoint, Environment, Trajectory, Tool, ToolFunction, ToolFunctionParameter, ToolCall, ToolResult, AgentState, RunConfig
+
+logger = logging.getLogger(__name__)
 
 
 def load_gsm8k_dataset(output_path: Path, sample_count: int = None) -> None:
@@ -643,6 +648,9 @@ if __name__ == "__main__":
                        help="Maximum model length for vLLM (default: 2048)")
     
     args = parser.parse_args()
+    
+    # Setup logging for the example
+    setup_logging()
     
     asyncio.run(main(
         samples=args.samples,

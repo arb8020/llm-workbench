@@ -8,8 +8,9 @@ import logging
 import os
 import sys
 
+from shared.logging_config import setup_logging
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+setup_logging(level="INFO")
 logger = logging.getLogger(__name__)
 
 # Test instance ID (update this to your test instance)

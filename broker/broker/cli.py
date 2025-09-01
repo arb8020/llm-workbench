@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from shared.logging_config import setup_logging
 from .client import GPUClient
 from .ssh_clients_compat import execute_command_streaming, start_interactive_ssh_session
 from .types import CloudType
@@ -1208,4 +1209,5 @@ def _cleanup_all_instances(force: bool, dry_run: bool):
 
 
 def main():
+    setup_logging()
     app()

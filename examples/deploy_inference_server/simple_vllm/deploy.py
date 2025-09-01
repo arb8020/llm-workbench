@@ -4,10 +4,13 @@
 import sys
 import time
 import json
+import logging
 from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from shared.logging_config import setup_logging
 
 # Import broker and bifrost modules
 # Note: Run with PYTHONPATH=/path/to/broker:/path/to/bifrost for clean imports
@@ -15,6 +18,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from broker.client import GPUClient
 from bifrost.client import BifrostClient
 from engine.engine.deployment import wait_for_server_ready
+
+logger = logging.getLogger(__name__)
 
 
 def deploy_vllm(min_vram: int = 8, max_price: float = 0.40) -> dict:
@@ -128,6 +133,9 @@ def main():
     parser.add_argument("--json", action="store_true", help="Output connection info as JSON")
     
     args = parser.parse_args()
+    
+    # Setup logging for the example
+    setup_logging()
     
     try:
         connection_info = deploy_vllm(args.min_vram, args.max_price)
