@@ -28,9 +28,11 @@ def load_gpt2_implementation(mode):
     """Load GPT2 implementation based on mode."""
     if mode == "skeleton":
         try:
-            from skeleton import gpt2_forward
-            print("✅ Successfully imported gpt2_forward from skeleton")
-            return gpt2_forward
+            from skeleton import gpt2_forward, GPT2Config
+            print("✅ Successfully imported from skeleton")
+            config = GPT2Config()
+            weights = {}  # Skeleton uses dummy weights
+            return gpt2_forward, weights, config
         except ImportError as e:
             print(f"❌ Failed to import from skeleton: {e}")
             sys.exit(1)
@@ -38,17 +40,13 @@ def load_gpt2_implementation(mode):
     elif mode == "solution":
         try:
             from solution import gpt2_forward, GPT2Config, load_and_print_real_weights
-            print("✅ Successfully imported from solution file")
+            print("✅ Successfully imported from solution")
             
             # Load real weights once
             print("📦 Loading real GPT-2 weights...")
-            real_weights = load_and_print_real_weights()
-            
-            # Adapt solution interface to skeleton interface
+            weights = load_and_print_real_weights()
             config = GPT2Config()
-            def gpt2_forward_wrapper(input_ids):
-                return gpt2_forward(real_weights, input_ids, config)
-            return gpt2_forward_wrapper
+            return gpt2_forward, weights, config
         except ImportError as e:
             print(f"❌ Failed to import from solution: {e}")
             sys.exit(1)
@@ -97,7 +95,7 @@ def generate_test_batches(k=5):
     return test_batches[:k]
 
 
-def compare_logits_across_batches(gpt2_forward_fn, k=5):
+def compare_logits_across_batches(gpt2_forward_fn, weights, config, k=5):
     """Compare JAX implementation vs HuggingFace across k different batches."""
     print("🧪 Comparing JAX GPT-2 vs HuggingFace across multiple batches")
     print("=" * 70)
@@ -126,7 +124,7 @@ def compare_logits_across_batches(gpt2_forward_fn, k=5):
         # Get JAX implementation logits
         print("🔥 Getting JAX logits...")
         jax_input = jnp.array(test_input)
-        jax_logits = gpt2_forward_fn(jax_input)
+        jax_logits = gpt2_forward_fn(weights, jax_input, config)
         jax_logits_np = np.array(jax_logits)
         
         print(f"JAX logits shape: {jax_logits_np.shape}")
@@ -217,11 +215,11 @@ def main():
     print()
     
     # Load the appropriate implementation
-    gpt2_forward_fn = load_gpt2_implementation(args.mode)
+    gpt2_forward_fn, weights, config = load_gpt2_implementation(args.mode)
     
     try:
         # Test across multiple batches
-        results = compare_logits_across_batches(gpt2_forward_fn, k=args.batches)
+        results = compare_logits_across_batches(gpt2_forward_fn, weights, config, k=args.batches)
         print_summary(results)
         
     except KeyboardInterrupt:
