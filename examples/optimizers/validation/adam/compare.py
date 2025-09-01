@@ -86,10 +86,10 @@ def get_reference_trajectories(
     
     for _ in range(num_steps):
         torch_optimizer.zero_grad()
-        grads = torch.tensor(grad_fn(torch_params.detach().numpy()))
+        grads = torch.tensor(np.array(grad_fn(torch_params.detach().numpy())))
         torch_params.grad = grads
         torch_optimizer.step()
-        torch_trajectory.append(torch_params.detach().numpy().copy())
+        torch_trajectory.append(np.array(torch_params.detach().numpy()))
     
     return torch_trajectory
 
