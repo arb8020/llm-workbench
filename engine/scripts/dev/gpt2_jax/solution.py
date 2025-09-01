@@ -32,17 +32,15 @@ Usage:
 import jax
 import jax.numpy as jnp
 import numpy as np
-from typing import Dict, Any, NamedTuple, Tuple, Optional
+from typing import Dict, Optional
 from jax import Array
-import sys
-from pathlib import Path
 from dataclasses import dataclass
+from engine.core.utils.comparison import compare_logits, get_hf_logits
+from engine.core.utils.weights import load_gpt2_weights, download_gpt2_weights
+
 
 # Force JAX to use the same precision as PyTorch
 jax.config.update("jax_enable_x64", False)  # Ensure we use float32 like PyTorch default
-
-from engine.core.utils.comparison import compare_logits, get_hf_logits
-from engine.core.utils.weights import load_gpt2_weights, download_gpt2_weights
 
 
 
@@ -79,50 +77,6 @@ class GPT2State:
     input_ids: Array
     position: int = 0
     kv_cache: Optional[Array] = None
-
-
-def init_dummy_weights(config: GPT2Config) -> Dict[str, Array]:
-    """Initialize dummy weights. Replace with real GPT-2 weights later."""
-    key = jax.random.PRNGKey(42)
-    keys = jax.random.split(key, 10)
-    
-    weights = {
-        # Embeddings
-        "wte": jax.random.normal(keys[0], (config.vocab_size, config.d_model)) * 0.02,
-        "wpe": jax.random.normal(keys[1], (config.n_positions, config.d_model)) * 0.02,
-        
-        # Final layer norm
-        "ln_f.weight": jnp.ones(config.d_model),
-        "ln_f.bias": jnp.zeros(config.d_model),
-        
-        # Language model head
-        "lm_head": jax.random.normal(keys[2], (config.d_model, config.vocab_size)) * 0.02,
-    }
-    
-    # Add transformer layers
-    for i in range(config.n_layers):
-        layer_key = jax.random.split(keys[3 + i % 7], 8)
-        
-        # Attention weights
-        weights[f"h.{i}.attn.c_attn.weight"] = jax.random.normal(layer_key[0], (config.d_model, 3 * config.d_model)) * 0.02
-        weights[f"h.{i}.attn.c_attn.bias"] = jnp.zeros(3 * config.d_model)
-        weights[f"h.{i}.attn.c_proj.weight"] = jax.random.normal(layer_key[1], (config.d_model, config.d_model)) * 0.02
-        weights[f"h.{i}.attn.c_proj.bias"] = jnp.zeros(config.d_model)
-        
-        # MLP weights
-        weights[f"h.{i}.mlp.c_fc.weight"] = jax.random.normal(layer_key[2], (config.d_model, 4 * config.d_model)) * 0.02
-        weights[f"h.{i}.mlp.c_fc.bias"] = jnp.zeros(4 * config.d_model)
-        weights[f"h.{i}.mlp.c_proj.weight"] = jax.random.normal(layer_key[3], (4 * config.d_model, config.d_model)) * 0.02
-        weights[f"h.{i}.mlp.c_proj.bias"] = jnp.zeros(config.d_model)
-        
-        # Layer norms
-        weights[f"h.{i}.ln_1.weight"] = jnp.ones(config.d_model)
-        weights[f"h.{i}.ln_1.bias"] = jnp.zeros(config.d_model)
-        weights[f"h.{i}.ln_2.weight"] = jnp.ones(config.d_model)
-        weights[f"h.{i}.ln_2.bias"] = jnp.zeros(config.d_model)
-    
-    return weights
-
 
 # ==============================================================================
 # Modular Component Functions
@@ -317,13 +271,6 @@ def gpt2_forward(weights: Dict[str, Array], input_ids: Array,
         logits = jnp.matmul(x, weights["wte"].T)
     
     return logits
-
-
-def phase1_dummy_logits(batch_size: int, seq_len: int, config: GPT2Config) -> Array:
-    """Phase 1: Return completely random logits."""
-    print("🎲 Phase 1: Using dummy random logits")
-    key = jax.random.PRNGKey(123)
-    return jax.random.normal(key, (batch_size, seq_len, config.vocab_size)) * 0.1
 
 
 def convert_hf_weights_to_jax_format(hf_weights: Dict[str, Array]) -> Dict[str, Array]:
