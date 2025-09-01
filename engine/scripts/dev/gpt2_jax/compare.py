@@ -6,7 +6,8 @@ This script compares JAX GPT-2 logits against HuggingFace reference across
 multiple test batches to verify correctness.
 
 Usage:
-    python engine/scripts/dev/compare_jax_gpt2.py
+    python engine/scripts/dev/gpt2_jax/compare.py --mode skeleton
+    python engine/scripts/dev/gpt2_jax/compare.py --mode solution
 """
 
 import jax
@@ -14,6 +15,7 @@ import jax.numpy as jnp
 import numpy as np
 from pathlib import Path
 import sys
+import argparse
 
 # Debug prints for import resolution
 print(f"🔍 Current working directory: {Path.cwd()}")
@@ -37,26 +39,36 @@ except ImportError as e:
         def get_hf_logits(*args, **kwargs):
             return np.random.randn(args[0].shape[0], args[0].shape[1], 50257) * 0.1
 
-# Import the GPT2 implementation
-try:
-    from hello_gpt2_jax_skeleton import gpt2_forward
-    print("✅ Successfully imported gpt2_forward from skeleton")
-except ImportError as e:
-    print(f"❌ Failed to import from skeleton: {e}")
-    try:
-        from hello_gpt2_jax_solution import gpt2_forward, GPT2Config, init_dummy_weights
-        print("✅ Successfully imported from solution file")
-        
-        # Adapt solution interface to skeleton interface
-        config = GPT2Config()
-        dummy_weights = init_dummy_weights(config)
-        def gpt2_forward_wrapper(input_ids):
-            return gpt2_forward(dummy_weights, input_ids, config)
-        gpt2_forward = gpt2_forward_wrapper
+
+def load_gpt2_implementation(mode):
+    """Load GPT2 implementation based on mode."""
+    if mode == "skeleton":
+        try:
+            from skeleton import gpt2_forward
+            print("✅ Successfully imported gpt2_forward from skeleton")
+            return gpt2_forward
+        except ImportError as e:
+            print(f"❌ Failed to import from skeleton: {e}")
+            sys.exit(1)
+    
+    elif mode == "solution":
+        try:
+            from solution import gpt2_forward, GPT2Config, init_dummy_weights
+            print("✅ Successfully imported from solution file")
             
-    except ImportError as e2:
-        print(f"❌ Failed to import any GPT2 implementation: {e2}")
-        print("💡 Make sure hello_gpt2_jax_skeleton.py exists")
+            # Adapt solution interface to skeleton interface
+            config = GPT2Config()
+            dummy_weights = init_dummy_weights(config)
+            def gpt2_forward_wrapper(input_ids):
+                return gpt2_forward(dummy_weights, input_ids, config)
+            return gpt2_forward_wrapper
+        except ImportError as e:
+            print(f"❌ Failed to import from solution: {e}")
+            sys.exit(1)
+    
+    else:
+        print(f"❌ Invalid mode: {mode}")
+        print("💡 Use --mode skeleton or --mode solution")
         sys.exit(1)
 
 
@@ -98,7 +110,7 @@ def generate_test_batches(k=5):
     return test_batches[:k]
 
 
-def compare_logits_across_batches(k=5):
+def compare_logits_across_batches(gpt2_forward_fn, k=5):
     """Compare JAX implementation vs HuggingFace across k different batches."""
     print("🧪 Comparing JAX GPT-2 vs HuggingFace across multiple batches")
     print("=" * 70)
@@ -127,7 +139,7 @@ def compare_logits_across_batches(k=5):
         # Get JAX implementation logits
         print("🔥 Getting JAX logits...")
         jax_input = jnp.array(test_input)
-        jax_logits = gpt2_forward(jax_input)
+        jax_logits = gpt2_forward_fn(jax_input)
         jax_logits_np = np.array(jax_logits)
         
         print(f"JAX logits shape: {jax_logits_np.shape}")
@@ -201,14 +213,26 @@ def print_summary(results):
             print("💡 Small differences suggest numerical precision issues")
 
 
-if __name__ == "__main__":
+def main():
+    parser = argparse.ArgumentParser(description="Compare JAX GPT-2 implementation against HuggingFace")
+    parser.add_argument("--mode", choices=["skeleton", "solution"], default="skeleton", 
+                       help="Which implementation to test (default: skeleton)")
+    parser.add_argument("--batches", type=int, default=5, 
+                       help="Number of test batches to run (default: 5)")
+    
+    args = parser.parse_args()
+    
     print("🚀 JAX GPT-2 Logits Comparison Suite")
-    print("Testing across multiple input batches...")
+    print(f"Mode: {args.mode}")
+    print(f"Testing across {args.batches} input batches...")
     print()
     
+    # Load the appropriate implementation
+    gpt2_forward_fn = load_gpt2_implementation(args.mode)
+    
     try:
-        # Test across 5 different batches
-        results = compare_logits_across_batches(k=5)
+        # Test across multiple batches
+        results = compare_logits_across_batches(gpt2_forward_fn, k=args.batches)
         print_summary(results)
         
     except KeyboardInterrupt:
@@ -217,3 +241,7 @@ if __name__ == "__main__":
         print(f"\n❌ Testing failed: {e}")
         import traceback
         traceback.print_exc()
+
+
+if __name__ == "__main__":
+    main()
