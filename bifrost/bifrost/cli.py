@@ -19,7 +19,7 @@ _workbench_root = Path(__file__).parent.parent.parent
 if str(_workbench_root) not in sys.path:
     sys.path.insert(0, str(_workbench_root))
 
-from shared.logging_config import setup_logging
+from shared.logging_config import setup_logging, parse_logger_levels
 from .deploy import GitDeployment
 
 app = typer.Typer(help="Bifrost - Remote GPU execution tool")
@@ -29,9 +29,30 @@ console = Console()
 @app.callback()
 def main(
     ctx: typer.Context,
+    log_level: Optional[str] = typer.Option(None, "--log-level", help="Global log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)"),
+    logger_levels: Optional[List[str]] = typer.Option(None, "--logger-level", help="Set specific logger levels (format: logger:level, e.g. bifrost:DEBUG, paramiko:ERROR)"),
+    log_json: bool = typer.Option(False, "--log-json", help="Use JSON formatted logging"),
+    quiet: bool = typer.Option(False, "-q", "--quiet", help="Suppress bifrost logs (equivalent to --logger-level bifrost:ERROR)"),
 ):
     """Bifrost - Remote GPU execution with automatic code deployment."""
-    setup_logging()
+    
+    # Parse logger level specifications
+    logger_level_dict = {}
+    if logger_levels:
+        try:
+            logger_level_dict = parse_logger_levels(logger_levels)
+        except ValueError as e:
+            console.print(f"❌ {e}", style="red")
+            sys.exit(1)
+    
+    # Handle --quiet flag
+    if quiet:
+        logger_level_dict["bifrost"] = "ERROR"
+        logger_level_dict["bifrost.deploy"] = "ERROR"
+        logger_level_dict["bifrost.client"] = "ERROR"
+    
+    # Setup logging with specified configuration
+    setup_logging(level=log_level, use_json=log_json, logger_levels=logger_level_dict)
     pass
 
 

@@ -9,7 +9,7 @@ from .agents import (
     confirm_tool_with_feedback, handle_tool_error, inject_turn_warning, 
     handle_stop_max_turns, inject_tool_reminder
 )
-from .environments import CalculatorEnvironment, SearchEnvironment, SearchConfig, create_search_config
+from .environments import CalculatorEnvironment, SearchEnvironment, SearchConfig, create_search_config, BasicEnvironment, NoToolsEnvironment
 from .checkpoints import FileCheckpointStore
 
 __all__ = [
@@ -27,7 +27,7 @@ __all__ = [
     'confirm_tool_with_feedback', 'handle_tool_error', 'inject_turn_warning', 
     'handle_stop_max_turns', 'inject_tool_reminder', 'default_confirm_tool',
     # Environments
-    'CalculatorEnvironment', 'SearchEnvironment', 'SearchConfig', 'create_search_config',
+    'CalculatorEnvironment', 'SearchEnvironment', 'SearchConfig', 'create_search_config', 'BasicEnvironment', 'NoToolsEnvironment',
     # Checkpoints
     'FileCheckpointStore',
 ]
