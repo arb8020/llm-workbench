@@ -53,14 +53,17 @@ def load_gpt2_implementation(mode):
     
     elif mode == "solution":
         try:
-            from solution import gpt2_forward, GPT2Config, init_dummy_weights
+            from solution import gpt2_forward, GPT2Config, load_and_print_real_weights
             print("✅ Successfully imported from solution file")
+            
+            # Load real weights once
+            print("📦 Loading real GPT-2 weights...")
+            real_weights = load_and_print_real_weights()
             
             # Adapt solution interface to skeleton interface
             config = GPT2Config()
-            dummy_weights = init_dummy_weights(config)
             def gpt2_forward_wrapper(input_ids):
-                return gpt2_forward(dummy_weights, input_ids, config)
+                return gpt2_forward(real_weights, input_ids, config)
             return gpt2_forward_wrapper
         except ImportError as e:
             print(f"❌ Failed to import from solution: {e}")

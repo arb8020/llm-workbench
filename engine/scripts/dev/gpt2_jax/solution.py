@@ -256,7 +256,7 @@ def transformer_block(x: Array, weights: Dict[str, Array], layer_idx: int,
 def gpt2_forward(weights: Dict[str, Array], input_ids: Array, 
                 config: GPT2Config) -> Array:
     """
-    Forward pass through dummy GPT-2.
+    Forward pass through GPT-2.
     
     Args:
         weights: Model weights dictionary
@@ -267,9 +267,33 @@ def gpt2_forward(weights: Dict[str, Array], input_ids: Array,
         logits: Logits of shape (batch_size, seq_len, vocab_size)
     """
     batch_size, seq_len = input_ids.shape
+    print(f"🔥 Running actual GPT-2 forward pass")
     
-    # PHASE 1: Return completely dummy logits
-    return phase1_dummy_logits(batch_size, seq_len, config)
+    # Token embeddings
+    token_embeddings = embedding_lookup(weights, input_ids, "wte")
+    
+    # Position embeddings
+    positions = jnp.arange(seq_len)[None, :]  # (1, seq_len)
+    position_embeddings = embedding_lookup(weights, positions, "wpe")
+    
+    # Combine embeddings
+    x = token_embeddings + position_embeddings
+    
+    # Apply transformer blocks
+    for layer_idx in range(config.n_layers):
+        x = transformer_block(x, weights, layer_idx, config)
+    
+    # Final layer normalization
+    x = layer_norm(x, weights, "ln_f", config.layer_norm_epsilon)
+    
+    # Language model head (reuse token embedding weights)
+    if "lm_head" in weights:
+        logits = linear_transform(x, weights, "lm_head")
+    else:
+        # GPT-2 shares weights between token embedding and language model head
+        logits = jnp.matmul(x, weights["wte"].T)
+    
+    return logits
 
 
 def phase1_dummy_logits(batch_size: int, seq_len: int, config: GPT2Config) -> Array:
@@ -277,6 +301,24 @@ def phase1_dummy_logits(batch_size: int, seq_len: int, config: GPT2Config) -> Ar
     print("🎲 Phase 1: Using dummy random logits")
     key = jax.random.PRNGKey(123)
     return jax.random.normal(key, (batch_size, seq_len, config.vocab_size)) * 0.1
+
+
+def convert_hf_weights_to_jax_format(hf_weights: Dict[str, Array]) -> Dict[str, Array]:
+    """Convert HuggingFace weight names to our expected format."""
+    converted = {}
+    
+    for name, param in hf_weights.items():
+        # Remove 'transformer.' prefix if present
+        clean_name = name.replace('transformer.', '')
+        converted[clean_name] = param
+        
+        # Add friendly aliases that our code expects
+        if clean_name == 'wte.weight':
+            converted['wte'] = param
+        elif clean_name == 'wpe.weight':
+            converted['wpe'] = param
+    
+    return converted
 
 
 def load_and_print_real_weights() -> Dict[str, Array]:
@@ -288,16 +330,25 @@ def load_and_print_real_weights() -> Dict[str, Array]:
     weights_obj = load_gpt2_weights(model_dir)
     
     # Convert to JAX arrays and print info
-    weights = {}
-    print("\n🔍 Weight shapes:")
+    hf_weights = {}
+    print("\n🔍 Original HuggingFace weight shapes:")
     for name, param in weights_obj.params.items():
-        weights[name] = jnp.array(param)
+        hf_weights[name] = jnp.array(param)
         if any(key in name for key in ['wte', 'wpe', 'ln_f', 'h.0.']):
             print(f"  {name}: {param.shape}")
+    
+    # Convert to our expected format
+    weights = convert_hf_weights_to_jax_format(hf_weights)
     
     print(f"\n📊 Total parameters: {len(weights_obj.params):,}")
     total_params = sum(p.size for p in weights_obj.params.values())
     print(f"📈 Total parameter count: {total_params:,}")
+    
+    # Print some converted weight names for debugging
+    print(f"\n🔄 Sample converted weight names:")
+    sample_names = [k for k in weights.keys() if any(x in k for x in ['wte', 'wpe', 'h.0.', 'ln_f'])][:5]
+    for name in sample_names:
+        print(f"  {name}: {weights[name].shape}")
     
     return weights
 
@@ -331,12 +382,11 @@ def test_gpt2_comparison():
         print("\n📦 Loading real GPT-2 weights...")
         real_weights = load_and_print_real_weights()
         
-        # Get our JAX model logits with dummy weights
-        print("\n🔥 Getting JAX model logits (still using dummy weights)...")
+        # Get our JAX model logits with real weights
+        print("\n🔥 Getting JAX model logits with real weights...")
         config = GPT2Config()
-        dummy_weights = init_dummy_weights(config)
         jax_input = jnp.array(test_input)
-        jax_logits = gpt2_forward(dummy_weights, jax_input, config)
+        jax_logits = gpt2_forward(real_weights, jax_input, config)
         jax_logits_np = np.array(jax_logits)
         
         print(f"JAX logits shape: {jax_logits_np.shape}")
