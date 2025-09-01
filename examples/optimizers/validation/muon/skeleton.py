@@ -7,7 +7,7 @@ Muon is a new optimizer from GLM-4 that combines momentum with orthogonalization
 
 Reference: "Muon: A New Optimizer for Large Language Models"
 Usage:
-    python examples/optimizers/validation/muon/skeleton.py
+    python examples/optimizers/validation/muon/compare.py --mode skeleton
 """
 
 import jax
