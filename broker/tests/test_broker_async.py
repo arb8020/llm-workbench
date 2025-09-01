@@ -18,11 +18,12 @@ import sys
 import time
 from typing import Optional
 
+from shared.logging_config import setup_logging
 from broker import GPUClient
 from broker.types import CloudType
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+setup_logging(level="INFO")
 logger = logging.getLogger(__name__)
 
 

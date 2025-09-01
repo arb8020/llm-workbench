@@ -4,11 +4,16 @@
 import sys
 import time
 import json
+import logging
 from pathlib import Path
+
+from shared.logging_config import setup_logging
 
 # Import broker and bifrost modules
 from broker.client import GPUClient
 from bifrost.client import BifrostClient
+
+logger = logging.getLogger(__name__)
 
 
 def deploy_interpretability_server(min_vram: int = 12, max_price: float = 0.60, force_new_gpu: bool = False, 
@@ -285,6 +290,9 @@ def main():
     parser.add_argument("--json", action="store_true", help="Output connection info as JSON")
     
     args = parser.parse_args()
+    
+    # Setup logging for the example
+    setup_logging()
     
     try:
         connection_info = deploy_interpretability_server(args.min_vram, args.max_price, args.force_new_gpu, args.existing_only)

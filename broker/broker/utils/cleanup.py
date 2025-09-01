@@ -11,8 +11,9 @@ from typing import Any, Dict, List, Optional
 import requests
 
 # Import broker package directly (no path manipulation needed with uv)
+from shared.logging_config import setup_logging
 
-logging.basicConfig(level=logging.INFO)
+setup_logging(level="INFO")
 logger = logging.getLogger(__name__)
 
 def get_api_key() -> str:

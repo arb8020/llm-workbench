@@ -9,8 +9,9 @@ import os
 import sys
 import time
 
+from shared.logging_config import setup_logging
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+setup_logging(level="INFO")
 logger = logging.getLogger(__name__)
 
 async def wait_for_public_ip(instance_id: str, max_wait_seconds: int = 300):

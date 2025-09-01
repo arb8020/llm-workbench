@@ -27,6 +27,7 @@ from pathlib import Path
 # Add bifrost to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from shared.logging_config import setup_logging
 from bifrost.ssh_clients_compat import (
     execute_command_sync,
     test_ssh_connection,
@@ -34,7 +35,7 @@ from bifrost.ssh_clients_compat import (
 )
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+setup_logging(level="INFO")
 logger = logging.getLogger(__name__)
 
 

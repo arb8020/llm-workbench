@@ -13,6 +13,13 @@ import os
 from datetime import datetime
 from pathlib import Path
 from dotenv import dotenv_values
+
+# Add llm-workbench root to Python path for shared module access
+_workbench_root = Path(__file__).parent.parent.parent
+if str(_workbench_root) not in sys.path:
+    sys.path.insert(0, str(_workbench_root))
+
+from shared.logging_config import setup_logging
 from .deploy import GitDeployment
 
 app = typer.Typer(help="Bifrost - Remote GPU execution tool")
@@ -24,6 +31,7 @@ def main(
     ctx: typer.Context,
 ):
     """Bifrost - Remote GPU execution with automatic code deployment."""
+    setup_logging()
     pass
 
 

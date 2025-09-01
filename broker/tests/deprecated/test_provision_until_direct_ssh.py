@@ -10,8 +10,9 @@ import sys
 import time
 
 # Import from broker package directly (no path manipulation needed with uv)
+from shared.logging_config import setup_logging
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+setup_logging(level="INFO")
 logger = logging.getLogger(__name__)
 
 async def test_provision_until_direct_ssh():
