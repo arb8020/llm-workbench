@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-External testing script for JAX GPT-2 implementation.
+Logits comparison script for JAX GPT-2 implementation.
 
-This script imports the GPT-2 implementation and tests it against HuggingFace,
-providing a clean separation between the educational skeleton code and testing.
+This script compares JAX GPT-2 logits against HuggingFace reference across
+multiple test batches to verify correctness.
 
 Usage:
     python engine/scripts/dev/compare_jax_gpt2.py
@@ -17,146 +17,199 @@ import sys
 
 # Debug prints for import resolution
 print(f"🔍 Current working directory: {Path.cwd()}")
-print(f"🔍 Python path: {sys.path[:3]}...")  # First 3 entries
+print(f"🔍 Python path: {sys.path[:3]}...")
 print(f"🔍 Attempting imports...")
+
+# Import comparison utilities
+try:
+    from engine.engine.core.utils.comparison import compare_logits, get_hf_logits
+    print("✅ Successfully imported from engine.engine.core.utils")
+except ImportError as e:
+    print(f"❌ Failed engine.engine.core.utils: {e}")
+    try:
+        from engine.core.utils.comparison import compare_logits, get_hf_logits
+        print("✅ Successfully imported from engine.core.utils")
+    except ImportError as e2:
+        print(f"❌ Failed engine.core.utils: {e2}")
+        print("🚨 Using fallback dummy implementations")
+        def compare_logits(*args, **kwargs):
+            return {"message": "comparison not available", "all_close": False, "max_abs_diff": float('inf')}
+        def get_hf_logits(*args, **kwargs):
+            return np.random.randn(args[0].shape[0], args[0].shape[1], 50257) * 0.1
 
 # Import the GPT2 implementation
 try:
-    from hello_gpt2_jax import (
-        GPT2Config, GPT2State, 
-        gpt2_forward, init_dummy_weights, load_and_print_real_weights,
-        compare_logits, get_hf_logits
-    )
-    print("✅ Successfully imported GPT2 implementation")
+    from hello_gpt2_jax_skeleton import gpt2_forward
+    print("✅ Successfully imported gpt2_forward from skeleton")
 except ImportError as e:
-    print(f"❌ Failed to import GPT2 implementation: {e}")
-    print("💡 Make sure to run from the engine/scripts/dev directory")
-    sys.exit(1)
+    print(f"❌ Failed to import from skeleton: {e}")
+    try:
+        from hello_gpt2_jax_solution import gpt2_forward, GPT2Config, init_dummy_weights
+        print("✅ Successfully imported from solution file")
+        
+        # Adapt solution interface to skeleton interface
+        config = GPT2Config()
+        dummy_weights = init_dummy_weights(config)
+        def gpt2_forward_wrapper(input_ids):
+            return gpt2_forward(dummy_weights, input_ids, config)
+        gpt2_forward = gpt2_forward_wrapper
+            
+    except ImportError as e2:
+        print(f"❌ Failed to import any GPT2 implementation: {e2}")
+        print("💡 Make sure hello_gpt2_jax_skeleton.py exists")
+        sys.exit(1)
 
 
-def test_gpt2_phases():
-    """Test different phases of GPT-2 implementation."""
-    print("🧪 Testing JAX GPT-2 Implementation Phases")
-    print("=" * 60)
+def generate_test_batches(k=5):
+    """Generate k different test batches for comparison."""
+    test_batches = []
     
-    # Check available devices
-    devices = jax.devices()
-    print(f"Available devices: {devices}")
+    # Batch 1: "Hello world"
+    test_batches.append({
+        "name": "Hello world",
+        "tokens": np.array([[15496, 995]])
+    })
     
-    # Use GPU if available, otherwise CPU
-    device = jax.devices('gpu')[0] if jax.devices('gpu') else jax.devices('cpu')[0]
-    print(f"Using device: {device}")
+    # Batch 2: "The quick brown"
+    test_batches.append({
+        "name": "The quick brown",
+        "tokens": np.array([[464, 2068, 7586]])
+    })
     
-    # Test input: "Hello world"
-    test_input = np.array([[15496, 995]])  # "Hello world" tokens for GPT-2
-    print(f"Test input shape: {test_input.shape}")
-    print(f"Test tokens: {test_input.tolist()}")
+    # Batch 3: Single token
+    test_batches.append({
+        "name": "Single token",
+        "tokens": np.array([[15496]])
+    })
     
-    config = GPT2Config()
-    print(f"Model config: {config}")
+    # Batch 4: Longer sequence
+    test_batches.append({
+        "name": "Longer sequence",
+        "tokens": np.array([[464, 2068, 7586, 1976, 11687, 625, 262]])
+    })
     
-    with jax.default_device(device):
-        # Get HuggingFace reference logits
-        print("\n📚 Getting HuggingFace reference logits...")
+    # Batch 5: Multiple batch items
+    if k >= 5:
+        test_batches.append({
+            "name": "Batch size 2",
+            "tokens": np.array([[15496, 995], [464, 2068]])
+        })
+    
+    return test_batches[:k]
+
+
+def compare_logits_across_batches(k=5):
+    """Compare JAX implementation vs HuggingFace across k different batches."""
+    print("🧪 Comparing JAX GPT-2 vs HuggingFace across multiple batches")
+    print("=" * 70)
+    
+    test_batches = generate_test_batches(k)
+    results = []
+    
+    for i, batch in enumerate(test_batches):
+        print(f"\n📊 Batch {i+1}/{k}: {batch['name']}")
+        print("-" * 40)
+        
+        test_input = batch['tokens']
+        print(f"Input shape: {test_input.shape}")
+        print(f"Input tokens: {test_input.tolist()}")
+        
+        # Get HuggingFace reference
+        print("📚 Getting HuggingFace logits...")
         try:
             hf_logits = get_hf_logits(test_input, model_name="gpt2")
             print(f"HF logits shape: {hf_logits.shape}")
             print(f"HF logits range: [{hf_logits.min():.3f}, {hf_logits.max():.3f}]")
-            hf_available = True
         except Exception as e:
-            print(f"⚠️  HuggingFace not available: {e}")
-            hf_logits = np.random.randn(1, 2, 50257) * 0.1  # dummy fallback
-            hf_available = False
+            print(f"⚠️  HuggingFace failed: {e}")
+            hf_logits = np.random.randn(*test_input.shape, 50257) * 0.1
         
-        # Test with dummy weights (Phase 1)
-        print("\n🎲 Phase 1: Testing with dummy weights...")
-        dummy_weights = init_dummy_weights(config)
+        # Get JAX implementation logits
+        print("🔥 Getting JAX logits...")
         jax_input = jnp.array(test_input)
-        jax_logits = gpt2_forward(dummy_weights, jax_input, config)
+        jax_logits = gpt2_forward(jax_input)
         jax_logits_np = np.array(jax_logits)
         
         print(f"JAX logits shape: {jax_logits_np.shape}")
         print(f"JAX logits range: [{jax_logits_np.min():.3f}, {jax_logits_np.max():.3f}]")
         
-        # Compare Phase 1 results
-        if hf_available:
-            print("\n📊 Comparing dummy implementation vs HuggingFace...")
-            comparison = compare_logits(
-                jax_logits_np, 
-                hf_logits,
-                rtol=1e-3,
-                atol=1e-5,
-                verbose=True
-            )
-            
-            print(f"Phase 1 - Max difference: {comparison.get('max_abs_diff', 'N/A'):.6f}")
-            print(f"Phase 1 - All close: {comparison.get('all_close', False)}")
+        # Compare logits
+        print("⚖️  Comparing logits...")
+        comparison = compare_logits(
+            jax_logits_np,
+            hf_logits,
+            rtol=1e-3,
+            atol=1e-5,
+            verbose=False
+        )
         
-        # Try to load real weights for future phases
-        print("\n📦 Attempting to load real GPT-2 weights...")
-        try:
-            real_weights = load_and_print_real_weights()
-            if real_weights:
-                print("✅ Real weights loaded successfully")
-                print("💡 Next step: Modify gpt2_forward() to use real_weights")
-                print("💡 Implement embedding lookup, attention, and MLP layers")
-            else:
-                print("⚠️  Real weights not available - using dummy weights only")
-        except Exception as e:
-            print(f"⚠️  Could not load real weights: {e}")
-            print("💡 This is expected if comparison utilities are not available")
+        # Store results
+        batch_result = {
+            "name": batch['name'],
+            "input_shape": test_input.shape,
+            "max_abs_diff": comparison.get('max_abs_diff', float('inf')),
+            "mean_abs_diff": comparison.get('mean_abs_diff', float('inf')),
+            "all_close": comparison.get('all_close', False),
+            "close_percentage": comparison.get('close_percentage', 0.0)
+        }
+        results.append(batch_result)
         
-        # Educational guidance
-        print("\n" + "=" * 60)
-        print("📚 Educational Notes:")
-        print("1. This script tests your GPT-2 implementation")
-        print("2. Start with Phase 1 (dummy logits) to verify basic structure")
-        print("3. Progress through phases: embeddings → attention → MLP → full model")
-        print("4. Each phase should get closer to HuggingFace reference")
-        print("5. Final goal: JAX implementation matches HuggingFace exactly")
+        # Print batch summary
+        print(f"Max absolute difference: {batch_result['max_abs_diff']:.6f}")
+        print(f"Mean absolute difference: {batch_result['mean_abs_diff']:.6f}")
+        print(f"All close (rtol=1e-3, atol=1e-5): {batch_result['all_close']}")
+        print(f"Close percentage: {batch_result['close_percentage']:.1f}%")
         
-        if not hf_available:
-            print("\n⚠️  HuggingFace comparison not available")
-            print("💡 Install transformers library for full comparison features")
+        if batch_result['all_close']:
+            print("✅ PASS")
+        else:
+            print("❌ FAIL")
+    
+    return results
 
 
-def benchmark_performance():
-    """Simple performance benchmark."""
-    print("\n⚡ Performance Benchmark")
-    print("-" * 30)
+def print_summary(results):
+    """Print summary of all batch comparisons."""
+    print("\n" + "=" * 70)
+    print("📋 SUMMARY REPORT")
+    print("=" * 70)
     
-    config = GPT2Config()
-    dummy_weights = init_dummy_weights(config)
+    total_batches = len(results)
+    passed_batches = sum(1 for r in results if r['all_close'])
     
-    # Warm up
-    test_input = jnp.array([[15496, 995]])
-    for _ in range(3):
-        _ = gpt2_forward(dummy_weights, test_input, config)
+    print(f"Total batches tested: {total_batches}")
+    print(f"Batches passed: {passed_batches}")
+    print(f"Batches failed: {total_batches - passed_batches}")
+    print(f"Pass rate: {passed_batches/total_batches*100:.1f}%")
     
-    # Benchmark
-    import time
-    start_time = time.time()
-    n_runs = 10
+    print("\nPer-batch results:")
+    for i, result in enumerate(results):
+        status = "✅ PASS" if result['all_close'] else "❌ FAIL"
+        print(f"  {i+1}. {result['name']:15} - Max diff: {result['max_abs_diff']:8.6f} - {status}")
     
-    for _ in range(n_runs):
-        logits = gpt2_forward(dummy_weights, test_input, config)
-        logits.block_until_ready()  # Ensure computation completes
-    
-    elapsed = time.time() - start_time
-    print(f"Average time per forward pass: {elapsed/n_runs*1000:.2f}ms")
-    print(f"Total time for {n_runs} runs: {elapsed:.3f}s")
+    if passed_batches == total_batches:
+        print("\n🎉 ALL TESTS PASSED! Your GPT-2 implementation matches HuggingFace!")
+    else:
+        print(f"\n💡 {total_batches - passed_batches} tests failed. Keep implementing!")
+        
+        avg_max_diff = np.mean([r['max_abs_diff'] for r in results if not np.isinf(r['max_abs_diff'])])
+        if avg_max_diff > 10:
+            print("💡 Large differences suggest missing core components (embeddings, attention, MLP)")
+        elif avg_max_diff > 1:
+            print("💡 Medium differences suggest architectural mismatches")
+        else:
+            print("💡 Small differences suggest numerical precision issues")
 
 
 if __name__ == "__main__":
-    print("🚀 JAX GPT-2 External Testing Suite")
-    print("=" * 60)
+    print("🚀 JAX GPT-2 Logits Comparison Suite")
+    print("Testing across multiple input batches...")
+    print()
     
     try:
-        test_gpt2_phases()
-        benchmark_performance()
-        
-        print("\n✅ Testing completed successfully!")
-        print("💡 Modify hello_gpt2_jax.py to implement different phases")
+        # Test across 5 different batches
+        results = compare_logits_across_batches(k=5)
+        print_summary(results)
         
     except KeyboardInterrupt:
         print("\n🛑 Testing interrupted by user")
