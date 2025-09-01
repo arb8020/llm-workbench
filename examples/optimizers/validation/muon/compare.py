@@ -84,10 +84,11 @@ def ill_conditioned_grad(params: jnp.ndarray) -> jnp.ndarray:
 class ReferenceMuon:
     """Reference Muon implementation based on the paper algorithm"""
     
-    def __init__(self, lr=0.02, momentum=0.95, rank_ratio=0.02):
+    def __init__(self, lr=0.02, momentum=0.95, rank_ratio=0.02, orthogonalize=True):
         self.lr = lr
         self.momentum = momentum 
         self.rank_ratio = rank_ratio
+        self.orthogonalize = orthogonalize
         self.momentum_buffer = None
         self.step = 0
         
@@ -96,17 +97,21 @@ class ReferenceMuon:
         if self.momentum_buffer is None:
             self.momentum_buffer = jnp.zeros_like(grads)
             
-        # Orthogonalize gradients using SVD
-        if grads.ndim > 1:
-            # For matrices, apply SVD-based orthogonalization
-            U, S, Vt = jnp.linalg.svd(grads, full_matrices=False)
-            # Keep top singular values based on rank ratio
-            k = max(1, int(self.rank_ratio * min(grads.shape)))
-            reconstructed = U[:, :k] @ jnp.diag(S[:k]) @ Vt[:k, :]
-            orthogonalized_grad = reconstructed
+        # Orthogonalize gradients using SVD (if enabled)
+        if self.orthogonalize:
+            if grads.ndim > 1:
+                # For matrices, apply SVD-based orthogonalization
+                U, S, Vt = jnp.linalg.svd(grads, full_matrices=False)
+                # Keep top singular values based on rank ratio
+                k = max(1, int(self.rank_ratio * min(grads.shape)))
+                reconstructed = U[:, :k] @ jnp.diag(S[:k]) @ Vt[:k, :]
+                orthogonalized_grad = reconstructed
+            else:
+                # For vectors, just normalize
+                orthogonalized_grad = grads / (jnp.linalg.norm(grads) + 1e-8)
         else:
-            # For vectors, just normalize
-            orthogonalized_grad = grads / (jnp.linalg.norm(grads) + 1e-8)
+            # Use gradients directly without orthogonalization
+            orthogonalized_grad = grads
             
         # Update momentum
         self.momentum_buffer = (
@@ -128,12 +133,13 @@ def get_reference_trajectories(
     grad_fn,
     momentum: float = 0.95,
     rank_ratio: float = 0.02,
+    orthogonalize: bool = True,
     num_steps: int = 100
 ):
     """Get reference trajectory from reference Muon implementation"""
     
     # Reference Muon implementation
-    ref_muon = ReferenceMuon(lr=lr, momentum=momentum, rank_ratio=rank_ratio)
+    ref_muon = ReferenceMuon(lr=lr, momentum=momentum, rank_ratio=rank_ratio, orthogonalize=orthogonalize)
     ref_params = initial_params
     ref_trajectory = []
     
@@ -161,7 +167,7 @@ def test_muon_on_surface(muon_update, muon_init, surface_name: str, surface_fn, 
     
     # Get reference trajectory
     ref_traj = get_reference_trajectories(
-        initial_params, lr, surface_fn, grad_fn, momentum, rank_ratio, num_steps
+        initial_params, lr, surface_fn, grad_fn, momentum, rank_ratio, orthogonalize, num_steps
     )
     
     # Test our implementation
