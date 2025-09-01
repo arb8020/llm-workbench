@@ -12,292 +12,104 @@ Usage:
 import jax
 import jax.numpy as jnp
 import numpy as np
-from typing import Dict, Any, NamedTuple, Tuple, Optional
-from jax import Array
+from typing import Dict, Any
 import sys
 from pathlib import Path
 
+# Add project root to path for imports
+# sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+#
+from engine.utils.comparison import compare_logits, get_hf_logits
 
-from engine.core.utils.comparison import compare_logits, get_hf_logits
-from engine.core.utils.weights import load_gpt2_weights, download_gpt2_weights
+# try:
+#     from engine.utils.comparison import compare_logits, get_hf_logits
+# except ImportError:
+#     print("Warning: Could not import comparison utilities")
+#     def compare_logits(*args, **kwargs):
+#         return {"message": "comparison not available"}
+#     def get_hf_logits(*args, **kwargs):
+#         return np.zeros((1, 5, 50257))  # dummy
 
 
-class GPT2Config(NamedTuple):
-    """Configuration for GPT-2 model."""
-    vocab_size: int = 50257
-    d_model: int = 768
-    n_layers: int = 12
-    n_heads: int = 12
-    n_positions: int = 1024
-    layer_norm_epsilon: float = 1e-5
-    use_cache: bool = True
-
-
-class GPT2State(NamedTuple):
-    """
-    Immutable state container for GPT-2 inference.
+class DummyGPT2:
+    """Dummy GPT-2 implementation that starts simple and can be filled out."""
     
-    Pattern inspired by Google's JAX Scaling Book (2025):
-    https://jax-ml.github.io/scaling-book/inference/
-    
-    Used for stateful generation with KV caching. For simple forward passes,
-    this may not be necessary - just pass weights, input_ids, config directly.
-    """
-    input_ids: Array
-    position: int
-    kv_cache: Optional[Array] = None
-
-
-def init_dummy_weights(config: GPT2Config) -> Dict[str, Array]:
-    """Initialize dummy weights. Replace with real GPT-2 weights later."""
-    key = jax.random.PRNGKey(42)
-    keys = jax.random.split(key, 10)
-    
-    weights = {
-        # Embeddings
-        "wte": jax.random.normal(keys[0], (config.vocab_size, config.d_model)) * 0.02,
-        "wpe": jax.random.normal(keys[1], (config.n_positions, config.d_model)) * 0.02,
+    def __init__(self, vocab_size: int = 50257, d_model: int = 768):
+        self.vocab_size = vocab_size
+        self.d_model = d_model
         
-        # Final layer norm
-        "ln_f.weight": jnp.ones(config.d_model),
-        "ln_f.bias": jnp.zeros(config.d_model),
+        # TODO: Replace with real parameters loaded from HuggingFace
+        self.dummy_weights = self._init_dummy_weights()
+    
+    def _init_dummy_weights(self) -> Dict[str, jnp.ndarray]:
+        """Initialize dummy weights. Replace with real GPT-2 weights later."""
+        key = jax.random.PRNGKey(42)
         
-        # Language model head
-        "lm_head": jax.random.normal(keys[2], (config.d_model, config.vocab_size)) * 0.02,
-    }
+        return {
+            # TODO: Add real GPT-2 architecture weights
+            "dummy_embedding": jax.random.normal(key, (self.vocab_size, self.d_model)) * 0.01,
+            "dummy_output": jax.random.normal(key, (self.d_model, self.vocab_size)) * 0.01,
+        }
     
-    # Add transformer layers
-    for i in range(config.n_layers):
-        layer_key = jax.random.split(keys[3 + i % 7], 8)
+    def forward(self, input_ids_BL: jnp.ndarray) -> jnp.ndarray:
+        """
+        Forward pass through dummy GPT-2.
         
-        # Attention weights
-        weights[f"h.{i}.attn.c_attn.weight"] = jax.random.normal(layer_key[0], (config.d_model, 3 * config.d_model)) * 0.02
-        weights[f"h.{i}.attn.c_attn.bias"] = jnp.zeros(3 * config.d_model)
-        weights[f"h.{i}.attn.c_proj.weight"] = jax.random.normal(layer_key[1], (config.d_model, config.d_model)) * 0.02
-        weights[f"h.{i}.attn.c_proj.bias"] = jnp.zeros(config.d_model)
+        Args:
+            input_ids_BL: Input token IDs of shape (batch_size, seq_len)
+            
+        Returns:
+            logits_BLV: Logits of shape (batch_size, seq_len, vocab_size)
+        """
+        batch_size, seq_len = input_ids_BL.shape
         
-        # MLP weights
-        weights[f"h.{i}.mlp.c_fc.weight"] = jax.random.normal(layer_key[2], (config.d_model, 4 * config.d_model)) * 0.02
-        weights[f"h.{i}.mlp.c_fc.bias"] = jnp.zeros(4 * config.d_model)
-        weights[f"h.{i}.mlp.c_proj.weight"] = jax.random.normal(layer_key[3], (4 * config.d_model, config.d_model)) * 0.02
-        weights[f"h.{i}.mlp.c_proj.bias"] = jnp.zeros(config.d_model)
+        # PHASE 1: Return completely dummy logits
+        return self._phase1_dummy_logits(batch_size, seq_len)
         
-        # Layer norms
-        weights[f"h.{i}.ln_1.weight"] = jnp.ones(config.d_model)
-        weights[f"h.{i}.ln_1.bias"] = jnp.zeros(config.d_model)
-        weights[f"h.{i}.ln_2.weight"] = jnp.ones(config.d_model)
-        weights[f"h.{i}.ln_2.bias"] = jnp.zeros(config.d_model)
+        # TODO: Uncomment phases as you implement them
+        # return self._phase2_embedding_lookup(input_ids_BL)
+        # return self._phase3_add_positional(input_ids_BL)  
+        # return self._phase4_add_attention(input_ids_BL)
+        # return self._phase5_add_mlp(input_ids_BL)
+        # return self._phase6_full_gpt2(input_ids_BL)
     
-    return weights
-
-
-# ==============================================================================
-# Modular Component Functions
-# 
-# These pure functions follow the functional programming patterns from:
-# - Google JAX Scaling Book: https://jax-ml.github.io/scaling-book/inference/
-# - NVIDIA Triton JAX example: https://github.com/triton-inference-server/python_backend/tree/r22.10/examples/jax
-# 
-# NVIDIA Triton approach is simpler - they focus on the service wrapper:
-# ```python
-# def AddSub(input_0: jnp.ndarray, input_1: jnp.ndarray) -> List[jnp.ndarray]:
-#     output_0 = jnp.add(input_0, input_1)
-#     output_1 = jnp.subtract(input_0, input_1)
-#     return [output_0, output_1]
-# ```
-# 
-# Our approach combines both: pure functional components (like Triton) 
-# with modular architecture patterns (like Scaling Book).
-# ==============================================================================
-
-def embedding_lookup(weights: Dict[str, Array], tokens: Array, weight_name: str) -> Array:
-    """Look up embeddings for tokens."""
-    return weights[weight_name][tokens]
-
-
-def linear_transform(x: Array, weights: Dict[str, Array], weight_prefix: str) -> Array:
-    """Apply linear transformation: x @ W + b"""
-    weight = weights[f"{weight_prefix}.weight"] if f"{weight_prefix}.weight" in weights else weights[weight_prefix]
-    output = jnp.matmul(x, weight)
+    def _phase1_dummy_logits(self, batch_size: int, seq_len: int) -> jnp.ndarray:
+        """Phase 1: Return completely random logits."""
+        print("🎲 Phase 1: Using dummy random logits")
+        key = jax.random.PRNGKey(123)
+        return jax.random.normal(key, (batch_size, seq_len, self.vocab_size)) * 0.1
     
-    # Add bias if it exists
-    bias_key = f"{weight_prefix}.bias"
-    if bias_key in weights:
-        output = output + weights[bias_key]
+    def _phase2_embedding_lookup(self, input_ids_BL: jnp.ndarray) -> jnp.ndarray:
+        """Phase 2: Implement token embedding lookup."""
+        print("📝 Phase 2: Token embedding lookup")
+        # TODO: Implement embedding lookup
+        # embeddings_BLD = self.weights['wte'][input_ids_BL]  
+        # return jnp.matmul(embeddings_BLD, self.weights['lm_head'])
+        raise NotImplementedError("Phase 2 not implemented yet")
     
-    return output
-
-
-def layer_norm(x: Array, weights: Dict[str, Array], layer_name: str, 
-               epsilon: float = 1e-5) -> Array:
-    """Apply layer normalization."""
-    gamma = weights[f"{layer_name}.weight"]
-    beta = weights[f"{layer_name}.bias"]
+    def _phase3_add_positional(self, input_ids_BL: jnp.ndarray) -> jnp.ndarray:
+        """Phase 3: Add positional embeddings.""" 
+        print("📍 Phase 3: Adding positional embeddings")
+        # TODO: Add positional embeddings
+        raise NotImplementedError("Phase 3 not implemented yet")
     
-    # Compute mean and variance over the last dimension
-    mean = jnp.mean(x, axis=-1, keepdims=True)
-    var = jnp.var(x, axis=-1, keepdims=True)
+    def _phase4_add_attention(self, input_ids_BL: jnp.ndarray) -> jnp.ndarray:
+        """Phase 4: Add attention mechanism."""
+        print("🧠 Phase 4: Adding attention layers")
+        # TODO: Implement attention blocks
+        raise NotImplementedError("Phase 4 not implemented yet")
     
-    # Normalize
-    normalized = (x - mean) / jnp.sqrt(var + epsilon)
+    def _phase5_add_mlp(self, input_ids_BL: jnp.ndarray) -> jnp.ndarray:
+        """Phase 5: Add MLP layers."""
+        print("🔧 Phase 5: Adding MLP layers") 
+        # TODO: Implement MLP blocks
+        raise NotImplementedError("Phase 5 not implemented yet")
     
-    return gamma * normalized + beta
-
-
-def gelu(x: Array) -> Array:
-    """GELU activation function."""
-    return 0.5 * x * (1.0 + jnp.tanh(jnp.sqrt(2.0 / jnp.pi) * (x + 0.044715 * x**3)))
-
-
-def multi_head_attention(x: Array, weights: Dict[str, Array], layer_idx: int, 
-                        config: GPT2Config) -> Array:
-    """Multi-head self-attention."""
-    batch_size, seq_len, d_model = x.shape
-    
-    # Compute Q, K, V
-    qkv = linear_transform(x, weights, f"h.{layer_idx}.attn.c_attn")
-    q, k, v = jnp.split(qkv, 3, axis=-1)
-    
-    # Reshape for multi-head attention
-    head_dim = d_model // config.n_heads
-    q = q.reshape(batch_size, seq_len, config.n_heads, head_dim)
-    k = k.reshape(batch_size, seq_len, config.n_heads, head_dim)
-    v = v.reshape(batch_size, seq_len, config.n_heads, head_dim)
-    
-    # Transpose for attention computation: (batch, heads, seq_len, head_dim)
-    q = jnp.transpose(q, (0, 2, 1, 3))
-    k = jnp.transpose(k, (0, 2, 1, 3))
-    v = jnp.transpose(v, (0, 2, 1, 3))
-    
-    # Scaled dot-product attention
-    scores = jnp.matmul(q, jnp.transpose(k, (0, 1, 3, 2))) / jnp.sqrt(head_dim)
-    
-    # Causal mask
-    mask = jnp.triu(jnp.ones((seq_len, seq_len)), k=1) * -1e9
-    scores = scores + mask[None, None, :, :]
-    
-    # Softmax
-    attn_weights = jax.nn.softmax(scores, axis=-1)
-    
-    # Apply attention to values
-    attn_output = jnp.matmul(attn_weights, v)
-    
-    # Transpose back and reshape
-    attn_output = jnp.transpose(attn_output, (0, 2, 1, 3))
-    attn_output = attn_output.reshape(batch_size, seq_len, d_model)
-    
-    # Output projection
-    output = linear_transform(attn_output, weights, f"h.{layer_idx}.attn.c_proj")
-    
-    return output
-
-
-def mlp_block(x: Array, weights: Dict[str, Array], layer_idx: int) -> Array:
-    """MLP block with GELU activation."""
-    # First linear layer
-    hidden = linear_transform(x, weights, f"h.{layer_idx}.mlp.c_fc")
-    
-    # GELU activation
-    hidden = gelu(hidden)
-    
-    # Second linear layer
-    output = linear_transform(hidden, weights, f"h.{layer_idx}.mlp.c_proj")
-    
-    return output
-
-
-def transformer_block(x: Array, weights: Dict[str, Array], layer_idx: int, 
-                     config: GPT2Config) -> Array:
-    """Single transformer block with attention and MLP."""
-    # Pre-norm for attention
-    attn_input = layer_norm(x, weights, f"h.{layer_idx}.ln_1", config.layer_norm_epsilon)
-    
-    # Multi-head attention with residual connection
-    attn_output = multi_head_attention(attn_input, weights, layer_idx, config)
-    x = x + attn_output
-    
-    # Pre-norm for MLP
-    mlp_input = layer_norm(x, weights, f"h.{layer_idx}.ln_2", config.layer_norm_epsilon)
-    
-    # MLP with residual connection
-    mlp_output = mlp_block(mlp_input, weights, layer_idx)
-    x = x + mlp_output
-    
-    return x
-
-
-# ==============================================================================
-# Phase Functions
-# ==============================================================================
-
-def gpt2_forward(weights: Dict[str, Array], input_ids: Array, 
-                config: GPT2Config) -> Array:
-    """
-    Forward pass through GPT-2.
-    
-    Args:
-        weights: Model weights dictionary
-        input_ids: Input token IDs of shape (batch_size, seq_len)
-        config: Model configuration
-        
-    Returns:
-        logits: Logits of shape (batch_size, seq_len, vocab_size)
-    """
-    batch_size, seq_len = input_ids.shape
-    
-    # Token embeddings
-    token_embeddings = embedding_lookup(weights, input_ids, "wte")
-    
-    # Position embeddings
-    positions = jnp.arange(seq_len)[None, :]  # (1, seq_len)
-    position_embeddings = embedding_lookup(weights, positions, "wpe")
-    
-    # Combined embeddings
-    x = token_embeddings + position_embeddings
-    
-    # Pass through transformer blocks
-    for layer_idx in range(config.n_layers):
-        x = transformer_block(x, weights, layer_idx, config)
-    
-    # Final layer norm
-    x = layer_norm(x, weights, "ln_f", config.layer_norm_epsilon)
-    
-    # Language model head
-    logits = linear_transform(x, weights, "lm_head")
-    
-    return logits
-
-
-def phase1_dummy_logits(batch_size: int, seq_len: int, config: GPT2Config) -> Array:
-    """Phase 1: Return completely random logits."""
-    print("🎲 Phase 1: Using dummy random logits")
-    key = jax.random.PRNGKey(123)
-    return jax.random.normal(key, (batch_size, seq_len, config.vocab_size)) * 0.1
-
-
-def load_and_print_real_weights() -> Dict[str, Array]:
-    """Load real GPT-2 weights and print some info about them."""
-    print("📦 Loading real GPT-2 weights from HuggingFace...")
-    
-    # Download and load weights
-    model_dir = download_gpt2_weights("gpt2")
-    weights_obj = load_gpt2_weights(model_dir)
-    
-    # Convert to JAX arrays and print info
-    weights = {}
-    print("\n🔍 Weight shapes:")
-    for name, param in weights_obj.params.items():
-        weights[name] = jnp.array(param)
-        if any(key in name for key in ['wte', 'wpe', 'ln_f', 'h.0.']):
-            print(f"  {name}: {param.shape}")
-    
-    print(f"\n📊 Total parameters: {len(weights_obj.params):,}")
-    total_params = sum(p.size for p in weights_obj.params.values())
-    print(f"📈 Total parameter count: {total_params:,}")
-    
-    return weights
-
-
+    def _phase6_full_gpt2(self, input_ids_BL: jnp.ndarray) -> jnp.ndarray:
+        """Phase 6: Full GPT-2 implementation."""
+        print("🚀 Phase 6: Full GPT-2 implementation")
+        # TODO: Complete GPT-2 implementation
+        raise NotImplementedError("Phase 6 not implemented yet")
 
 
 def test_gpt2_comparison():
@@ -321,19 +133,19 @@ def test_gpt2_comparison():
     with jax.default_device(device):
         # Get HuggingFace reference logits
         print("\n📚 Getting HuggingFace reference logits...")
-        hf_logits = get_hf_logits(test_input, model_name="gpt2")
-        print(f"HF logits shape: {hf_logits.shape}")
-        print(f"HF logits range: [{hf_logits.min():.3f}, {hf_logits.max():.3f}]")
+        try:
+            hf_logits = get_hf_logits(test_input, model_name="gpt2")
+            print(f"HF logits shape: {hf_logits.shape}")
+            print(f"HF logits range: [{hf_logits.min():.3f}, {hf_logits.max():.3f}]")
+        except Exception as e:
+            print(f"Failed to get HF logits: {e}")
+            hf_logits = np.random.randn(1, 2, 50257) * 0.1  # dummy fallback
         
-        # Load real weights and print info
-        print("\n📦 Loading real GPT-2 weights...")
-        real_weights = load_and_print_real_weights()
-        
-        # Get our JAX model logits with real weights
-        print("\n🔥 Getting JAX model logits with real weights...")
-        config = GPT2Config()
+        # Get our JAX model logits  
+        print("\n🔥 Getting JAX model logits...")
+        model = DummyGPT2()
         jax_input = jnp.array(test_input)
-        jax_logits = gpt2_forward(real_weights, jax_input, config)
+        jax_logits = model.forward(jax_input)
         jax_logits_np = np.array(jax_logits)
         
         print(f"JAX logits shape: {jax_logits_np.shape}")
@@ -355,9 +167,12 @@ def test_gpt2_comparison():
             print("🎉 SUCCESS! JAX model matches HuggingFace!")
         else:
             print("📋 Next steps to improve accuracy:")
-            print("1. Use real_weights instead of dummy_weights in gpt2_forward()")
-            print("2. Implement proper GPT-2 forward pass with loaded weights")
-            print("3. Real weights are now loaded - just need to use them!")
+            print("1. Uncomment _phase2_embedding_lookup in forward()")
+            print("2. Load real GPT-2 weights from HuggingFace")
+            print("3. Implement token embedding lookup")  
+            print("4. Add positional embeddings")
+            print("5. Implement attention mechanism")
+            print("6. Add MLP layers and layer norms")
             
             max_diff = comparison.get('max_abs_diff', float('inf'))
             if max_diff > 10:
