@@ -17,10 +17,6 @@ from pathlib import Path
 import sys
 import argparse
 
-# Debug prints for import resolution
-print(f"🔍 Current working directory: {Path.cwd()}")
-print(f"🔍 Python path: {sys.path[:3]}...")
-print(f"🔍 Attempting imports...")
 from engine.core.utils.comparison import compare_logits, get_hf_logits
 
 
@@ -148,8 +144,7 @@ def compare_logits_across_batches(gpt2_forward_fn, weights, config, k=5):
             "input_shape": test_input.shape,
             "max_abs_diff": comparison.get('max_abs_diff', float('inf')),
             "mean_abs_diff": comparison.get('mean_abs_diff', float('inf')),
-            "all_close": comparison.get('all_close', False),
-            "close_percentage": comparison.get('close_percentage', 0.0)
+            "all_close": comparison.get('all_close', False)
         }
         results.append(batch_result)
         
@@ -157,7 +152,6 @@ def compare_logits_across_batches(gpt2_forward_fn, weights, config, k=5):
         print(f"Max absolute difference: {batch_result['max_abs_diff']:.6f}")
         print(f"Mean absolute difference: {batch_result['mean_abs_diff']:.6f}")
         print(f"All close (rtol=5e-3, atol=1e-1): {batch_result['all_close']}")
-        print(f"Close percentage: {batch_result['close_percentage']:.1f}%")
         
         if batch_result['all_close']:
             print("✅ PASS")
