@@ -188,3 +188,28 @@ engine/
 1. Custom kernel development
 2. Memory optimization
 3. Serving optimization
+
+## TODOs: Future Architecture Enhancements
+
+### Integration & Orchestration
+- [ ] Triton integration strategy - when/how to use as serving layer over backends
+- [ ] Backend routing logic - model-to-backend mapping strategies
+- [ ] Multi-backend request distribution and load balancing
+
+### State & Session Management
+- [ ] KV cache strategies per backend type (in-memory, Redis, etc.)
+- [ ] Stateful vs stateless serving trade-offs
+- [ ] Multi-turn conversation session handling
+
+### Operational Concerns
+- [ ] Model loading & weight management - HuggingFace conversion utilities
+- [ ] Shared weight storage and model registry patterns
+- [ ] Observability - metrics, monitoring, request tracing across backends
+- [ ] Configuration management - runtime updates, environment overrides
+
+### Advanced Patterns
+- [ ] JAX functional programming guidelines - pure functions, transformations
+- [ ] Custom kernel development patterns per framework
+- [ ] Performance profiling and optimization workflows
+
+*Note: These can be fleshed out as implementation progresses and requirements become clearer.*
