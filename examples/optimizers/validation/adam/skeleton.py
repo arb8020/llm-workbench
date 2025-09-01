@@ -3,20 +3,15 @@
 Adam optimizer JAX implementation skeleton.
 
 Students should implement adam_update() to match reference implementations exactly.
-This validates that our Adam optimizer produces identical trajectories to:
-- PyTorch's torch.optim.Adam
-- JAX's optax.adam
 
 Usage:
-    python examples/optimizers/validation/adam/skeleton.py
+    python examples/optimizers/validation/adam/compare.py --mode skeleton
 """
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 from typing import Dict, NamedTuple, Tuple
-import torch
-import optax
 
 
 class AdamState(NamedTuple):
