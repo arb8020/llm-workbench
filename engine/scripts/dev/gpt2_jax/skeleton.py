@@ -10,6 +10,7 @@ Usage:
 
 import jax
 import jax.numpy as jnp
+import einops
 from typing import Dict, Optional, Callable
 from dataclasses import dataclass
 from jax import Array
@@ -209,6 +210,7 @@ class GPT2Config:
     n_positions: int = 1024
     layer_norm_epsilon: float = 1e-5
     use_cache: bool = True
+    training: bool = False
     freqs_cis: Optional[Array] = None  
     
     def __post_init__(self):
@@ -282,10 +284,56 @@ def linear(x: jnp.ndarray, weight: jnp.ndarray, bias: jnp.ndarray) -> jnp.ndarra
     _validate_linear_shapes(x, weight, bias)
     return x @ weight + bias
 
-def multihead_attn(x_BLD: jnp.ndarray, c_attn_weight: jnp.ndarray, c_attn_bias: jnp.ndarray,
-                      c_proj_weight: jnp.ndarray, c_proj_bias: jnp.ndarray, config: GPT2Config) -> jnp.ndarray:
+def multihead_attn(x_BMD: jax.Array, w_qkv_3DD: jax.Array, b_qkv_3D: jax.Array, w_out_DD: jax.Array, b_out_D: jax.Array, config: GPT2Config, training: bool = False) -> jnp.ndarray:
     """Vaswani et al. (2017) https://arxiv.org/abs/1706.03762"""
-    return x_BLD
+    
+    H = config.n_heads
+    K = config.d_model // config.n_heads
+    
+    x_BLD = x_BMD
+    if not training:
+        x_BLD = x_BMD[:, -1:, :] # take just the last token
+
+    # split W_qkv
+    w_qkv_3DHK = einops.rearrange(w_qkv_3DD, 'THREE D (H K) -> THREE D H K', H=H, K=K)
+    w_q_DHK, w_k_DHK, w_v_DHK = w_qkv_3DHK[0], w_qkv_3DHK[1], w_qkv_3DHK[2]
+
+    # split biases
+    b_q_DHK = einops.rearrange(b_qkv_3D[0], '(H K) -> H K', H=H, K=K)
+    b_k_DHK = einops.rearrange(b_qkv_3D[1], '(H K) -> H K', H=H, K=K)
+    b_v_DHK = einops.rearrange(b_qkv_3D[2], '(H K) -> H K', H=H, K=K)
+
+    # project into query/key/value
+    query_BLHK = jnp.einsum('BLD,DHK->BLHK', x_BLD, w_q_DHK) + b_q_DHK
+    key_BMHK = jnp.einsum('BMD,DHK->BMHK', x_BMD, w_k_DHK) + b_k_DHK
+    value_BMHK = jnp.einsum('BMD,DHK->BMHK', x_BMD, w_v_DHK) + b_v_DHK
+   
+    # compute cos similarity over B and H. result matrix should be LM (would be MM for training)
+    similarity_score_BHLM = jnp.einsum('BLHK,BMHK->BHLM', query_BLHK, key_BMHK)
+    
+    b, l, h, k = query_BLHK.shape
+   
+    scaled_score_BHLM = similarity_score_BHLM / (k**0.5) # scale by attention k/v dim
+
+    # causal mask
+    l, m = scaled_score_BHLM.shape[-2:]
+
+    block_upper_LM = jnp.triu(jnp.ones((l, m)), k=1) # triu takes in a matrix as input
+    causal_mask_LM = jnp.where(block_upper_LM == 1, -jnp.inf, 0.0) # -inf for blocked values, 0 otherwise
+
+    causal_mask_BHLM = einops.rearrange(causal_mask_LM, 'L M -> 1 1 L M')
+    
+    masked_score_BHLM = scaled_score_BHLM + causal_mask_BHLM 
+
+    softmaxed_score_BHLM = jax.nn.softmax(masked_score_BHLM, axis=-1)
+
+    weights_BLHK = jnp.einsum('BHLM,BMHK->BLHK', softmaxed_score_BHLM, value_BMHK) # dot over BH to BHLK, reshape to BL
+    
+    weights_BLD = einops.rearrange(weights_BLHK, 'B L H K -> B L (H K)')
+    
+    attn_out_BLD = jnp.einsum('BLD,DD->BLD', weights_BLD, w_out_DD) + b_out_D
+
+    return attn_out_BLD
 
 def gpt2_extract_block_weights(layer_idx: int, weights: Dict[str, Array]) -> Dict[str, Array]:
     """helper function to extract weights for a GPT2 block at given layer index"""
@@ -327,12 +375,23 @@ def gpt2_block(x_BLD: jnp.ndarray, layer_idx: int, weights: Dict[str, Array], co
     
     normed_x_BLD = layer_norm(x_BLD, block_weights['ln_1']['weight'], block_weights['ln_1']['bias'], config.layer_norm_epsilon)
     
-    attn_output_BLD = multihead_attn(normed_x_BLD, 
-                                block_weights['attn']['c_attn']['weight'], 
-                                block_weights['attn']['c_attn']['bias'],
-                                block_weights['attn']['c_proj']['weight'], 
-                                block_weights['attn']['c_proj']['bias'], 
-                                config)
+    # GPT-2 c_attn contains concatenated Q,K,V weights - split them
+    c_attn_weight = block_weights['attn']['c_attn']['weight']  # Shape: [D, 3*D]
+    c_attn_bias = block_weights['attn']['c_attn']['bias']      # Shape: [3*D]
+    
+    # Split into Q, K, V
+    d_model = config.d_model
+    q_weight, k_weight, v_weight = jnp.split(c_attn_weight, 3, axis=1)
+    q_bias, k_bias, v_bias = jnp.split(c_attn_bias, 3, axis=0)
+    
+    # Stack into w_qkv_3DD format: [3, D, D] and b_qkv_3D format: [3, D]
+    w_qkv_3DD = jnp.stack([q_weight, k_weight, v_weight], axis=0)
+    b_qkv_3D = jnp.stack([q_bias, k_bias, v_bias], axis=0)
+    
+    w_out_DD = block_weights['attn']['c_proj']['weight']
+    b_out_D = block_weights['attn']['c_proj']['bias']
+    
+    attn_output_BLD = multihead_attn(normed_x_BLD, w_qkv_3DD, b_qkv_3D, w_out_DD, b_out_D, config)
     
     x_BLD = x_BLD + attn_output_BLD
     
