@@ -219,8 +219,43 @@ def project_and_embed(input_ids: jnp.ndarray, weights: Dict[str, Array], config:
     return projected_embedded_BLD 
 
 def layer_norm(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray, epsilon: float = 1e-5) -> jnp.ndarray:
-    # layer norm is 
-    return x_BLD
+    """
+    Layer normalization implementation for transformer model.
+    
+    Args:
+        x_BLD: Input array of shape (batch_size, sequence_length, d_model)
+        gamma: Scale parameter of shape (d_model,)
+        beta: Shift parameter of shape (d_model,)
+        epsilon: Small constant for numerical stability
+        
+    Returns:
+        Normalized array of same shape as input
+    """
+    # Calculate mean and variance along last dimension
+    mean = jnp.mean(x_BLD, axis=-1, keepdims=True)
+    variance = jnp.var(x_BLD, axis=-1, keepdims=True)
+    
+    # Normalize
+    x_norm = (x_BLD - mean) / jnp.sqrt(variance + epsilon)
+    
+    # Scale and shift with learned parameters
+    return gamma * x_norm + beta
+
+
+def layer_norm(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray, epsilon: float = 1e-5) -> jnp.ndarray:
+
+    mean_BL1 = jnp.mean(x_BLD, axis=-1, keepdims=True)
+    variance_BL1 = jnp.var(x_BLD, axis=-1, keepdims=True)
+
+    demeaned_BLD = (x_BLD - mean_BL1) # BLD auto broadcasts over BL1
+    demeaned_centered_BLD = demeaned_BLD / jnp.sqrt(variance_BL1 + epsilon)
+
+    gamma_scaled_BLD = demeaned_centered_BLD * gamma
+    beta_shifted_BLD = gamma_scaled_BLD + beta
+
+    beta_shifted_BLD = final_BLD
+
+    return final_BLD
 
 def ffn(x_BLD: jnp.ndarray, c_fc_weight: jnp.ndarray, c_fc_bias: jnp.ndarray, 
         c_proj_weight: jnp.ndarray, c_proj_bias: jnp.ndarray,
