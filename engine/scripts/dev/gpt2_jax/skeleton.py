@@ -174,7 +174,6 @@ TODO: rushed, forgot the final softmax step
 
 """
 
-def 
 
 @dataclass(frozen=True)
 class GPT2Config:
@@ -197,8 +196,9 @@ class GPT2Config:
 def project_and_embed(weights: Dict[str, Array], input_ids: jnp.ndarray, config: GPT2Config) -> jnp.ndarray:
     
     projected_BLD = input_ids[weights['wte.weight']]
+    projected_embedded_BLD = projected_BLD + weights['wpe.weight']
 
-    return projected_BLD 
+    return projected_embedded_BLD 
 
 
 def gpt2_forward(weights: Dict[str, Array], input_ids: jnp.ndarray, config: GPT2Config) -> jnp.ndarray:
