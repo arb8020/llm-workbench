@@ -10,7 +10,7 @@ Usage:
 
 import jax
 import jax.numpy as jnp
-from typing import Dict, Optional
+from typing import Dict, Optional, Callable
 from dataclasses import dataclass
 from jax import Array
 from engine.core.utils.weights import load_gpt2_weights, download_gpt2_weights, load_and_print_gpt2_weights_jax
@@ -242,10 +242,12 @@ def layer_norm(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray, epsilo
     return gamma * x_norm + beta
 
 
-def layer_norm(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray, epsilon: float = 1e-5) -> jnp.ndarray:
-    # Assert gamma and beta have same last dimension as x_BLD
+def _validate_layer_norm_shapes(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray):
     assert gamma.shape[-1] == x_BLD.shape[-1], "gamma's last dimension must match x_BLD's last dimension"
     assert beta.shape[-1] == x_BLD.shape[-1], "beta's last dimension must match x_BLD's last dimension"
+
+def layer_norm(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray, epsilon: float = 1e-5) -> jnp.ndarray:
+    _validate_layer_norm_shapes(x_BLD, gamma, beta)
 
     mean_BL1 = jnp.mean(x_BLD, axis=-1, keepdims=True)
     variance_BL1 = jnp.var(x_BLD, axis=-1, keepdims=True)
@@ -266,7 +268,13 @@ def ffn(x_BLD: jnp.ndarray, c_fc_weight: jnp.ndarray, c_fc_bias: jnp.ndarray,
         activation_fn: Callable[[jnp.ndarray], jnp.ndarray]) -> jnp.ndarray:
     return x_BLD
 
+
+def _validate_linear_shapes(x: jnp.ndarray, weight: jnp.ndarray, bias: jnp.ndarray) -> None:
+    assert x.shape[-1] == weight.shape[0], f"x shape {x.shape} incompatible with weight shape {weight.shape}"
+    assert weight.shape[1] == bias.shape[0], f"weight shape {weight.shape} incompatible with bias shape {bias.shape}"
+
 def linear(x: jnp.ndarray, weight: jnp.ndarray, bias: jnp.ndarray) -> jnp.ndarray:
+    _validate_linear_shapes(x, weight, bias)
     return x @ weight + bias
 
 def multihead_attn(x_BLD: jnp.ndarray, c_attn_weight: jnp.ndarray, c_attn_bias: jnp.ndarray,
