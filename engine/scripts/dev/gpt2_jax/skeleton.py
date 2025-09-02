@@ -207,7 +207,7 @@ def gpt2_forward(weights: Dict[str, Array], input_ids: jnp.ndarray, config: GPT2
     vocab_size = config.vocab_size
 
 
-    projected_BLD = project_inputs(weights, input_ids, config)
+    projected_BLD = project_and_embed(weights, input_ids, config)
     
     return jax.random.normal(key, (batch_size, seq_len, config.vocab_size)) * 0.1
 
