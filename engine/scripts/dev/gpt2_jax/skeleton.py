@@ -194,6 +194,20 @@ class GPT2Config:
         assert self.n_layers > 0, "n_layers must be positive"
 
 
+def gelu(x):
+    """Hendrycks & Gimpel (2016) https://arxiv.org/abs/1606.08415"""
+    # Using the approximation formula for GELU
+    # 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+    cdf = 0.5 * (1.0 + jnp.tanh(
+        jnp.sqrt(2.0 / jnp.pi) * (x + 0.044715 * jnp.power(x, 3))
+    ))
+    return x * cdf
+
+# Exact implementation (slower but more accurate)
+def gelu_exact(x):
+    """Hendrycks & Gimpel (2016) https://arxiv.org/abs/1606.08415"""
+
+    return 0.5 * x * (1 + jnp.erf(x / jnp.sqrt(2.0)))
 
 def project_and_embed(input_ids: jnp.ndarray, weights: Dict[str, Array], config: GPT2Config) -> jnp.ndarray:
     
@@ -209,8 +223,12 @@ def layer_norm(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray, epsilo
     return x_BLD
 
 def ffn(x_BLD: jnp.ndarray, c_fc_weight: jnp.ndarray, c_fc_bias: jnp.ndarray, 
-        c_proj_weight: jnp.ndarray, c_proj_bias: jnp.ndarray) -> jnp.ndarray:
+        c_proj_weight: jnp.ndarray, c_proj_bias: jnp.ndarray,
+        activation_fn: Callable[[jnp.ndarray], jnp.ndarray]) -> jnp.ndarray:
     return x_BLD
+
+def linear(x: jnp.ndarray, weight: jnp.ndarray, bias: jnp.ndarray) -> jnp.ndarray:
+    return x @ weight + bias
 
 def multihead_attn(x_BLD: jnp.ndarray, c_attn_weight: jnp.ndarray, c_attn_bias: jnp.ndarray,
                       c_proj_weight: jnp.ndarray, c_proj_bias: jnp.ndarray, config: GPT2Config) -> jnp.ndarray:
@@ -267,11 +285,12 @@ def gpt2_block(x_BLD: jnp.ndarray, layer_idx: int, weights: Dict[str, Array], co
     
     normed_x_BLD = layer_norm(x_BLD, block_weights['ln_2']['weight'], block_weights['ln_2']['bias'], config.layer_norm_epsilon)
     
+    
     ffn_output_BLD = ffn(normed_x_BLD, 
                      block_weights['mlp']['c_fc']['weight'],
                      block_weights['mlp']['c_fc']['bias'],
                      block_weights['mlp']['c_proj']['weight'],
-                     block_weights['mlp']['c_proj']['bias'])
+                     block_weights['mlp']['c_proj']['bias'], gelu)
     
     return x_BLD + ffn_output_BLD
 
