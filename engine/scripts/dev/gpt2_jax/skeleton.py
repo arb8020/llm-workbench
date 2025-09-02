@@ -193,7 +193,9 @@ class GPT2Config:
         assert self.vocab_size > 0, "vocab_size must be positive"
         assert self.n_layers > 0, "n_layers must be positive"
 
-def project_and_embed(weights: Dict[str, Array], input_ids: jnp.ndarray, config: GPT2Config) -> jnp.ndarray:
+
+
+def project_and_embed(input_ids: jnp.ndarray, weights: Dict[str, Array], config: GPT2Config) -> jnp.ndarray:
     
     projected_BLD = weights['wte.weight'][input_ids]
     _, seq_len = input_ids.shape
@@ -202,16 +204,87 @@ def project_and_embed(weights: Dict[str, Array], input_ids: jnp.ndarray, config:
     
     return projected_embedded_BLD 
 
+def layer_norm(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray, epsilon: float = 1e-5) -> jnp.ndarray:
+    # layer norm is 
+    return x_BLD
 
-def gpt2_forward(weights: Dict[str, Array], input_ids: jnp.ndarray, config: GPT2Config) -> jnp.ndarray:
+def ffn(x_BLD: jnp.ndarray, c_fc_weight: jnp.ndarray, c_fc_bias: jnp.ndarray, 
+        c_proj_weight: jnp.ndarray, c_proj_bias: jnp.ndarray) -> jnp.ndarray:
+    return x_BLD
+
+def multihead_attn(x_BLD: jnp.ndarray, c_attn_weight: jnp.ndarray, c_attn_bias: jnp.ndarray,
+                      c_proj_weight: jnp.ndarray, c_proj_bias: jnp.ndarray, config: GPT2Config) -> jnp.ndarray:
+    return x_BLD
+
+
+def gpt2_extract_block_weights(layer_idx: int, weights: Dict[str, Array]) -> Dict[str, Array]:
+    """Helper function to extract weights for a GPT2 block at given layer index"""
+    return {
+        'ln_1': {
+            'weight': weights[f"h.{layer_idx}.ln_1.weight"],
+            'bias': weights[f"h.{layer_idx}.ln_1.bias"]
+        },
+        'attn': {
+            'c_attn': {
+                'weight': weights[f"h.{layer_idx}.attn.c_attn.weight"],
+                'bias': weights[f"h.{layer_idx}.attn.c_attn.bias"]
+            },
+            'c_proj': {
+                'weight': weights[f"h.{layer_idx}.attn.c_proj.weight"],
+                'bias': weights[f"h.{layer_idx}.attn.c_proj.bias"]
+            }
+        },
+        'ln_2': {
+            'weight': weights[f"h.{layer_idx}.ln_2.weight"],
+            'bias': weights[f"h.{layer_idx}.ln_2.bias"]
+        },
+        'mlp': {
+            'c_fc': {
+                'weight': weights[f"h.{layer_idx}.mlp.c_fc.weight"],
+                'bias': weights[f"h.{layer_idx}.mlp.c_fc.bias"]
+            },
+            'c_proj': {
+                'weight': weights[f"h.{layer_idx}.mlp.c_proj.weight"],
+                'bias': weights[f"h.{layer_idx}.mlp.c_proj.bias"]
+            }
+        }
+    }
+
+def gpt2_block(x_BLD: jnp.ndarray, layer_idx: int, weights: Dict[str, Array], config: GPT2Config) -> jnp.ndarray:
+    block_weights = gpt2_extract_block_weights(layer_idx, weights)
+    
+    # Apply attention with residual connection
+    normed_x = layer_norm(x_BLD, block_weights['ln_1']['weight'], block_weights['ln_1']['bias'], config.layer_norm_epsilon)
+    attn_output = multihead_attn(normed_x, 
+                                block_weights['attn']['c_attn']['weight'], 
+                                block_weights['attn']['c_attn']['bias'],
+                                block_weights['attn']['c_proj']['weight'], 
+                                block_weights['attn']['c_proj']['bias'], 
+                                config)
+    x_BLD = x_BLD + attn_output
+    
+    # Apply MLP with residual connection
+    normed_x = layer_norm(x_BLD, block_weights['ln_2']['weight'], block_weights['ln_2']['bias'], config.layer_norm_epsilon)
+    ffn_output = ffn(normed_x, 
+                     block_weights['mlp']['c_fc']['weight'],
+                     block_weights['mlp']['c_fc']['bias'],
+                     block_weights['mlp']['c_proj']['weight'],
+                     block_weights['mlp']['c_proj']['bias'])
+    return x_BLD + ffn_output
+
+def gpt2_forward(input_ids: jnp.ndarray, weights: Dict[str, Array], config: GPT2Config) -> jnp.ndarray:
     """ forward weights, input_ids, config -> logits """
     batch_size, seq_len = input_ids.shape
     vocab_size = config.vocab_size
 
+    projected_embedded_BLD = project_and_embed(input_ids, weights, config)
+    x_BLD = projected_embedded_BLD
 
-    projected_BLD = project_and_embed(weights, input_ids, config)
+    for layer_idx in range(config.n_layers):
+        x_BLD = gpt2_block(x_BLD, layer_idx, weights, config)
     
-    return projected_BLD
+    return projected_embedded_BLD
+
 
 if __name__ == "__main__":
     
@@ -221,6 +294,6 @@ if __name__ == "__main__":
     config = GPT2Config()
     test_input = jnp.array([[15496, 995]])  # "Hello world" tokens
     
-    logits = gpt2_forward(real_weights, test_input, config)
+    logits = gpt2_forward(test_input, real_weights, config)
     
     
