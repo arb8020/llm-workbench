@@ -27,9 +27,6 @@ K: size of each attention key or value (sometimes called d_kv)
 """
 
 
-
-
-
 @dataclass(frozen=True)
 class GPT2Config:
     """Configuration for GPT-2 model."""
@@ -67,18 +64,13 @@ def gpt2_forward(weights: Dict[str, Array], input_ids: jnp.ndarray, config: GPT2
     return jax.random.normal(key, (batch_size, seq_len, config.vocab_size)) * 0.1
 
 if __name__ == "__main__":
-    print("🚀 GPT-2 JAX Skeleton - Weight Explorer")
-    print("=" * 50)
     
-    # Load and explore real GPT-2 weights
-    print("Loading real GPT-2 weights to help you understand the model structure...\n")
+    # print real weights
     real_weights = load_and_print_gpt2_weights_jax() 
     
-    # Test with skeleton implementation (still uses dummy forward pass)
-    print("\n🧪 Testing skeleton with real weights loaded:")
     config = GPT2Config()
     test_input = jnp.array([[15496, 995]])  # "Hello world" tokens
     
-    # Note: gpt2_forward still returns random logits - students need to implement it!
     logits = gpt2_forward(real_weights, test_input, config)
+    
     
