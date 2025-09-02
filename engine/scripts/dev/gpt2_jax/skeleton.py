@@ -262,11 +262,42 @@ def layer_norm(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray, epsilo
 
     return final_BLD
 
-
-def ffn(x_BLD: jnp.ndarray, c_fc_weight: jnp.ndarray, c_fc_bias: jnp.ndarray, 
-        c_proj_weight: jnp.ndarray, c_proj_bias: jnp.ndarray,
+def ffn(x_BLD: jnp.ndarray, 
+        weight_in_DF: jnp.ndarray, 
+        bias_in_F: jnp.ndarray,
+        weight_out_FD: jnp.ndarray, 
+        bias_out_FD: jnp.ndarray,
         activation_fn: Callable[[jnp.ndarray], jnp.ndarray]) -> jnp.ndarray:
-    return x_BLD
+
+    hidden_BLF = linear(x_BLD, weight_in_DF, bias_in_F)
+    activated_BLF = activation_fn(hidden_BLF)
+    output_BLD = linear(activated_BLF, weight_out_FD, bias_out_D)
+
+    return output_BLD
+
+def _validate_ffn_shapes(x_BLD: jnp.ndarray, 
+                        weight_in_DF: jnp.ndarray, 
+                        bias_in_F: jnp.ndarray,
+                        weight_out_FD: jnp.ndarray, 
+                        bias_out_D: jnp.ndarray):
+    """
+    Validates shapes for FFN layers:
+    - x_BLD: input shape (batch, length, D)
+    - weight_in_DF: first linear layer weight (D, F)
+    - bias_in_F: first linear layer bias (F,)
+    - weight_out_FD: second linear layer weight (F, D)
+    - bias_out_D: second linear layer bias (D,)
+    """
+    D = x_BLD.shape[-1]  
+    
+    assert weight_in_DF.shape[0] == D, "weight_in_DF's first dimension must match x_BLD's last dimension"
+    F = weight_in_DF.shape[1]  
+    assert bias_in_F.shape[0] == F, "bias_in_F dimension must match weight_in_DF's second dimension"
+    
+    assert weight_out_FD.shape[0] == F, "weight_out_FD's first dimension must match weight_in_DF's second dimension"
+    assert weight_out_FD.shape[1] == D, "weight_out_FD's second dimension must match x_BLD's last dimension"
+    assert bias_out_D.shape[0] == D, "bias_out_D dimension must match x_BLD's last dimension"
+
 
 
 def _validate_linear_shapes(x: jnp.ndarray, weight: jnp.ndarray, bias: jnp.ndarray) -> None:
