@@ -174,18 +174,7 @@ TODO: rushed, forgot the final softmax step
 
 """
 
-
-def gelu_fast(x):
-  """Fast approximation of GELU activation function
-  
-  This activation function gets applied AFTER the linear transformation Wx + b.
-  So if y = Wx + b is your linear layer output, GELU would be:
-  output = GELU(Wx + b)
-  
-  The activation function is element-wise and transforms each value in the 
-  layer's output vector/matrix independently.
-  """
-  return 0.5 * x * (1 + jnp.tanh(jnp.sqrt(2 / jnp.pi) * (x + 0.044715 * x**3)))
+def 
 
 @dataclass(frozen=True)
 class GPT2Config:
@@ -205,22 +194,21 @@ class GPT2Config:
         assert self.vocab_size > 0, "vocab_size must be positive"
         assert self.n_layers > 0, "n_layers must be positive"
 
+def project_and_embed(weights: Dict[str, Array], input_ids: jnp.ndarray, config: GPT2Config) -> jnp.ndarray:
+    
+    projected_BLD = input_ids[weights['wte.weight']]
+
+    return projected_BLD 
+
 
 def gpt2_forward(weights: Dict[str, Array], input_ids: jnp.ndarray, config: GPT2Config) -> jnp.ndarray:
-    """
-    GPT-2 forward pass function.
-    
-    Args:
-        weights: Model weights dictionary
-        input_ids: Token IDs of shape (batch_size, seq_len)
-        config: Model configuration
-        
-    Returns:
-        logits: Output logits of shape (batch_size, seq_len, vocab_size)
-    """
+    """ forward weights, input_ids, config -> logits """
     batch_size, seq_len = input_ids.shape
+    vocab_size = config.vocab_size
+
+
+    projected_BLD = project_inputs(weights, input_ids, config)
     
-    key = jax.random.PRNGKey(42)
     return jax.random.normal(key, (batch_size, seq_len, config.vocab_size)) * 0.1
 
 if __name__ == "__main__":
