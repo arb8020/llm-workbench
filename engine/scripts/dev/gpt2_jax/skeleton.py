@@ -211,7 +211,7 @@ def gpt2_forward(weights: Dict[str, Array], input_ids: jnp.ndarray, config: GPT2
 
     projected_BLD = project_and_embed(weights, input_ids, config)
     
-    return jax.random.normal(key, (batch_size, seq_len, config.vocab_size)) * 0.1
+    return projected_BLD
 
 if __name__ == "__main__":
     
