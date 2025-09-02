@@ -251,26 +251,29 @@ def gpt2_extract_block_weights(layer_idx: int, weights: Dict[str, Array]) -> Dic
     }
 
 def gpt2_block(x_BLD: jnp.ndarray, layer_idx: int, weights: Dict[str, Array], config: GPT2Config) -> jnp.ndarray:
+    
     block_weights = gpt2_extract_block_weights(layer_idx, weights)
     
-    # Apply attention with residual connection
-    normed_x = layer_norm(x_BLD, block_weights['ln_1']['weight'], block_weights['ln_1']['bias'], config.layer_norm_epsilon)
-    attn_output = multihead_attn(normed_x, 
+    normed_x_BLD = layer_norm(x_BLD, block_weights['ln_1']['weight'], block_weights['ln_1']['bias'], config.layer_norm_epsilon)
+    
+    attn_output_BLD = multihead_attn(normed_x_BLD, 
                                 block_weights['attn']['c_attn']['weight'], 
                                 block_weights['attn']['c_attn']['bias'],
                                 block_weights['attn']['c_proj']['weight'], 
                                 block_weights['attn']['c_proj']['bias'], 
                                 config)
-    x_BLD = x_BLD + attn_output
     
-    # Apply MLP with residual connection
-    normed_x = layer_norm(x_BLD, block_weights['ln_2']['weight'], block_weights['ln_2']['bias'], config.layer_norm_epsilon)
-    ffn_output = ffn(normed_x, 
+    x_BLD = x_BLD + attn_output_BLD
+    
+    normed_x_BLD = layer_norm(x_BLD, block_weights['ln_2']['weight'], block_weights['ln_2']['bias'], config.layer_norm_epsilon)
+    
+    ffn_output_BLD = ffn(normed_x_BLD, 
                      block_weights['mlp']['c_fc']['weight'],
                      block_weights['mlp']['c_fc']['bias'],
                      block_weights['mlp']['c_proj']['weight'],
                      block_weights['mlp']['c_proj']['bias'])
-    return x_BLD + ffn_output
+    
+    return x_BLD + ffn_output_BLD
 
 def gpt2_forward(input_ids: jnp.ndarray, weights: Dict[str, Array], config: GPT2Config) -> jnp.ndarray:
     """ forward weights, input_ids, config -> logits """
