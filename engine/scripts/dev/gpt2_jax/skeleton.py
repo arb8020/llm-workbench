@@ -218,32 +218,8 @@ def project_and_embed(input_ids: jnp.ndarray, weights: Dict[str, Array], config:
     
     return projected_embedded_BLD 
 
-def layer_norm(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray, epsilon: float = 1e-5) -> jnp.ndarray:
-    """
-    Layer normalization implementation for transformer model.
-    
-    Args:
-        x_BLD: Input array of shape (batch_size, sequence_length, d_model)
-        gamma: Scale parameter of shape (d_model,)
-        beta: Shift parameter of shape (d_model,)
-        epsilon: Small constant for numerical stability
-        
-    Returns:
-        Normalized array of same shape as input
-    """
-    # Calculate mean and variance along last dimension
-    mean = jnp.mean(x_BLD, axis=-1, keepdims=True)
-    variance = jnp.var(x_BLD, axis=-1, keepdims=True)
-    
-    # Normalize
-    x_norm = (x_BLD - mean) / jnp.sqrt(variance + epsilon)
-    
-    # Scale and shift with learned parameters
-    return gamma * x_norm + beta
-
-
 def _validate_layer_norm_shapes(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray):
-    assert gamma.shape[-1] != x_BLD.shape[-1], "gamma's last dimension must match x_BLD's last dimension"
+    assert gamma.shape[-1] == x_BLD.shape[-1], "gamma's last dimension must match x_BLD's last dimension"
     assert beta.shape[-1] == x_BLD.shape[-1], "beta's last dimension must match x_BLD's last dimension"
 
 def layer_norm(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray, epsilon: float = 1e-5) -> jnp.ndarray:
@@ -268,7 +244,8 @@ def ffn(x_BLD: jnp.ndarray,
         weight_out_FD: jnp.ndarray, 
         bias_out_D: jnp.ndarray,
         activation_fn: Callable[[jnp.ndarray], jnp.ndarray]) -> jnp.ndarray:
-
+    
+    _validate_ffn_shapes(x_BLD, weight_in_DF, bias_in_F, weight_out_FD, bias_out_D) 
     hidden_BLF = linear(x_BLD, weight_in_DF, bias_in_F)
     activated_BLF = activation_fn(hidden_BLF)
     output_BLD = linear(activated_BLF, weight_out_FD, bias_out_D)
@@ -280,16 +257,8 @@ def _validate_ffn_shapes(x_BLD: jnp.ndarray,
                         bias_in_F: jnp.ndarray,
                         weight_out_FD: jnp.ndarray, 
                         bias_out_D: jnp.ndarray):
-    """
-    Validates shapes for FFN layers:
-    - x_BLD: input shape (batch, length, D)
-    - weight_in_DF: first linear layer weight (D, F)
-    - bias_in_F: first linear layer bias (F,)
-    - weight_out_FD: second linear layer weight (F, D)
-    - bias_out_D: second linear layer bias (D,)
-    """
-    D = x_BLD.shape[-1]  
     
+    D = x_BLD.shape[-1]  
     assert weight_in_DF.shape[0] == D, "weight_in_DF's first dimension must match x_BLD's last dimension"
     F = weight_in_DF.shape[1]  
     assert bias_in_F.shape[0] == F, "bias_in_F dimension must match weight_in_DF's second dimension"
@@ -314,7 +283,7 @@ def multihead_attn(x_BLD: jnp.ndarray, c_attn_weight: jnp.ndarray, c_attn_bias: 
 
 
 def gpt2_extract_block_weights(layer_idx: int, weights: Dict[str, Array]) -> Dict[str, Array]:
-    """Helper function to extract weights for a GPT2 block at given layer index"""
+    """helper function to extract weights for a GPT2 block at given layer index"""
     return {
         'ln_1': {
             'weight': weights[f"h.{layer_idx}.ln_1.weight"],
