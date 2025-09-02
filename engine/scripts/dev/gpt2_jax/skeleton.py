@@ -416,8 +416,15 @@ def gpt2_forward(input_ids: jnp.ndarray, weights: Dict[str, Array], config: GPT2
 
     for layer_idx in range(config.n_layers):
         x_BLD = gpt2_block(x_BLD, layer_idx, weights, config)
+
+    x_BLD = layer_norm(x_BLD, 
+                      weights['ln_f.weight'], 
+                      weights['ln_f.bias'], 
+                      config.layer_norm_epsilon)
+
+    logits_BLV = jnp.einsum('BLD,VD->BLV', x_BLD, weights['wte.weight'])
     
-    return projected_embedded_BLD
+    return logits_BLV
 
 
 if __name__ == "__main__":
