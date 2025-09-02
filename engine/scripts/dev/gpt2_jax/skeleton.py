@@ -27,6 +27,9 @@ K: size of each attention key or value (sometimes called d_kv)
 """
 
 
+
+
+
 @dataclass(frozen=True)
 class GPT2Config:
     """Configuration for GPT-2 model."""
@@ -60,9 +63,6 @@ def gpt2_forward(weights: Dict[str, Array], input_ids: jnp.ndarray, config: GPT2
     """
     batch_size, seq_len = input_ids.shape
     
-    # Placeholder: return random logits
-    # HINT: Look at the weight keys printed below to understand the model structure!
-    # Real weights are now loaded - you need to implement the forward pass to use them
     key = jax.random.PRNGKey(42)
     return jax.random.normal(key, (batch_size, seq_len, config.vocab_size)) * 0.1
 
