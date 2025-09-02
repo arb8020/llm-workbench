@@ -120,7 +120,7 @@ def compare_logits_across_batches(gpt2_forward_fn, weights, config, k=5):
         # Get JAX implementation logits
         print("🔥 Getting JAX logits...")
         jax_input = jnp.array(test_input)
-        jax_logits = gpt2_forward_fn(weights, jax_input, config)
+        jax_logits = gpt2_forward_fn(jax_input, weights, config)
         jax_logits_np = np.array(jax_logits)
         
         print(f"JAX logits shape: {jax_logits_np.shape}")

@@ -230,7 +230,7 @@ def transformer_block(x: Array, weights: Dict[str, Array], layer_idx: int,
 # Phase Functions
 # ==============================================================================
 
-def gpt2_forward(weights: Dict[str, Array], input_ids: Array, 
+def gpt2_forward(input_ids: Array, weights: Dict[str, Array], 
                 config: GPT2Config) -> Array:
     """
     Forward pass through GPT-2.
@@ -356,7 +356,7 @@ def test_gpt2_comparison():
         print("\n🔥 Getting JAX model logits with real weights...")
         config = GPT2Config()
         jax_input = jnp.array(test_input)
-        jax_logits = gpt2_forward(real_weights, jax_input, config)
+        jax_logits = gpt2_forward(jax_input, real_weights, config)
         jax_logits_np = np.array(jax_logits)
         
         print(f"JAX logits shape: {jax_logits_np.shape}")
