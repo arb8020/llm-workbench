@@ -195,9 +195,11 @@ class GPT2Config:
 
 def project_and_embed(weights: Dict[str, Array], input_ids: jnp.ndarray, config: GPT2Config) -> jnp.ndarray:
     
-    projected_BLD = input_ids[weights['wte.weight']]
-    projected_embedded_BLD = projected_BLD + weights['wpe.weight']
-
+    projected_BLD = weights['wte.weight'][input_ids]
+    _, seq_len = input_ids.shape
+    position_embeddings = weights['wpe.weight'][:seq_len]
+    projected_embedded_BLD = projected_BLD + position_embeddings
+    
     return projected_embedded_BLD 
 
 
