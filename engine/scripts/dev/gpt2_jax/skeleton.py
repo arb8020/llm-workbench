@@ -266,7 +266,7 @@ def ffn(x_BLD: jnp.ndarray,
         weight_in_DF: jnp.ndarray, 
         bias_in_F: jnp.ndarray,
         weight_out_FD: jnp.ndarray, 
-        bias_out_FD: jnp.ndarray,
+        bias_out_D: jnp.ndarray,
         activation_fn: Callable[[jnp.ndarray], jnp.ndarray]) -> jnp.ndarray:
 
     hidden_BLF = linear(x_BLD, weight_in_DF, bias_in_F)
