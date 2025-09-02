@@ -26,6 +26,30 @@ H: number of attention heads in a layer
 K: size of each attention key or value (sometimes called d_kv)
 """
 
+def _validate_ffn_shapes(x_BLD: jnp.ndarray, 
+                        weight_in_DF: jnp.ndarray, 
+                        bias_in_F: jnp.ndarray,
+                        weight_out_FD: jnp.ndarray, 
+                        bias_out_D: jnp.ndarray):
+    
+    D = x_BLD.shape[-1]  
+    assert weight_in_DF.shape[0] == D, "weight_in_DF's first dimension must match x_BLD's last dimension"
+    F = weight_in_DF.shape[1]  
+    assert bias_in_F.shape[0] == F, "bias_in_F dimension must match weight_in_DF's second dimension"
+    
+    assert weight_out_FD.shape[0] == F, "weight_out_FD's first dimension must match weight_in_DF's second dimension"
+    assert weight_out_FD.shape[1] == D, "weight_out_FD's second dimension must match x_BLD's last dimension"
+    assert bias_out_D.shape[0] == D, "bias_out_D dimension must match x_BLD's last dimension"
+
+def _validate_linear_shapes(x: jnp.ndarray, weight: jnp.ndarray, bias: jnp.ndarray) -> None:
+    assert x.shape[-1] == weight.shape[0], f"x shape {x.shape} incompatible with weight shape {weight.shape}"
+    assert weight.shape[1] == bias.shape[0], f"weight shape {weight.shape} incompatible with bias shape {bias.shape}"
+
+def _validate_layer_norm_shapes(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray):
+    assert gamma.shape[-1] == x_BLD.shape[-1], "gamma's last dimension must match x_BLD's last dimension"
+    assert beta.shape[-1] == x_BLD.shape[-1], "beta's last dimension must match x_BLD's last dimension"
+
+
 """
 layers:
 
@@ -203,26 +227,24 @@ def gelu(x):
     ))
     return x * cdf
 
-# Exact implementation (slower but more accurate)
 def gelu_exact(x):
     """Hendrycks & Gimpel (2016) https://arxiv.org/abs/1606.08415"""
 
     return 0.5 * x * (1 + jnp.erf(x / jnp.sqrt(2.0)))
 
 def project_and_embed(input_ids: jnp.ndarray, weights: Dict[str, Array], config: GPT2Config) -> jnp.ndarray:
-    
+    """Radford et al. (2019) https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf"""
+
     projected_BLD = weights['wte.weight'][input_ids]
     _, seq_len = input_ids.shape
     position_embeddings = weights['wpe.weight'][:seq_len]
     projected_embedded_BLD = projected_BLD + position_embeddings
     
-    return projected_embedded_BLD 
-
-def _validate_layer_norm_shapes(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray):
-    assert gamma.shape[-1] == x_BLD.shape[-1], "gamma's last dimension must match x_BLD's last dimension"
-    assert beta.shape[-1] == x_BLD.shape[-1], "beta's last dimension must match x_BLD's last dimension"
+    return projected_embedded_BLD
 
 def layer_norm(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray, epsilon: float = 1e-5) -> jnp.ndarray:
+    """Ba et al. (2016) https://arxiv.org/abs/1607.06450"""
+
     _validate_layer_norm_shapes(x_BLD, gamma, beta)
 
     mean_BL1 = jnp.mean(x_BLD, axis=-1, keepdims=True)
@@ -238,13 +260,15 @@ def layer_norm(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray, epsilo
 
     return final_BLD
 
+
 def ffn(x_BLD: jnp.ndarray, 
         weight_in_DF: jnp.ndarray, 
         bias_in_F: jnp.ndarray,
         weight_out_FD: jnp.ndarray, 
         bias_out_D: jnp.ndarray,
         activation_fn: Callable[[jnp.ndarray], jnp.ndarray]) -> jnp.ndarray:
-    
+    """Vaswani et al. (2017) https://arxiv.org/abs/1706.03762"""
+
     _validate_ffn_shapes(x_BLD, weight_in_DF, bias_in_F, weight_out_FD, bias_out_D) 
     hidden_BLF = linear(x_BLD, weight_in_DF, bias_in_F)
     activated_BLF = activation_fn(hidden_BLF)
@@ -252,35 +276,16 @@ def ffn(x_BLD: jnp.ndarray,
 
     return output_BLD
 
-def _validate_ffn_shapes(x_BLD: jnp.ndarray, 
-                        weight_in_DF: jnp.ndarray, 
-                        bias_in_F: jnp.ndarray,
-                        weight_out_FD: jnp.ndarray, 
-                        bias_out_D: jnp.ndarray):
-    
-    D = x_BLD.shape[-1]  
-    assert weight_in_DF.shape[0] == D, "weight_in_DF's first dimension must match x_BLD's last dimension"
-    F = weight_in_DF.shape[1]  
-    assert bias_in_F.shape[0] == F, "bias_in_F dimension must match weight_in_DF's second dimension"
-    
-    assert weight_out_FD.shape[0] == F, "weight_out_FD's first dimension must match weight_in_DF's second dimension"
-    assert weight_out_FD.shape[1] == D, "weight_out_FD's second dimension must match x_BLD's last dimension"
-    assert bias_out_D.shape[0] == D, "bias_out_D dimension must match x_BLD's last dimension"
-
-
-
-def _validate_linear_shapes(x: jnp.ndarray, weight: jnp.ndarray, bias: jnp.ndarray) -> None:
-    assert x.shape[-1] == weight.shape[0], f"x shape {x.shape} incompatible with weight shape {weight.shape}"
-    assert weight.shape[1] == bias.shape[0], f"weight shape {weight.shape} incompatible with bias shape {bias.shape}"
 
 def linear(x: jnp.ndarray, weight: jnp.ndarray, bias: jnp.ndarray) -> jnp.ndarray:
+    """Goodfellow et al. (2016) http://www.deeplearningbook.org"""
     _validate_linear_shapes(x, weight, bias)
     return x @ weight + bias
 
 def multihead_attn(x_BLD: jnp.ndarray, c_attn_weight: jnp.ndarray, c_attn_bias: jnp.ndarray,
                       c_proj_weight: jnp.ndarray, c_proj_bias: jnp.ndarray, config: GPT2Config) -> jnp.ndarray:
+    """Vaswani et al. (2017) https://arxiv.org/abs/1706.03762"""
     return x_BLD
-
 
 def gpt2_extract_block_weights(layer_idx: int, weights: Dict[str, Array]) -> Dict[str, Array]:
     """helper function to extract weights for a GPT2 block at given layer index"""
@@ -316,6 +321,7 @@ def gpt2_extract_block_weights(layer_idx: int, weights: Dict[str, Array]) -> Dic
     }
 
 def gpt2_block(x_BLD: jnp.ndarray, layer_idx: int, weights: Dict[str, Array], config: GPT2Config) -> jnp.ndarray:
+    """Radford et al. (2019) https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf"""
     
     block_weights = gpt2_extract_block_weights(layer_idx, weights)
     
@@ -342,7 +348,7 @@ def gpt2_block(x_BLD: jnp.ndarray, layer_idx: int, weights: Dict[str, Array], co
     return x_BLD + ffn_output_BLD
 
 def gpt2_forward(input_ids: jnp.ndarray, weights: Dict[str, Array], config: GPT2Config) -> jnp.ndarray:
-    """ forward weights, input_ids, config -> logits """
+    """Radford et al. (2019) https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf"""
     batch_size, seq_len = input_ids.shape
     vocab_size = config.vocab_size
 
