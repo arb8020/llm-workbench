@@ -243,6 +243,9 @@ def layer_norm(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray, epsilo
 
 
 def layer_norm(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray, epsilon: float = 1e-5) -> jnp.ndarray:
+    # Assert gamma and beta have same last dimension as x_BLD
+    assert gamma.shape[-1] == x_BLD.shape[-1], "gamma's last dimension must match x_BLD's last dimension"
+    assert beta.shape[-1] == x_BLD.shape[-1], "beta's last dimension must match x_BLD's last dimension"
 
     mean_BL1 = jnp.mean(x_BLD, axis=-1, keepdims=True)
     variance_BL1 = jnp.var(x_BLD, axis=-1, keepdims=True)
@@ -253,9 +256,10 @@ def layer_norm(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray, epsilo
     gamma_scaled_BLD = demeaned_centered_BLD * gamma
     beta_shifted_BLD = gamma_scaled_BLD + beta
 
-    beta_shifted_BLD = final_BLD
+    final_BLD = beta_shifted_BLD 
 
     return final_BLD
+
 
 def ffn(x_BLD: jnp.ndarray, c_fc_weight: jnp.ndarray, c_fc_bias: jnp.ndarray, 
         c_proj_weight: jnp.ndarray, c_proj_bias: jnp.ndarray,
