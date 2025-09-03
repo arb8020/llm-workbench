@@ -194,6 +194,7 @@ def print_summary(results):
             print("💡 Small differences suggest numerical precision issues")
 
 
+
 def main():
     parser = argparse.ArgumentParser(description="Compare JAX GPT-2 implementation against HuggingFace")
     parser.add_argument("--mode", choices=["skeleton", "solution"], default="skeleton", 
@@ -205,6 +206,7 @@ def main():
     
     print("🚀 JAX GPT-2 Logits Comparison Suite")
     print(f"Mode: {args.mode}")
+    
     print(f"Testing across {args.batches} input batches...")
     print()
     
