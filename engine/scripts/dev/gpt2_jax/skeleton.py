@@ -259,6 +259,13 @@ def gelu_exact(x):
 
     return 0.5 * x * (1 + jnp.erf(x / jnp.sqrt(2.0)))
 
+def gelu_hf(x):
+    """Hendrycks & Gimpel (2016) https://arxiv.org/abs/1606.08415"""
+    return 0.5 * x * (1.0 + jnp.tanh(jnp.sqrt(2.0 / jnp.pi) * (x + 0.044715 *
+  jnp.power(x, 3.0))))
+
+
+
 def project_and_embed(input_ids: jnp.ndarray, weights: Dict[str, Array], config: GPT2Config) -> jnp.ndarray:
     """Radford et al. (2019) https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf"""
 
@@ -347,7 +354,7 @@ def multihead_attn(x_BMD: jax.Array, w_qkv_3DD: jax.Array, b_qkv_3D: jax.Array, 
     l, m = scaled_score_BHLM.shape[-2:]
 
     block_upper_LM = jnp.triu(jnp.ones((l, m)), k=1) # triu takes in a matrix as input
-    causal_mask_LM = jnp.where(block_upper_LM == 1, -jnp.inf, 0.0) # -inf for blocked values, 0 otherwise
+    causal_mask_LM = jnp.where(block_upper_LM == 1, jnp.finfo(scaled_score_BHLM.dtype).min, 0.0) # -inf for blocked values, 0 otherwise
 
     causal_mask_BHLM = einops.rearrange(causal_mask_LM, 'L M -> 1 1 L M')
     
@@ -430,7 +437,7 @@ def gpt2_block(x_BLD: jnp.ndarray, layer_idx: int, weights: Dict[str, Array], co
                      block_weights['mlp']['c_fc']['weight'],
                      block_weights['mlp']['c_fc']['bias'],
                      block_weights['mlp']['c_proj']['weight'],
-                     block_weights['mlp']['c_proj']['bias'], gelu)
+                     block_weights['mlp']['c_proj']['bias'], gelu_hf)
     
     return x_BLD + ffn_output_BLD
 
