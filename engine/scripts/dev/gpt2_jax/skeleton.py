@@ -133,7 +133,7 @@ def layer_norm(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray, epsilo
     _validate_layer_norm_shapes(x_BLD, gamma, beta)
 
     mean_BL1 = jnp.mean(x_BLD, axis=-1, keepdims=True)
-    variance_BL1 = jnp.var(x_BLD, axis=-1, keepdims=True, ddof=0)
+    variance_BL1 = jnp.var(x_BLD, axis=-1, keepdims=True)
 
     demeaned_BLD = (x_BLD - mean_BL1) # BLD auto broadcasts over BL1
     demeaned_centered_BLD = demeaned_BLD / jnp.sqrt(variance_BL1 + epsilon)
@@ -221,49 +221,6 @@ def multihead_attn(x_BMD: jax.Array, w_qkv_3DD: jax.Array, b_qkv_3D: jax.Array, 
 
     return attn_out_BLD
 
-def multihead_attn_new(q_BLD: jax.Array, k_BLD: jax.Array, v_BLD: jax.Array, 
-                      w_out_DD: jax.Array, b_out_D: jax.Array, config: GPT2Config) -> jnp.ndarray:
-    """New attention function that takes Q,K,V directly (like solution.py approach)"""
-    
-    batch_size, seq_len, d_model = q_BLD.shape
-    head_dim = d_model // config.n_heads
-    
-    # Reshape for multi-head attention: (B, L, H, K)
-    q = q_BLD.reshape(batch_size, seq_len, config.n_heads, head_dim)
-    k = k_BLD.reshape(batch_size, seq_len, config.n_heads, head_dim)  
-    v = v_BLD.reshape(batch_size, seq_len, config.n_heads, head_dim)
-    
-    # Transpose to (B, H, L, K) for attention computation
-    q = jnp.transpose(q, (0, 2, 1, 3))
-    k = jnp.transpose(k, (0, 2, 1, 3))
-    v = jnp.transpose(v, (0, 2, 1, 3))
-    
-    # Scaled dot-product attention (like solution.py)
-    scores = jnp.matmul(q, jnp.transpose(k, (0, 1, 3, 2)))
-    scale_factor = jnp.float32(head_dim) ** 0.5
-    scores = scores / scale_factor
-    
-    # Causal mask (like solution.py)
-    causal_mask = jnp.tril(jnp.ones((seq_len, seq_len)))
-    mask_value = jnp.finfo(scores.dtype).min
-    scores = jnp.where(causal_mask[None, None, :, :], scores, mask_value)
-    
-    # Softmax
-    attn_weights = jax.nn.softmax(scores, axis=-1)
-    attn_weights = attn_weights.astype(v.dtype)
-    
-    # Apply attention to values
-    attn_output = jnp.matmul(attn_weights, v)
-    
-    # Transpose back and reshape: (B, H, L, K) -> (B, L, H, K) -> (B, L, D)
-    attn_output = jnp.transpose(attn_output, (0, 2, 1, 3))
-    attn_output = attn_output.reshape(batch_size, seq_len, d_model)
-    
-    # Output projection
-    output = jnp.matmul(attn_output, w_out_DD) + b_out_D
-    
-    return output
-
 def gpt2_extract_block_weights(layer_idx: int, weights: Dict[str, Array]) -> Dict[str, Array]:
     """helper function to extract weights for a GPT2 block at given layer index"""
     return {
@@ -304,20 +261,23 @@ def gpt2_block(x_BLD: jnp.ndarray, layer_idx: int, weights: Dict[str, Array], co
     
     normed_x_BLD = layer_norm(x_BLD, block_weights['ln_1']['weight'], block_weights['ln_1']['bias'], config.layer_norm_epsilon)
     
-    # Apply linear transformation first, then split (like solution.py)
+    # GPT-2 c_attn contains concatenated Q,K,V weights - split them
     c_attn_weight = block_weights['attn']['c_attn']['weight']  # Shape: [D, 3*D]
     c_attn_bias = block_weights['attn']['c_attn']['bias']      # Shape: [3*D]
     
-    # Compute QKV in one shot: x @ W + b, then split
-    qkv_BL3D = jnp.matmul(normed_x_BLD, c_attn_weight) + c_attn_bias
-    q_BLD, k_BLD, v_BLD = jnp.split(qkv_BL3D, 3, axis=-1)
+    # Split into Q, K, V
+    d_model = config.d_model
+    q_weight, k_weight, v_weight = jnp.split(c_attn_weight, 3, axis=1)
+    q_bias, k_bias, v_bias = jnp.split(c_attn_bias, 3, axis=0)
     
-    # Get output projection weights
+    # Stack into w_qkv_3DD format: [3, D, D] and b_qkv_3D format: [3, D]
+    w_qkv_3DD = jnp.stack([q_weight, k_weight, v_weight], axis=0)
+    b_qkv_3D = jnp.stack([q_bias, k_bias, v_bias], axis=0)
+    
     w_out_DD = block_weights['attn']['c_proj']['weight']
     b_out_D = block_weights['attn']['c_proj']['bias']
     
-    # Use new QKV computation in attention (need to update multihead_attn to accept Q,K,V directly)
-    attn_output_BLD = multihead_attn_new(q_BLD, k_BLD, v_BLD, w_out_DD, b_out_D, config)
+    attn_output_BLD = multihead_attn(normed_x_BLD, w_qkv_3DD, b_qkv_3D, w_out_DD, b_out_D, config, config.training)
     
     x_BLD = x_BLD + attn_output_BLD
     
