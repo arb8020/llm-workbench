@@ -25,9 +25,11 @@ def load_gpt2_implementation(mode):
     if mode == "skeleton":
         try:
             from skeleton import gpt2_forward, GPT2Config
+            from engine.core.utils.weights import load_and_print_gpt2_weights_jax
             print("✅ Successfully imported from skeleton")
             config = GPT2Config()
-            weights = {}  # Skeleton uses dummy weights
+            print("📦 Loading real GPT-2 weights for skeleton...")
+            weights = load_and_print_gpt2_weights_jax()
             return gpt2_forward, weights, config
         except ImportError as e:
             print(f"❌ Failed to import from skeleton: {e}")
