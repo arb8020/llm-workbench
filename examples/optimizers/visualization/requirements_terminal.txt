@@ -1,0 +1,10 @@
+# Terminal visualization libraries
+plotext>=5.2.8     # Terminal plotting (matplotlib-like API)
+rich>=13.0.0       # Beautiful terminal formatting, tables, progress bars
+textual>=0.41.0    # Advanced TUI framework (optional)
+
+# Core dependencies (should already be installed)
+jax>=0.4.0
+numpy>=1.21.0
+matplotlib>=3.5.0  # Still needed for saved plots
+scikit-learn>=1.0.0  # For PCA/t-SNE
