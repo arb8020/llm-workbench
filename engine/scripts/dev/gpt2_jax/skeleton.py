@@ -14,7 +14,7 @@ import einops
 from typing import Dict, Optional, Callable
 from dataclasses import dataclass
 from jax import Array
-from engine.core.utils.weights import load_gpt2_weights, download_gpt2_weights, load_and_print_gpt2_weights_jax
+from engine.core.utils.weights import load_gpt2_weights, download_gpt2_weights, load_and_print_gpt2_weights_jax, validate_gpt2_weights
 
 """
 B: batch size
@@ -49,6 +49,30 @@ def _validate_linear_shapes(x: jnp.ndarray, weight: jnp.ndarray, bias: jnp.ndarr
 def _validate_layer_norm_shapes(x_BLD: jnp.ndarray, gamma: jnp.ndarray, beta: jnp.ndarray):
     assert gamma.shape[-1] == x_BLD.shape[-1], "gamma's last dimension must match x_BLD's last dimension"
     assert beta.shape[-1] == x_BLD.shape[-1], "beta's last dimension must match x_BLD's last dimension"
+
+def _validate_attention_shapes(x_BMD: jnp.ndarray, w_qkv_3DD: jnp.ndarray, b_qkv_3D: jnp.ndarray, 
+                             w_out_DD: jnp.ndarray, b_out_D: jnp.ndarray, config: GPT2Config):
+    """Validate all attention layer input shapes match expected dimensions."""
+    B, M, D = x_BMD.shape
+    
+    # Validate input
+    assert len(x_BMD.shape) == 3, f"x_BMD must be 3D, got shape {x_BMD.shape}"
+    assert D == config.d_model, f"x_BMD last dim {D} must match config.d_model {config.d_model}"
+    
+    # Validate Q,K,V weights
+    assert w_qkv_3DD.shape == (3, D, D), f"w_qkv_3DD shape {w_qkv_3DD.shape} must be (3, {D}, {D})"
+    assert b_qkv_3D.shape == (3, D), f"b_qkv_3D shape {b_qkv_3D.shape} must be (3, {D})"
+    
+    # Validate output projection
+    assert w_out_DD.shape == (D, D), f"w_out_DD shape {w_out_DD.shape} must be ({D}, {D})"
+    assert b_out_D.shape == (D,), f"b_out_D shape {b_out_D.shape} must be ({D},)"
+    
+    # Validate head configuration
+    assert D % config.n_heads == 0, f"d_model {D} must be divisible by n_heads {config.n_heads}"
+    head_dim = D // config.n_heads
+    assert head_dim > 0, f"Head dimension {head_dim} must be positive"
+    
+    print(f"✅ Attention shapes validated: input={x_BMD.shape}, heads={config.n_heads}, head_dim={head_dim}")
 
 
 """
@@ -237,9 +261,9 @@ def gelu_exact(x):
 def project_and_embed(input_ids: jnp.ndarray, weights: Dict[str, Array], config: GPT2Config) -> jnp.ndarray:
     """Radford et al. (2019) https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf"""
 
-    projected_BLD = weights['wte.weight'][input_ids]
+    projected_BLD = weights['wte'][input_ids]
     _, seq_len = input_ids.shape
-    position_embeddings = weights['wpe.weight'][:seq_len]
+    position_embeddings = weights['wpe'][:seq_len]
     projected_embedded_BLD = projected_BLD + position_embeddings
     
     return projected_embedded_BLD
@@ -286,6 +310,9 @@ def linear(x: jnp.ndarray, weight: jnp.ndarray, bias: jnp.ndarray) -> jnp.ndarra
 
 def multihead_attn(x_BMD: jax.Array, w_qkv_3DD: jax.Array, b_qkv_3D: jax.Array, w_out_DD: jax.Array, b_out_D: jax.Array, config: GPT2Config, training: bool = False) -> jnp.ndarray:
     """Vaswani et al. (2017) https://arxiv.org/abs/1706.03762"""
+    
+    # Validate shapes before proceeding
+    _validate_attention_shapes(x_BMD, w_qkv_3DD, b_qkv_3D, w_out_DD, b_out_D, config)
     
     H = config.n_heads
     K = config.d_model // config.n_heads
@@ -411,6 +438,24 @@ def gpt2_forward(input_ids: jnp.ndarray, weights: Dict[str, Array], config: GPT2
     batch_size, seq_len = input_ids.shape
     vocab_size = config.vocab_size
 
+    # Validate required weight keys exist
+    required_keys = [
+        'wte', 'wpe', 'ln_f.weight', 'ln_f.bias'
+    ]
+    # Add layer-specific keys
+    for i in range(config.n_layers):
+        layer_keys = [
+            f'h.{i}.ln_1.weight', f'h.{i}.ln_1.bias',
+            f'h.{i}.attn.c_attn.weight', f'h.{i}.attn.c_attn.bias',
+            f'h.{i}.attn.c_proj.weight', f'h.{i}.attn.c_proj.bias',
+            f'h.{i}.ln_2.weight', f'h.{i}.ln_2.bias',
+            f'h.{i}.mlp.c_fc.weight', f'h.{i}.mlp.c_fc.bias',
+            f'h.{i}.mlp.c_proj.weight', f'h.{i}.mlp.c_proj.bias'
+        ]
+        required_keys.extend(layer_keys)
+    
+    validate_gpt2_weights(weights, required_keys)
+
     projected_embedded_BLD = project_and_embed(input_ids, weights, config)
     x_BLD = projected_embedded_BLD
 
@@ -422,7 +467,7 @@ def gpt2_forward(input_ids: jnp.ndarray, weights: Dict[str, Array], config: GPT2
                       weights['ln_f.bias'], 
                       config.layer_norm_epsilon)
 
-    logits_BLV = jnp.einsum('BLD,VD->BLV', x_BLD, weights['wte.weight'])
+    logits_BLV = jnp.einsum('BLD,VD->BLV', x_BLD, weights['wte'])
     
     return logits_BLV
 

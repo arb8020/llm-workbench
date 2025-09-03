@@ -120,6 +120,38 @@ def download_gpt2_weights(model_name: str = "gpt2", cache_dir: Optional[Union[st
     
     return pathlib.Path(local_dir)
 
+def validate_gpt2_weights(weights: Dict[str, any], expected_keys: list[str]) -> None:
+    """
+    Validate that all expected keys exist in weights dictionary.
+    Provides helpful error messages with suggestions for missing keys.
+    """
+    missing_keys = []
+    available_keys = set(weights.keys())
+    
+    for key in expected_keys:
+        if key not in weights:
+            missing_keys.append(key)
+    
+    if missing_keys:
+        print(f"❌ Missing weight keys: {missing_keys}")
+        print(f"📋 Available keys: {sorted(available_keys)}")
+        
+        # Try to suggest alternatives
+        suggestions = {}
+        for missing in missing_keys:
+            closest_matches = [k for k in available_keys if missing.split('.')[-1] in k]
+            if closest_matches:
+                suggestions[missing] = closest_matches[:3]  # Top 3 suggestions
+        
+        if suggestions:
+            print("\n💡 Suggested alternatives:")
+            for missing, matches in suggestions.items():
+                print(f"  '{missing}' -> try: {matches}")
+        
+        raise KeyError(f"Missing required weight keys: {missing_keys}")
+    
+    print("✅ All required weight keys found")
+
 def load_and_print_gpt2_weights_jax() -> Dict[str, Array]:
     import jax
     import jax.numpy as jnp
