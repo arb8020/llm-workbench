@@ -262,9 +262,9 @@ def gelu_exact(x):
 def project_and_embed(input_ids: jnp.ndarray, weights: Dict[str, Array], config: GPT2Config) -> jnp.ndarray:
     """Radford et al. (2019) https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf"""
 
-    projected_BLD = weights['wte'][input_ids]
+    projected_BLD = weights['wte.weight'][input_ids]
     _, seq_len = input_ids.shape
-    position_embeddings = weights['wpe'][:seq_len]
+    position_embeddings = weights['wpe.weight'][:seq_len]
     projected_embedded_BLD = projected_BLD + position_embeddings
     
     return projected_embedded_BLD
@@ -441,7 +441,7 @@ def gpt2_forward(input_ids: jnp.ndarray, weights: Dict[str, Array], config: GPT2
 
     # Validate required weight keys exist
     required_keys = [
-        'wte', 'wpe', 'ln_f.weight', 'ln_f.bias'
+        'wte.weight', 'wpe.weight', 'ln_f.weight', 'ln_f.bias'
     ]
     # Add layer-specific keys
     for i in range(config.n_layers):
@@ -468,7 +468,7 @@ def gpt2_forward(input_ids: jnp.ndarray, weights: Dict[str, Array], config: GPT2
                       weights['ln_f.bias'], 
                       config.layer_norm_epsilon)
 
-    logits_BLV = jnp.einsum('BLD,VD->BLV', x_BLD, weights['wte'])
+    logits_BLV = jnp.einsum('BLD,VD->BLV', x_BLD, weights['wte.weight'])
     
     return logits_BLV
 
