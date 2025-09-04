@@ -247,15 +247,15 @@ def llama3_forward(input_ids: jnp.ndarray, weights: Dict[str, Array], config: Ll
     return logits
 
 
-def load_and_print_real_weights(model_name: str = "meta-llama/Meta-Llama-3-8B"):
-    """Load real Llama3 weights from HuggingFace and convert to JAX format"""
-    print(f"🦙 Loading Llama3 model: {model_name}")
+def load_and_print_real_weights(model_name: str = "huggyllama/llama-7b"):
+    """Load real Llama weights from HuggingFace and convert to JAX format"""
+    print(f"🦙 Loading Llama model: {model_name}")
     
-    # Load the model 
+    # Load the model - remove device_map to avoid accelerate requirement for testing
     model = LlamaForCausalLM.from_pretrained(
         model_name,
         torch_dtype=torch.float32,
-        device_map="auto"
+        # device_map="cpu"  # Keep on CPU to avoid GPU memory issues
     )
     
     # Convert PyTorch weights to JAX format
@@ -271,9 +271,69 @@ def load_and_print_real_weights(model_name: str = "meta-llama/Meta-Llama-3-8B"):
     return jax_weights
 
 
+def test_architecture():
+    """Test the architecture with dummy weights"""
+    print("🧪 Testing Llama3 JAX architecture with dummy weights...")
+    
+    # Create config and dummy weights
+    config = Llama3Config(
+        vocab_size=1000,  # Smaller for testing
+        d_model=512,      # Smaller for testing
+        n_layers=2,       # Smaller for testing
+        n_heads=8,
+        n_kv_heads=2,
+        training=True
+    )
+    
+    # Create dummy weights
+    dummy_weights = {}
+    dummy_weights['model.embed_tokens.weight'] = jnp.zeros((config.vocab_size, config.d_model))
+    dummy_weights['model.norm.weight'] = jnp.ones((config.d_model,))
+    dummy_weights['lm_head.weight'] = jnp.zeros((config.vocab_size, config.d_model))
+    
+    # Layer weights
+    for i in range(config.n_layers):
+        dummy_weights[f'model.layers.{i}.input_layernorm.weight'] = jnp.ones((config.d_model,))
+        dummy_weights[f'model.layers.{i}.post_attention_layernorm.weight'] = jnp.ones((config.d_model,))
+        
+        # Attention weights
+        dummy_weights[f'model.layers.{i}.self_attn.q_proj.weight'] = jnp.zeros((config.d_model, config.d_model))
+        dummy_weights[f'model.layers.{i}.self_attn.k_proj.weight'] = jnp.zeros((config.d_model // config.n_heads * config.n_kv_heads, config.d_model))
+        dummy_weights[f'model.layers.{i}.self_attn.v_proj.weight'] = jnp.zeros((config.d_model // config.n_heads * config.n_kv_heads, config.d_model))
+        dummy_weights[f'model.layers.{i}.self_attn.o_proj.weight'] = jnp.zeros((config.d_model, config.d_model))
+        
+        # FFN weights
+        ffn_dim = config.d_model * 4  # Standard scaling
+        dummy_weights[f'model.layers.{i}.mlp.gate_proj.weight'] = jnp.zeros((ffn_dim, config.d_model))
+        dummy_weights[f'model.layers.{i}.mlp.up_proj.weight'] = jnp.zeros((ffn_dim, config.d_model))
+        dummy_weights[f'model.layers.{i}.mlp.down_proj.weight'] = jnp.zeros((config.d_model, ffn_dim))
+    
+    # Test input
+    test_input = jnp.array([[1, 2, 3, 4, 5]])
+    
+    print("🔥 Running forward pass with dummy weights...")
+    try:
+        logits = llama3_forward(test_input, dummy_weights, config)
+        print(f"✅ Success! Output shape: {logits.shape}")
+        print(f"Expected shape: {test_input.shape + (config.vocab_size,)}")
+        
+        if logits.shape == test_input.shape + (config.vocab_size,):
+            print("✅ Output shape is correct!")
+            return True
+        else:
+            print("❌ Output shape mismatch")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Forward pass failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def validate_against_hf():
     """Validate JAX implementation against HuggingFace"""
-    print("🧪 Validating JAX Llama3 against HuggingFace...")
+    print("🧪 Validating JAX Llama against HuggingFace...")
     
     # Test input
     test_input = jnp.array([[1, 2, 3, 4, 5]])  # Simple token sequence
@@ -289,7 +349,7 @@ def validate_against_hf():
     
     # Get HuggingFace reference
     print("📚 Getting HuggingFace reference...")
-    hf_logits = get_hf_logits(np.array(test_input), model_name="meta-llama/Meta-Llama-3-8B")
+    hf_logits = get_hf_logits(np.array(test_input), model_name="huggyllama/llama-7b")
     
     # Compare
     print("⚖️ Comparing logits...")
@@ -304,4 +364,10 @@ def validate_against_hf():
 
 
 if __name__ == "__main__":
-    validate_against_hf()
+    # First test architecture with dummy weights
+    if test_architecture():
+        print("\n" + "="*50)
+        print("Architecture test passed! Now testing against HuggingFace...")
+        validate_against_hf()
+    else:
+        print("❌ Architecture test failed. Fix implementation first.")
