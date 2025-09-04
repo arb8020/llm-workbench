@@ -4,7 +4,7 @@ Simple logits comparison utility.
 
 import numpy as np
 import torch
-from transformers import GPT2LMHeadModel
+from transformers import GPT2LMHeadModel, LlamaForCausalLM, AutoModelForCausalLM
 from typing import Dict, Any
 
 
@@ -68,22 +68,36 @@ def compare_logits(
 
 def get_hf_logits(input_ids_BL: np.ndarray, model_name: str = "gpt2") -> np.ndarray:
     """
-    Get logits from HuggingFace GPT-2 model.
+    Get logits from HuggingFace model (supports GPT-2, Llama, and other causal LM models).
     
     Args:
         input_ids_BL: Input token IDs of shape (batch_size, seq_len)
-        model_name: Name of the GPT-2 model
+        model_name: Name of the model (e.g., "gpt2", "TinyLlama/TinyLlama-1.1B-Chat-v1.0")
     
     Returns:
         Logits array of shape (batch_size, seq_len, vocab_size)
     """
-    model = GPT2LMHeadModel.from_pretrained(model_name)
+    print(f"🤗 Loading HuggingFace model: {model_name}")
+    
+    # Use AutoModelForCausalLM to automatically detect the correct model type
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch.float32,
+        trust_remote_code=True  # Required for some models
+    )
     model.eval()
     
     # Convert to torch tensor
     input_ids_torch = torch.from_numpy(input_ids_BL).long()
     
+    print(f"🔥 Running inference on {input_ids_torch.shape} tokens")
     with torch.no_grad():
         outputs = model(input_ids_torch)
     
-    return outputs.logits.numpy()
+    logits = outputs.logits.numpy()
+    
+    # Clean up to save memory
+    del model
+    torch.cuda.empty_cache() if torch.cuda.is_available() else None
+    
+    return logits
