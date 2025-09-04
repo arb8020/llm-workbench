@@ -197,16 +197,44 @@ def load_and_convert_weights(model_name: str = "TinyLlama/TinyLlama-1.1B-Chat-v1
     )
     
     # Convert PyTorch weights to JAX format
-    jax_weights = {}
+    raw_weights = {}
     for name, param in model.named_parameters():
-        jax_weights[name] = jnp.array(param.detach().cpu().numpy())
-        print(f"  {name}: {jax_weights[name].shape}")
+        raw_weights[name] = jnp.array(param.detach().cpu().numpy())
+        print(f"  {name}: {raw_weights[name].shape}")
     
     # Clean up
     del model
     torch.cuda.empty_cache() if torch.cuda.is_available() else None
     
-    print(f"✅ Converted {len(jax_weights)} weight tensors to JAX")
+    # Convert HuggingFace naming to entropix naming
+    jax_weights = {}
+    
+    # Token embeddings
+    jax_weights['tok_embeddings'] = raw_weights['model.embed_tokens.weight']
+    
+    # Final norm and output
+    jax_weights['norm'] = raw_weights['model.norm.weight']
+    jax_weights['output'] = raw_weights['lm_head.weight']
+    
+    # Layer weights
+    n_layers = sum(1 for name in raw_weights.keys() if 'model.layers.' in name and '.input_layernorm.weight' in name)
+    for i in range(n_layers):
+        # Attention norm and FFN norm
+        jax_weights[f'layers.{i}.attention_norm'] = raw_weights[f'model.layers.{i}.input_layernorm.weight']
+        jax_weights[f'layers.{i}.ffn_norm'] = raw_weights[f'model.layers.{i}.post_attention_layernorm.weight']
+        
+        # Attention weights
+        jax_weights[f'layers.{i}.attention.wq'] = raw_weights[f'model.layers.{i}.self_attn.q_proj.weight'].T
+        jax_weights[f'layers.{i}.attention.wk'] = raw_weights[f'model.layers.{i}.self_attn.k_proj.weight'].T
+        jax_weights[f'layers.{i}.attention.wv'] = raw_weights[f'model.layers.{i}.self_attn.v_proj.weight'].T
+        jax_weights[f'layers.{i}.attention.wo'] = raw_weights[f'model.layers.{i}.self_attn.o_proj.weight'].T
+        
+        # FFN weights
+        jax_weights[f'layers.{i}.feed_forward.w1'] = raw_weights[f'model.layers.{i}.mlp.gate_proj.weight'].T
+        jax_weights[f'layers.{i}.feed_forward.w2'] = raw_weights[f'model.layers.{i}.mlp.down_proj.weight'].T
+        jax_weights[f'layers.{i}.feed_forward.w3'] = raw_weights[f'model.layers.{i}.mlp.up_proj.weight'].T
+    
+    print(f"✅ Converted {len(raw_weights)} weight tensors to JAX with entropix naming")
     return jax_weights
 
 def test_architecture():
