@@ -187,7 +187,7 @@ def get_llama_hf_logits(input_ids_BL: np.ndarray, model_name: str = "unsloth/lla
     
     return logits
 
-def load_and_convert_weights(model_name: str = "huggyllama/llama-7b") -> Dict[str, jax.Array]:
+def load_and_convert_weights(model_name: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0") -> Dict[str, jax.Array]:
     """Load weights from HuggingFace and convert to JAX format"""
     print(f"📦 Loading weights from: {model_name}")
     
@@ -269,12 +269,12 @@ def validate_against_hf():
     
     # Get HuggingFace reference FIRST (memory efficient)
     print("📚 Getting HuggingFace reference...")
-    hf_logits = get_llama_hf_logits(np.array(test_input), model_name="huggyllama/llama-7b")
+    hf_logits = get_llama_hf_logits(np.array(test_input), model_name="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
     print(f"HF model loaded and unloaded. Cached logits shape: {hf_logits.shape}")
     
     # Load JAX weights and create config  
     print("📦 Loading JAX weights...")
-    weights = load_and_convert_weights("huggyllama/llama-7b")
+    weights = load_and_convert_weights("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
     
     # Get JAX logits
     print("🔥 Running JAX forward pass...")
