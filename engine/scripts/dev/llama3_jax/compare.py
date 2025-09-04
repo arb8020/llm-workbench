@@ -41,7 +41,7 @@ def load_llama3_implementation(mode):
             
             # Load real weights once
             print("📦 Loading Llama 3.1 1B weights...")
-            weights = load_and_convert_weights("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+            weights = load_and_convert_weights("meta-llama/Llama-3.2-1B-Instruct")
             return xfmr, weights, LLAMA_1B_PARAMS
         except ImportError as e:
             print(f"❌ Failed to import from solution: {e}")
@@ -119,7 +119,7 @@ def compare_logits_across_batches(llama3_forward_fn, weights, config, k=5):
         
         # Get HuggingFace reference
         print("📚 Getting HuggingFace logits...")
-        hf_logits = get_hf_logits(test_input, model_name="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+        hf_logits = get_hf_logits(test_input, model_name="meta-llama/Llama-3.2-1B-Instruct")
         print(f"HF logits shape: {hf_logits.shape}")
         print(f"HF logits range: [{hf_logits.min():.3f}, {hf_logits.max():.3f}]")
         

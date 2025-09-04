@@ -48,19 +48,17 @@ class ModelParams(NamedTuple):
     use_scaled_rope: bool
     norm_eps: float
 
-# TinyLlama configuration (detected from model weights)  
-TINYLLAMA_PARAMS = ModelParams(
-    n_layers=22,  # TinyLlama has 22 layers
+# Llama-3.2-1B configuration
+LLAMA_1B_PARAMS = ModelParams(
+    n_layers=16,  # Llama-3.2-1B has 16 layers
     n_local_heads=32,  # 32 attention heads
-    n_local_kv_heads=4,  # 4 KV heads (256/64 = 4)
+    n_local_kv_heads=8,  # 8 KV heads for grouped-query attention
     head_dim=64,  # 2048/32 = 64
-    max_seq_len=2048,  # TinyLlama max seq len
-    rope_theta=10000.0,  # Standard RoPE theta
-    use_scaled_rope=False,
+    max_seq_len=4096,  # Llama-3.2 max seq len
+    rope_theta=500000.0,  # Llama-3 RoPE theta
+    use_scaled_rope=True,
     norm_eps=1e-05
 )
-
-LLAMA_1B_PARAMS = TINYLLAMA_PARAMS
 
 DEFAULT_MASK_VALUE = -0.7 * float(jnp.finfo(jnp.dtype("float32")).max)
 
@@ -190,7 +188,7 @@ def get_llama_hf_logits(input_ids_BL: np.ndarray, model_name: str = "unsloth/lla
     
     return logits
 
-def load_and_convert_weights(model_name: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0") -> Dict[str, jax.Array]:
+def load_and_convert_weights(model_name: str = "meta-llama/Llama-3.2-1B-Instruct") -> Dict[str, jax.Array]:
     """Load weights from HuggingFace and convert to JAX format"""
     print(f"📦 Loading weights from: {model_name}")
     
@@ -300,12 +298,12 @@ def validate_against_hf():
     
     # Get HuggingFace reference FIRST (memory efficient)
     print("📚 Getting HuggingFace reference...")
-    hf_logits = get_llama_hf_logits(np.array(test_input), model_name="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+    hf_logits = get_llama_hf_logits(np.array(test_input), model_name="meta-llama/Llama-3.2-1B-Instruct")
     print(f"HF model loaded and unloaded. Cached logits shape: {hf_logits.shape}")
     
     # Load JAX weights and create config  
     print("📦 Loading JAX weights...")
-    weights = load_and_convert_weights("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+    weights = load_and_convert_weights("meta-llama/Llama-3.2-1B-Instruct")
     
     # Get JAX logits
     print("🔥 Running JAX forward pass...")
