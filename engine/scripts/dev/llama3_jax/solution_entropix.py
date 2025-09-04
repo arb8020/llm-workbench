@@ -208,6 +208,9 @@ def load_and_convert_weights(model_name: str = "meta-llama/Llama-3.2-1B-Instruct
         
         # Convert checkpoint to expected format
         for name, param in checkpoint.items():
+            # Convert to float32 if needed (JAX doesn't support BFloat16)
+            if param.dtype == torch.bfloat16:
+                param = param.to(torch.float32)
             raw_weights[name] = jnp.array(param.numpy())
             print(f"  {name}: {raw_weights[name].shape}")
             
