@@ -137,9 +137,9 @@ def grouped_query_attention(x: jnp.ndarray,
     n_rep = config.n_heads // config.n_kv_heads  # How many times to repeat each KV head
     
     # Project to Q, K, V
-    q = jnp.einsum('bld,dh->blh', x, w_q).reshape(batch_size, seq_len, config.n_heads, head_dim)
-    k = jnp.einsum('bld,dh->blh', x, w_k).reshape(batch_size, seq_len, config.n_kv_heads, head_dim)
-    v = jnp.einsum('bld,dh->blh', x, w_v).reshape(batch_size, seq_len, config.n_kv_heads, head_dim)
+    q = jnp.einsum('bld,hd->blh', x, w_q).reshape(batch_size, seq_len, config.n_heads, head_dim)
+    k = jnp.einsum('bld,kd->blk', x, w_k).reshape(batch_size, seq_len, config.n_kv_heads, head_dim)
+    v = jnp.einsum('bld,kd->blk', x, w_v).reshape(batch_size, seq_len, config.n_kv_heads, head_dim)
     
     # Apply RoPE to Q and K
     q_rot, k_rot = apply_rotary_pos_emb(q, k, cos, sin)
@@ -296,10 +296,13 @@ def test_architecture():
         dummy_weights[f'model.layers.{i}.input_layernorm.weight'] = jnp.ones((config.d_model,))
         dummy_weights[f'model.layers.{i}.post_attention_layernorm.weight'] = jnp.ones((config.d_model,))
         
-        # Attention weights
+        # Attention weights - fix dimensions for grouped-query attention
+        head_dim = config.d_model // config.n_heads
+        kv_dim = head_dim * config.n_kv_heads  # Total dimension for K/V projections
+        
         dummy_weights[f'model.layers.{i}.self_attn.q_proj.weight'] = jnp.zeros((config.d_model, config.d_model))
-        dummy_weights[f'model.layers.{i}.self_attn.k_proj.weight'] = jnp.zeros((config.d_model // config.n_heads * config.n_kv_heads, config.d_model))
-        dummy_weights[f'model.layers.{i}.self_attn.v_proj.weight'] = jnp.zeros((config.d_model // config.n_heads * config.n_kv_heads, config.d_model))
+        dummy_weights[f'model.layers.{i}.self_attn.k_proj.weight'] = jnp.zeros((kv_dim, config.d_model))
+        dummy_weights[f'model.layers.{i}.self_attn.v_proj.weight'] = jnp.zeros((kv_dim, config.d_model))
         dummy_weights[f'model.layers.{i}.self_attn.o_proj.weight'] = jnp.zeros((config.d_model, config.d_model))
         
         # FFN weights
