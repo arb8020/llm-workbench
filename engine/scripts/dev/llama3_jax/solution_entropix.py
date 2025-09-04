@@ -194,7 +194,9 @@ def load_and_convert_weights(model_name: str = "meta-llama/Llama-3.2-1B-Instruct
     print(f"📦 Loading weights from: {model_name}")
     
     # Try local llama-stack checkpoint first
-    checkpoint_path = f"~/.llama/checkpoints/{model_name.replace('meta-llama/', '')}/consolidated.00.pth"
+    # Convert HuggingFace naming to llama-stack naming (Llama-3.2 -> Llama3.2)
+    local_model_name = model_name.replace('meta-llama/', '').replace('Llama-', 'Llama')
+    checkpoint_path = f"~/.llama/checkpoints/{local_model_name}/consolidated.00.pth"
     expanded_path = Path(checkpoint_path).expanduser()
     
     if expanded_path.exists():
