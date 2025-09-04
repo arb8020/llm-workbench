@@ -91,10 +91,10 @@ def attention(x: jax.Array, layer_weights, model_params: ModelParams, cur_pos: i
     bsz, seqlen, _ = x.shape
     n_rep = model_params.n_local_heads // model_params.n_local_kv_heads
     
-    # Linear projections
-    xq = x @ layer_weights['wq'] 
-    xk = x @ layer_weights['wk']
-    xv = x @ layer_weights['wv']
+    # Linear projections (transpose weights to match entropix convention)
+    xq = x @ layer_weights['wq'].T
+    xk = x @ layer_weights['wk'].T
+    xv = x @ layer_weights['wv'].T
     
     # Reshape for multi-head attention
     xq = xq.reshape(bsz, seqlen, model_params.n_local_heads, model_params.head_dim)
@@ -120,11 +120,11 @@ def attention(x: jax.Array, layer_weights, model_params: ModelParams, cur_pos: i
     output = jnp.einsum('bhqk,bkhd->bqhd', scores, xv)
     output = output.reshape(bsz, seqlen, -1)
     
-    return output @ layer_weights['wo']
+    return output @ layer_weights['wo'].T
 
 def feed_forward(x: jax.Array, layer_weights) -> jax.Array:
     """SwiGLU feed-forward network (from entropix)"""
-    return (jax.nn.silu(x @ layer_weights['w1']) * (x @ layer_weights['w3'])) @ layer_weights['w2']
+    return (jax.nn.silu(x @ layer_weights['w1'].T) * (x @ layer_weights['w3'].T)) @ layer_weights['w2'].T
 
 def xfmr(xfmr_weights, model_params: ModelParams, tokens: jax.Array, cur_pos: int) -> jax.Array:
     """Main transformer forward pass (from entropix)"""
@@ -161,7 +161,7 @@ def xfmr(xfmr_weights, model_params: ModelParams, tokens: jax.Array, cur_pos: in
     
     # Final norm and output projection
     h = rms_norm(h, xfmr_weights['norm'], model_params.norm_eps)
-    logits = h @ xfmr_weights['output']
+    logits = h @ xfmr_weights['output'].T
     
     return logits
 
