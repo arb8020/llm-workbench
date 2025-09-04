@@ -17,7 +17,7 @@ from pathlib import Path
 import sys
 import argparse
 
-from engine.core.utils.comparison import compare_logits, get_hf_logits
+from engine.core.utils.comparison import compare_logits, get_reference_logits
 
 
 def load_llama3_implementation(mode):
@@ -117,11 +117,11 @@ def compare_logits_across_batches(llama3_forward_fn, weights, config, k=5):
         print(f"Input shape: {test_input.shape}")
         print(f"Input tokens: {test_input.tolist()}")
         
-        # Get HuggingFace reference
-        print("📚 Getting HuggingFace logits...")
-        hf_logits = get_hf_logits(test_input, model_name="meta-llama/Llama-3.2-1B-Instruct")
-        print(f"HF logits shape: {hf_logits.shape}")
-        print(f"HF logits range: [{hf_logits.min():.3f}, {hf_logits.max():.3f}]")
+        # Get reference logits (llama-stack or HuggingFace fallback)  
+        print("📚 Getting reference logits (local llama-stack preferred)...")
+        hf_logits = get_reference_logits(test_input, model_name="meta-llama/Llama-3.2-1B-Instruct", use_llama_stack=True)
+        print(f"Reference logits shape: {hf_logits.shape}")
+        print(f"Reference logits range: [{hf_logits.min():.3f}, {hf_logits.max():.3f}]")
         
         # Get JAX implementation logits
         print("🔥 Getting JAX logits...")
