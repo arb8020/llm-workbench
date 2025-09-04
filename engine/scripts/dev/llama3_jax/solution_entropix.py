@@ -217,7 +217,7 @@ def load_and_convert_weights(model_name: str = "TinyLlama/TinyLlama-1.1B-Chat-v1
     
     # Final norm and output
     jax_weights['norm'] = raw_weights['model.norm.weight']
-    jax_weights['output'] = raw_weights['lm_head.weight']
+    jax_weights['output'] = raw_weights['lm_head.weight'].T  # Transpose for proper matrix multiplication
     
     # Layer weights
     n_layers = sum(1 for name in raw_weights.keys() if 'model.layers.' in name and '.input_layernorm.weight' in name)
