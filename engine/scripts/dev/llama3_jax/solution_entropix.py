@@ -46,6 +46,7 @@ class ModelParams(NamedTuple):
     max_seq_len: int
     rope_theta: float
     use_scaled_rope: bool
+    norm_eps: float
 
 LLAMA_1B_PARAMS = ModelParams(
     n_layers=params["n_layers"],
@@ -54,7 +55,8 @@ LLAMA_1B_PARAMS = ModelParams(
     head_dim=params["dim"] // params["n_heads"],
     max_seq_len=params["max_seq_len"],
     rope_theta=params["rope_theta"],
-    use_scaled_rope=params["use_scaled_rope"]
+    use_scaled_rope=params["use_scaled_rope"],
+    norm_eps=params["norm_eps"]
 )
 
 DEFAULT_MASK_VALUE = -0.7 * float(jnp.finfo(jnp.dtype("float32")).max)
