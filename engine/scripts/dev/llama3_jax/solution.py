@@ -90,41 +90,33 @@ def precompute_rope_freqs(d_head: int, max_seq_len: int, theta: float = 500000.0
     return cos_angles, sin_angles
 
 
-def apply_rotary_pos_emb(q: jnp.ndarray, k: jnp.ndarray, 
-                        cos: jnp.ndarray, sin: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    """Apply rotary position embedding to queries and keys"""
-    # q, k shape: [batch, seq_len, n_heads, head_dim]
+def apply_rotary_pos_emb(x: jnp.ndarray, cos: jnp.ndarray, sin: jnp.ndarray) -> jnp.ndarray:
+    """Apply rotary position embedding to input tensor"""
+    # x shape: [batch, seq_len, n_heads, head_dim]
     # cos, sin shape: [seq_len, head_dim//2]
     
-    batch_size, seq_len, n_heads, head_dim = q.shape
+    batch_size, seq_len, n_heads, head_dim = x.shape
     
-    # Reshape q and k to separate real/imaginary parts
+    # Reshape x to separate real/imaginary parts
     # Split into pairs: [x0, x1, x2, x3, ...] -> [(x0, x1), (x2, x3), ...]
-    q_pairs = q.reshape(batch_size, seq_len, n_heads, head_dim // 2, 2)
-    k_pairs = k.reshape(batch_size, seq_len, n_heads, head_dim // 2, 2)
+    x_pairs = x.reshape(batch_size, seq_len, n_heads, head_dim // 2, 2)
     
     # Extract real and imaginary parts
-    q_real, q_imag = q_pairs[..., 0], q_pairs[..., 1]
-    k_real, k_imag = k_pairs[..., 0], k_pairs[..., 1]
+    x_real, x_imag = x_pairs[..., 0], x_pairs[..., 1]
     
     # Expand cos/sin to match tensor dimensions
     cos = cos[:seq_len].reshape(1, seq_len, 1, head_dim // 2)
     sin = sin[:seq_len].reshape(1, seq_len, 1, head_dim // 2)
     
     # Apply rotation: (a + bi) * (cos + i*sin) = (a*cos - b*sin) + i*(a*sin + b*cos)
-    q_real_rot = q_real * cos - q_imag * sin
-    q_imag_rot = q_real * sin + q_imag * cos
-    k_real_rot = k_real * cos - k_imag * sin
-    k_imag_rot = k_real * sin + k_imag * cos
+    x_real_rot = x_real * cos - x_imag * sin
+    x_imag_rot = x_real * sin + x_imag * cos
     
     # Recombine pairs and reshape back
-    q_rot_pairs = jnp.stack([q_real_rot, q_imag_rot], axis=-1)
-    k_rot_pairs = jnp.stack([k_real_rot, k_imag_rot], axis=-1)
+    x_rot_pairs = jnp.stack([x_real_rot, x_imag_rot], axis=-1)
+    x_rot = x_rot_pairs.reshape(batch_size, seq_len, n_heads, head_dim)
     
-    q_rot = q_rot_pairs.reshape(batch_size, seq_len, n_heads, head_dim)
-    k_rot = k_rot_pairs.reshape(batch_size, seq_len, n_heads, head_dim)
-    
-    return q_rot, k_rot
+    return x_rot
 
 
 def grouped_query_attention(x: jnp.ndarray, 
@@ -141,8 +133,9 @@ def grouped_query_attention(x: jnp.ndarray,
     k = jnp.einsum('bld,kd->blk', x, w_k).reshape(batch_size, seq_len, config.n_kv_heads, head_dim)
     v = jnp.einsum('bld,kd->blk', x, w_v).reshape(batch_size, seq_len, config.n_kv_heads, head_dim)
     
-    # Apply RoPE to Q and K
-    q_rot, k_rot = apply_rotary_pos_emb(q, k, cos, sin)
+    # Apply RoPE to Q and K separately
+    q_rot = apply_rotary_pos_emb(q, cos, sin)
+    k_rot = apply_rotary_pos_emb(k, cos, sin)
     
     # Repeat K and V heads to match Q heads (grouped-query attention)
     k_rot = jnp.repeat(k_rot, n_rep, axis=2)  # [batch, seq_len, n_heads, head_dim]
