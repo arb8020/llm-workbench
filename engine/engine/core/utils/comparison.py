@@ -134,6 +134,11 @@ def get_local_pytorch_llama_logits(input_ids_BL: np.ndarray, model_name: str = "
     print(f"📦 Loading checkpoint from {checkpoint_path}")
     checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=True)
     
+    # Convert BFloat16 to Float32 for compatibility
+    for key in checkpoint:
+        if checkpoint[key].dtype == torch.bfloat16:
+            checkpoint[key] = checkpoint[key].to(torch.float32)
+    
     # Model parameters for Llama-3.2-1B
     n_layers = 16
     dim = 2048
