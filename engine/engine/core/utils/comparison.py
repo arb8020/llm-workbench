@@ -264,7 +264,10 @@ def get_reference_logits(input_ids_BL: np.ndarray, model_name: str = "meta-llama
             stack_model_name = model_name.replace("meta-llama/", "")
             return get_llama_stack_logits(input_ids_BL, stack_model_name)
         except Exception as e:
-            print(f"⚠️  llama-stack failed ({e}), falling back to HuggingFace")
+            print(f"⚠️  llama-stack failed with error: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            print(f"🔄 Falling back to HuggingFace...")
             return get_hf_logits(input_ids_BL, model_name)
     else:
         print(f"🤗 Using HuggingFace directly")
