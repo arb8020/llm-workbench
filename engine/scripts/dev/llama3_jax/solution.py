@@ -128,10 +128,15 @@ def grouped_query_attention(x: jnp.ndarray,
     head_dim = d_model // config.n_heads
     n_rep = config.n_heads // config.n_kv_heads  # How many times to repeat each KV head
     
-    # Project to Q, K, V
-    q = jnp.einsum('bld,hd->blh', x, w_q).reshape(batch_size, seq_len, config.n_heads, head_dim)
-    k = jnp.einsum('bld,kd->blk', x, w_k).reshape(batch_size, seq_len, config.n_kv_heads, head_dim)
-    v = jnp.einsum('bld,kd->blk', x, w_v).reshape(batch_size, seq_len, config.n_kv_heads, head_dim)
+    # Project to Q, K, V - fix einsum and ensure correct dimensions
+    q_proj = jnp.einsum('bld,dd->bld', x, w_q)  # [batch, seq, d_model]
+    k_proj = jnp.einsum('bld,kd->blk', x, w_k)  # [batch, seq, kv_dim] 
+    v_proj = jnp.einsum('bld,kd->blk', x, w_v)  # [batch, seq, kv_dim]
+    
+    # Reshape to heads
+    q = q_proj.reshape(batch_size, seq_len, config.n_heads, head_dim)
+    k = k_proj.reshape(batch_size, seq_len, config.n_kv_heads, head_dim)
+    v = v_proj.reshape(batch_size, seq_len, config.n_kv_heads, head_dim)
     
     # Apply RoPE to Q and K separately
     q_rot = apply_rotary_pos_emb(q, cos, sin)
@@ -334,7 +339,13 @@ def validate_against_hf():
     # Test input
     test_input = jnp.array([[1, 2, 3, 4, 5]])  # Simple token sequence
     
-    # Load weights and create config  
+    # Get HuggingFace reference FIRST (memory efficient)
+    print("📚 Getting HuggingFace reference...")
+    hf_logits = get_hf_logits(np.array(test_input), model_name="huggyllama/llama-7b")
+    print(f"HF model loaded and unloaded. Cached logits shape: {hf_logits.shape}")
+    
+    # Load JAX weights and create config  
+    print("📦 Loading JAX weights...")
     weights = load_and_print_real_weights()
     config = Llama3Config(training=True)
     
@@ -342,10 +353,6 @@ def validate_against_hf():
     print("🔥 Running JAX forward pass...")
     jax_logits = llama3_forward(test_input, weights, config)
     jax_logits_np = np.array(jax_logits)
-    
-    # Get HuggingFace reference
-    print("📚 Getting HuggingFace reference...")
-    hf_logits = get_hf_logits(np.array(test_input), model_name="huggyllama/llama-7b")
     
     # Compare
     print("⚖️ Comparing logits...")
