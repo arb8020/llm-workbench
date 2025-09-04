@@ -48,16 +48,19 @@ class ModelParams(NamedTuple):
     use_scaled_rope: bool
     norm_eps: float
 
-LLAMA_1B_PARAMS = ModelParams(
-    n_layers=params["n_layers"],
-    n_local_heads=params["n_heads"],
-    n_local_kv_heads=params["n_kv_heads"],
-    head_dim=params["dim"] // params["n_heads"],
-    max_seq_len=params["max_seq_len"],
-    rope_theta=params["rope_theta"],
-    use_scaled_rope=params["use_scaled_rope"],
-    norm_eps=params["norm_eps"]
+# TinyLlama configuration (detected from model weights)  
+TINYLLAMA_PARAMS = ModelParams(
+    n_layers=22,  # TinyLlama has 22 layers
+    n_local_heads=32,  # 32 attention heads
+    n_local_kv_heads=4,  # 4 KV heads (256/64 = 4)
+    head_dim=64,  # 2048/32 = 64
+    max_seq_len=2048,  # TinyLlama max seq len
+    rope_theta=10000.0,  # Standard RoPE theta
+    use_scaled_rope=False,
+    norm_eps=1e-05
 )
+
+LLAMA_1B_PARAMS = TINYLLAMA_PARAMS
 
 DEFAULT_MASK_VALUE = -0.7 * float(jnp.finfo(jnp.dtype("float32")).max)
 
