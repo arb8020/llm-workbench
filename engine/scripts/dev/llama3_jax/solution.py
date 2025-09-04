@@ -166,8 +166,8 @@ def swiglu_ffn(x: jnp.ndarray,
     """SwiGLU feedforward network (Shazeer, 2020)"""
     # SwiGLU(x) = Swish(x @ w_gate) * (x @ w_up) @ w_down
     # where Swish(x) = x * sigmoid(x)
-    gate = jnp.einsum('bld,df->blf', x, w_gate)
-    up = jnp.einsum('bld,df->blf', x, w_up)
+    gate = jnp.einsum('bld,fd->blf', x, w_gate)
+    up = jnp.einsum('bld,fd->blf', x, w_up)
     
     # Apply Swish activation to gate
     swish_gate = gate * jax.nn.sigmoid(gate)
