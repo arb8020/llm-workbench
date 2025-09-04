@@ -174,7 +174,7 @@ def swiglu_ffn(x: jnp.ndarray,
     
     # Element-wise multiply with up projection, then down project
     hidden = swish_gate * up
-    output = jnp.einsum('blf,fd->bld', hidden, w_down)
+    output = jnp.einsum('blf,df->bld', hidden, w_down)
     
     return output
 
