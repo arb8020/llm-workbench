@@ -110,6 +110,109 @@ def get_hf_logits(input_ids_BL: np.ndarray, model_name: str = "gpt2") -> np.ndar
     return logits
 
 
+def get_transformers_from_local_checkpoint(input_ids_BL: np.ndarray, model_name: str = "Llama-3.2-1B-Instruct") -> np.ndarray:
+    """
+    Load local checkpoint into official transformers LlamaForCausalLM and run inference.
+    
+    Args:
+        input_ids_BL: Input token IDs of shape (batch_size, seq_len)  
+        model_name: Name of the local llama-stack model
+    
+    Returns:
+        Logits array of shape (batch_size, seq_len, vocab_size)
+    """
+    from transformers import LlamaForCausalLM, LlamaConfig
+    
+    print(f"🤗 Loading local checkpoint into official transformers: {model_name}")
+    
+    # Convert HuggingFace naming to llama-stack naming
+    local_model_name = model_name.replace('meta-llama/', '').replace('Llama-', 'Llama')
+    checkpoint_path = Path(f"~/.llama/checkpoints/{local_model_name}/consolidated.00.pth").expanduser()
+    
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(f"Local checkpoint not found at {checkpoint_path}")
+    
+    # Load checkpoint
+    print(f"📦 Loading checkpoint from {checkpoint_path}")
+    checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=True)
+    
+    # Convert BFloat16 to Float32 for compatibility
+    for key in checkpoint:
+        if checkpoint[key].dtype == torch.bfloat16:
+            checkpoint[key] = checkpoint[key].to(torch.float32)
+    
+    # Create LlamaConfig for Llama-3.2-1B
+    config = LlamaConfig(
+        vocab_size=128256,
+        hidden_size=2048, 
+        intermediate_size=8192,
+        num_hidden_layers=16,
+        num_attention_heads=32,
+        num_key_value_heads=8,
+        hidden_act="silu",
+        max_position_embeddings=128000,
+        rope_theta=500000.0,
+        rms_norm_eps=1e-5,
+        tie_word_embeddings=False,
+        torch_dtype=torch.float32,
+    )
+    
+    # Create model with config
+    print("🏗️ Creating LlamaForCausalLM with local config")
+    model = LlamaForCausalLM(config)
+    
+    # Convert entropix checkpoint format to transformers format
+    print("🔄 Converting checkpoint format...")
+    transformers_state_dict = {}
+    
+    # Token embeddings
+    transformers_state_dict['model.embed_tokens.weight'] = checkpoint['tok_embeddings.weight']
+    
+    # Output projection
+    transformers_state_dict['lm_head.weight'] = checkpoint['output.weight']
+    
+    # Layer norm
+    transformers_state_dict['model.norm.weight'] = checkpoint['norm.weight']
+    
+    # Layer weights
+    for i in range(16):  # 16 layers for Llama-3.2-1B
+        # Attention norms
+        transformers_state_dict[f'model.layers.{i}.input_layernorm.weight'] = checkpoint[f'layers.{i}.attention_norm.weight']
+        transformers_state_dict[f'model.layers.{i}.post_attention_layernorm.weight'] = checkpoint[f'layers.{i}.ffn_norm.weight']
+        
+        # Attention weights (transpose back since entropix uses transposed format)
+        transformers_state_dict[f'model.layers.{i}.self_attn.q_proj.weight'] = checkpoint[f'layers.{i}.attention.wq.weight']
+        transformers_state_dict[f'model.layers.{i}.self_attn.k_proj.weight'] = checkpoint[f'layers.{i}.attention.wk.weight'] 
+        transformers_state_dict[f'model.layers.{i}.self_attn.v_proj.weight'] = checkpoint[f'layers.{i}.attention.wv.weight']
+        transformers_state_dict[f'model.layers.{i}.self_attn.o_proj.weight'] = checkpoint[f'layers.{i}.attention.wo.weight']
+        
+        # FFN weights
+        transformers_state_dict[f'model.layers.{i}.mlp.gate_proj.weight'] = checkpoint[f'layers.{i}.feed_forward.w1.weight']
+        transformers_state_dict[f'model.layers.{i}.mlp.up_proj.weight'] = checkpoint[f'layers.{i}.feed_forward.w3.weight']
+        transformers_state_dict[f'model.layers.{i}.mlp.down_proj.weight'] = checkpoint[f'layers.{i}.feed_forward.w2.weight']
+    
+    # Load state dict into model
+    print("⚡ Loading weights into transformers model...")
+    model.load_state_dict(transformers_state_dict, strict=True)
+    model.eval()
+    
+    # Run inference
+    input_ids = torch.from_numpy(input_ids_BL).long()
+    print(f"🔥 Running official transformers inference on {input_ids.shape}")
+    
+    with torch.no_grad():
+        outputs = model(input_ids)
+    
+    logits = outputs.logits.detach().cpu().numpy()
+    print(f"✅ Transformers inference complete, logits shape: {logits.shape}")
+    
+    # Clean up
+    del model
+    torch.cuda.empty_cache() if torch.cuda.is_available() else None
+    
+    return logits
+
+
 def get_local_pytorch_llama_logits(input_ids_BL: np.ndarray, model_name: str = "Llama-3.2-1B-Instruct") -> np.ndarray:
     """
     Get logits from local llama-stack checkpoint using minimal PyTorch implementation.
@@ -229,7 +332,7 @@ def get_local_pytorch_llama_logits(input_ids_BL: np.ndarray, model_name: str = "
 
 def get_llama_stack_logits(input_ids_BL: np.ndarray, model_name: str = "Llama-3.2-1B-Instruct") -> np.ndarray:
     """
-    Get logits from local llama-stack model.
+    Get logits from local llama-stack model using official transformers.
     
     Args:
         input_ids_BL: Input token IDs of shape (batch_size, seq_len)  
@@ -238,10 +341,10 @@ def get_llama_stack_logits(input_ids_BL: np.ndarray, model_name: str = "Llama-3.
     Returns:
         Logits array of shape (batch_size, seq_len, vocab_size)
     """
-    print(f"🦙 Using local llama-stack checkpoint for reference")
+    print(f"🦙 Using local llama-stack checkpoint with official transformers")
     
-    # Use our local PyTorch implementation
-    return get_local_pytorch_llama_logits(input_ids_BL, model_name)
+    # Use official transformers loaded from local checkpoint
+    return get_transformers_from_local_checkpoint(input_ids_BL, model_name)
 
 
 def get_reference_logits(input_ids_BL: np.ndarray, model_name: str = "meta-llama/Llama-3.2-1B-Instruct", 
