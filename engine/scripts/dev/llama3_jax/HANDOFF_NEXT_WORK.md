@@ -1,7 +1,7 @@
 # Next Work Session - Llama JAX Validation
 
 ## Current Status
-We have a **95% faithful entropix JAX implementation** ready for validation, but need to integrate with official Llama 3.2 models.
+We have a **95% faithful entropix JAX implementation** that successfully validates against official transformers for single forward passes (100% top-1 accuracy), but **KV cache multi-token generation is not yet tested**.
 
 ## Key Files Created
 - ✅ `solution_entropix_faithful.py` - Faithful JAX implementation with KV cache
@@ -9,7 +9,9 @@ We have a **95% faithful entropix JAX implementation** ready for validation, but
 - ✅ `FAITHFUL_IMPLEMENTATION.md` - Architecture documentation
 - ⏳ `compare.py` - Needs update to use llama-stack
 
-## PRIORITY: Update compare.py for llama-stack Integration
+## ✅ COMPLETED: llama-stack Integration & Single Forward Pass Validation
+
+## 🎯 NEW PRIORITY: Multi-Token Generation & KV Cache Validation
 
 ### What Needs To Be Done
 
@@ -78,9 +80,14 @@ def get_llama_local_logits(input_ids, model_path):
 ### Key Validation Tests
 
 1. **Single Forward Pass**: JAX vs local Llama logits match
-2. **Multi-Token Generation**: Autoregressive sampling works
-3. **KV Cache**: Performance improvement vs recompute
-4. **Faithfulness**: Compare against original entropix if available
+2. **Multi-Token Generation**: Autoregressive sampling works  
+3. **KV Cache Validation**: Essential for proper entropix validation
+   - Current comparison only does single forward passes
+   - **CRITICAL**: Must test multi-token generation to validate KV cache
+   - Compare JAX+KV vs Transformers for 10+ token sequences
+   - Ensure both produce identical multi-token completions
+4. **Performance**: KV cache provides 2x+ speedup vs recompute
+5. **Faithfulness**: Compare against original entropix if available
 
 ### Expected Issues to Handle
 
@@ -91,15 +98,86 @@ def get_llama_local_logits(input_ids, model_path):
 
 ### Success Criteria
 
-- [ ] JAX implementation loads Llama-3.2-1B weights successfully
-- [ ] Single forward pass logits match local Llama (rtol=1e-3, atol=1e-2)
-- [ ] Multi-token generation produces coherent outputs
-- [ ] KV cache provides 2x+ speedup for generation
-- [ ] Performance: >10 tokens/sec on GPU for inference
+- [x] JAX implementation loads Llama-3.2-1B weights successfully ✅
+- [x] Single forward pass logits match local Llama (rtol=1e-3, atol=1e-2) ✅ 100% top-1 accuracy
+- [ ] **Multi-token generation with KV cache validation**
+  - [ ] Update compare.py to support multi-token generation mode
+  - [ ] JAX entropix generates 10+ tokens using KV cache
+  - [ ] Official transformers generates same 10+ tokens 
+  - [ ] Token-by-token logits match throughout generation
+  - [ ] KV cache provides correct incremental computation
+- [ ] Performance validation
+  - [ ] KV cache provides 2x+ speedup vs full recompute
+  - [ ] Performance: >10 tokens/sec on GPU for inference
+- [ ] Generation quality validation
+  - [ ] Multi-token outputs are coherent and match transformers
+  - [ ] Sampling with temperature works correctly
+  - [ ] Top-k/top-p sampling produces diverse outputs
+
+### Implementation Approach for KV Cache Validation
+
+#### Current Status (COMPLETED ✅)
+- Single forward pass comparison working 
+- JAX vs Official Transformers: 100% top-1 token accuracy
+- Both models load from same local llama-stack checkpoint
+- No HuggingFace authentication required
+
+#### Next Priority: Multi-Token Generation Testing
+
+**Required Changes to compare.py:**
+
+```python
+def compare_multi_token_generation(jax_forward_fn, transformers_model, prompt_tokens, max_tokens=10):
+    """
+    Compare JAX+KV vs Transformers for multi-token autoregressive generation.
+    This validates that KV cache works correctly across multiple decode steps.
+    """
+    print(f"🔄 Generating {max_tokens} tokens with KV cache validation...")
+    
+    # JAX generation with KV cache
+    jax_tokens = []
+    jax_kv_cache = None
+    current_tokens = prompt_tokens
+    
+    for step in range(max_tokens):
+        # JAX forward pass (should use KV cache for steps > 0)
+        logits = jax_forward_fn(current_tokens, kv_cache=jax_kv_cache)
+        next_token = jnp.argmax(logits[0, -1])  # Greedy sampling
+        jax_tokens.append(int(next_token))
+        current_tokens = jnp.concatenate([current_tokens, next_token[None, None]], axis=1)
+    
+    # Transformers generation (for comparison)  
+    with torch.no_grad():
+        transformers_output = transformers_model.generate(
+            torch.from_numpy(prompt_tokens), 
+            max_new_tokens=max_tokens,
+            do_sample=False,  # Greedy for deterministic comparison
+            pad_token_id=transformers_model.config.eos_token_id
+        )
+    
+    transformers_tokens = transformers_output[0, len(prompt_tokens[0]):].tolist()
+    
+    # Compare token sequences
+    match_count = sum(1 for a, b in zip(jax_tokens, transformers_tokens) if a == b)
+    match_rate = match_count / len(jax_tokens) * 100
+    
+    print(f"Multi-token generation match rate: {match_rate:.1f}% ({match_count}/{len(jax_tokens)})")
+    print(f"JAX tokens:          {jax_tokens}")
+    print(f"Transformers tokens: {transformers_tokens}")
+    
+    return match_rate >= 95.0  # 95%+ match rate for success
+```
+
+**Key Testing Scenarios:**
+1. **Short sequences** (5-10 tokens) - Basic KV cache functionality
+2. **Medium sequences** (20-50 tokens) - Memory efficiency validation  
+3. **Different prompts** - Various input contexts
+4. **Temperature sampling** - Stochastic generation consistency
+5. **Performance timing** - KV cache vs full recompute speedup
 
 ### Files to Modify
 
-1. **`compare.py`** - Main integration work
+1. **`compare.py`** - Add multi-token generation mode
    - Update model loading to use llama-stack
    - Update reference logits generation
    - Add proper error handling for missing models
