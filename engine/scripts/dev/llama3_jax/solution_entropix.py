@@ -134,20 +134,27 @@ def xfmr(xfmr_weights, model_params: ModelParams, tokens: jax.Array, cur_pos: in
     
     # Transformer layers
     for i in range(model_params.n_layers):
-        layer_weights = {k.split('.')[-1]: v for k, v in xfmr_weights.items() if k.startswith(f'layers.{i}.')}
-        
         # Pre-attention norm
-        norm_x = rms_norm(h, layer_weights['attention_norm'], model_params.norm_eps)
+        norm_x = rms_norm(h, xfmr_weights[f'layers.{i}.attention_norm'], model_params.norm_eps)
         
-        # Self-attention with residual
-        h = h + attention(norm_x, {k.split('.')[-1]: v for k, v in layer_weights.items() if 'attention.' in k}, 
-                         model_params, cur_pos, freqs_cis)
+        # Self-attention with residual - prepare attention weights dict
+        attn_weights = {
+            'wq': xfmr_weights[f'layers.{i}.attention.wq'],
+            'wk': xfmr_weights[f'layers.{i}.attention.wk'], 
+            'wv': xfmr_weights[f'layers.{i}.attention.wv'],
+            'wo': xfmr_weights[f'layers.{i}.attention.wo']
+        }
+        h = h + attention(norm_x, attn_weights, model_params, cur_pos, freqs_cis)
         
         # Pre-FFN norm  
-        norm_x = rms_norm(h, layer_weights['ffn_norm'], model_params.norm_eps)
+        norm_x = rms_norm(h, xfmr_weights[f'layers.{i}.ffn_norm'], model_params.norm_eps)
         
-        # Feed-forward with residual
-        ffn_weights = {k.split('.')[-1]: v for k, v in layer_weights.items() if 'feed_forward.' in k}
+        # Feed-forward with residual - prepare FFN weights dict
+        ffn_weights = {
+            'w1': xfmr_weights[f'layers.{i}.feed_forward.w1'],
+            'w2': xfmr_weights[f'layers.{i}.feed_forward.w2'],
+            'w3': xfmr_weights[f'layers.{i}.feed_forward.w3']
+        }
         h = h + feed_forward(norm_x, ffn_weights)
     
     # Final norm and output projection
