@@ -35,7 +35,7 @@ import numpy as np
 from typing import Dict, Optional, Tuple
 from jax import Array
 from dataclasses import dataclass
-from engine.core.utils.comparison import compare_logits, get_hf_logits
+from engine.core.utils.comparison import compare_logits
 from transformers import AutoTokenizer, LlamaForCausalLM
 import torch
 
@@ -241,6 +241,31 @@ def llama3_forward(input_ids: jnp.ndarray, weights: Dict[str, Array], config: Ll
     
     # Language modeling head (often tied to input embeddings)
     logits = jnp.einsum('bld,vd->blv', x, weights['lm_head.weight'])
+    
+    return logits
+
+
+def get_llama_hf_logits(input_ids_BL: np.ndarray, model_name: str = "huggyllama/llama-7b") -> np.ndarray:
+    """Get logits from HuggingFace Llama model (memory efficient)"""
+    print(f"🦙 Loading Llama model for reference: {model_name}")
+    
+    model = LlamaForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch.float32,
+    )
+    model.eval()
+    
+    # Convert to torch tensor
+    input_ids_torch = torch.from_numpy(input_ids_BL).long()
+    
+    with torch.no_grad():
+        outputs = model(input_ids_torch)
+    
+    logits = outputs.logits.numpy()
+    
+    # Explicitly delete model to free memory
+    del model
+    torch.cuda.empty_cache() if torch.cuda.is_available() else None
     
     return logits
 
