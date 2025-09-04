@@ -16,6 +16,7 @@ import jax.numpy as jnp
 import numpy as np
 from typing import NamedTuple, Optional, Tuple, Dict
 from functools import partial
+from pathlib import Path
 import torch
 from transformers import LlamaForCausalLM
 from engine.core.utils.comparison import compare_logits
@@ -189,23 +190,45 @@ def get_llama_hf_logits(input_ids_BL: np.ndarray, model_name: str = "unsloth/lla
     return logits
 
 def load_and_convert_weights(model_name: str = "meta-llama/Llama-3.2-1B-Instruct") -> Dict[str, jax.Array]:
-    """Load weights from HuggingFace and convert to JAX format"""
+    """Load weights from local llama-stack checkpoint or HuggingFace and convert to JAX format"""
     print(f"📦 Loading weights from: {model_name}")
     
-    model = LlamaForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype=torch.float32,
-    )
+    # Try local llama-stack checkpoint first
+    checkpoint_path = f"~/.llama/checkpoints/{model_name.replace('meta-llama/', '')}/consolidated.00.pth"
+    expanded_path = Path(checkpoint_path).expanduser()
     
-    # Convert PyTorch weights to JAX format
-    raw_weights = {}
-    for name, param in model.named_parameters():
-        raw_weights[name] = jnp.array(param.detach().cpu().numpy())
-        print(f"  {name}: {raw_weights[name].shape}")
-    
-    # Clean up
-    del model
-    torch.cuda.empty_cache() if torch.cuda.is_available() else None
+    if expanded_path.exists():
+        print(f"🦙 Loading from local llama-stack checkpoint: {expanded_path}")
+        
+        # Load PyTorch checkpoint
+        checkpoint = torch.load(expanded_path, map_location='cpu', weights_only=True)
+        raw_weights = {}
+        
+        # Convert checkpoint to expected format
+        for name, param in checkpoint.items():
+            raw_weights[name] = jnp.array(param.numpy())
+            print(f"  {name}: {raw_weights[name].shape}")
+            
+        print(f"✅ Loaded {len(raw_weights)} tensors from local checkpoint")
+        
+    else:
+        print(f"⚠️  Local checkpoint not found at {expanded_path}")
+        print(f"🤗 Falling back to HuggingFace: {model_name}")
+        
+        model = LlamaForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=torch.float32,
+        )
+        
+        # Convert PyTorch weights to JAX format
+        raw_weights = {}
+        for name, param in model.named_parameters():
+            raw_weights[name] = jnp.array(param.detach().cpu().numpy())
+            print(f"  {name}: {raw_weights[name].shape}")
+        
+        # Clean up
+        del model
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
     
     # Convert HuggingFace naming to entropix naming
     jax_weights = {}

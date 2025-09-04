@@ -6,6 +6,11 @@ import numpy as np
 import torch
 from transformers import GPT2LMHeadModel, LlamaForCausalLM, AutoModelForCausalLM
 from typing import Dict, Any
+try:
+    import llama_stack
+    LLAMA_STACK_AVAILABLE = True
+except ImportError:
+    LLAMA_STACK_AVAILABLE = False
 
 
 def compare_logits(
@@ -101,3 +106,53 @@ def get_hf_logits(input_ids_BL: np.ndarray, model_name: str = "gpt2") -> np.ndar
     torch.cuda.empty_cache() if torch.cuda.is_available() else None
     
     return logits
+
+
+def get_llama_stack_logits(input_ids_BL: np.ndarray, model_name: str = "Llama-3.2-1B-Instruct") -> np.ndarray:
+    """
+    Get logits from local llama-stack model.
+    
+    Args:
+        input_ids_BL: Input token IDs of shape (batch_size, seq_len)  
+        model_name: Name of the local llama-stack model
+    
+    Returns:
+        Logits array of shape (batch_size, seq_len, vocab_size)
+    """
+    if not LLAMA_STACK_AVAILABLE:
+        raise ImportError("llama-stack is not available. Please install with: pip install llama-stack")
+    
+    print(f"🦙 Loading llama-stack model: {model_name}")
+    
+    # TODO: Implement actual llama-stack model loading and inference
+    # This is a placeholder - need to research llama-stack API
+    
+    # For now, fall back to HuggingFace with meta-llama prefix
+    fallback_name = f"meta-llama/{model_name}"
+    print(f"🔄 Falling back to HuggingFace: {fallback_name}")
+    return get_hf_logits(input_ids_BL, fallback_name)
+
+
+def get_reference_logits(input_ids_BL: np.ndarray, model_name: str = "meta-llama/Llama-3.2-1B-Instruct", 
+                        use_llama_stack: bool = True) -> np.ndarray:
+    """
+    Get reference logits from either llama-stack or HuggingFace.
+    
+    Args:
+        input_ids_BL: Input token IDs of shape (batch_size, seq_len)
+        model_name: Name of the model
+        use_llama_stack: If True, try llama-stack first, fall back to HuggingFace
+    
+    Returns:
+        Logits array of shape (batch_size, seq_len, vocab_size)
+    """
+    if use_llama_stack and LLAMA_STACK_AVAILABLE:
+        try:
+            # Extract model name for llama-stack (remove meta-llama/ prefix)
+            stack_model_name = model_name.replace("meta-llama/", "")
+            return get_llama_stack_logits(input_ids_BL, stack_model_name)
+        except Exception as e:
+            print(f"⚠️  llama-stack failed ({e}), falling back to HuggingFace")
+            return get_hf_logits(input_ids_BL, model_name)
+    else:
+        return get_hf_logits(input_ids_BL, model_name)
