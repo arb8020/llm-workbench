@@ -27,42 +27,6 @@ F: feed-forward subnetwork hidden size
 H: number of attention heads in a layer
 K: size of each attention key or value (sometimes called d_kv)
 """
-
-@dataclass(frozen=True)
-class Llama3Config:
-    """Configuration for Llama3 model."""
-    vocab_size: int = 128256
-    d_model: int = 4096
-    n_layers: int = 32
-    n_heads: int = 32
-    n_kv_heads: int = 8  # for grouped-query attention
-    max_seq_len: int = 8192
-    rope_theta: float = 500000.0
-    rms_norm_eps: float = 1e-5
-    use_cache: bool = True
-    training: bool = False
-    
-    def __post_init__(self):
-        """Validate configuration parameters."""
-        assert self.d_model % self.n_heads == 0, f"d_model ({self.d_model}) must be divisible by n_heads ({self.n_heads})"
-        assert self.vocab_size > 0, "vocab_size must be positive"
-        assert self.n_layers > 0, "n_layers must be positive"
-        assert self.n_heads % self.n_kv_heads == 0, f"n_heads ({self.n_heads}) must be divisible by n_kv_heads ({self.n_kv_heads})"
-
-
-# rms norm 
-# rms norm
-# swiglu
-# kv cache
-# gqa
-# rope
-
-
-def llama3_forward(input_ids: jnp.ndarray, weights: Dict[str, Array], config: Llama3Config) -> jnp.ndarray:
-    """Forward pass through Llama3 model"""
-    batch_size, seq_len = input_ids.shape
-    return jnp.zeros((batch_size, seq_len, config.vocab_size))
-
 def convert_hf_weights_to_jax_format(hf_weights: Dict[str, Array]) -> Dict[str, Array]:
     """Convert HuggingFace weight names to our expected format."""
     converted = {}
@@ -111,6 +75,47 @@ def load_and_print_real_weights() -> Dict[str, Array]:
         print(f"  {name}: {weights[name].shape}")
     
     return weights
+
+
+@dataclass(frozen=True)
+class Llama3Config:
+    """Configuration for Llama3 model."""
+    vocab_size: int = 128256
+    d_model: int = 4096
+    n_layers: int = 32
+    n_heads: int = 32
+    n_kv_heads: int = 8  # for grouped-query attention
+    max_seq_len: int = 8192
+    rope_theta: float = 500000.0
+    rms_norm_eps: float = 1e-5
+    use_cache: bool = True
+    training: bool = False
+    
+    def __post_init__(self):
+        """Validate configuration parameters."""
+        assert self.d_model % self.n_heads == 0, f"d_model ({self.d_model}) must be divisible by n_heads ({self.n_heads})"
+        assert self.vocab_size > 0, "vocab_size must be positive"
+        assert self.n_layers > 0, "n_layers must be positive"
+        assert self.n_heads % self.n_kv_heads == 0, f"n_heads ({self.n_heads}) must be divisible by n_kv_heads ({self.n_kv_heads})"
+
+@dataclass(frozen=True)
+class Llama3State:
+    
+
+# rms norm 
+# rms norm
+# swiglu
+# kv cache
+# gqa
+# rope
+
+# how many blocks in llama 3.1-8b, concise, ignore notes
+""" Llama 3.1-8b has 32 transformer blocks/layers."""
+
+def llama3_forward(input_ids: jnp.ndarray, weights: Dict[str, Array], config: Llama3Config) -> jnp.ndarray:
+    """Forward pass through Llama3 model"""
+    batch_size, seq_len = input_ids.shape
+    return jnp.zeros((batch_size, seq_len, config.vocab_size))
 
 if __name__ == "__main__":
     config = Llama3Config(training=True)
