@@ -166,7 +166,7 @@ def attention(x: jax.Array, layer_weights: LayerWeights, model_params: ModelPara
     scores = scores.astype(jnp.float32)  # Always do attention softmax at float32
     
     # Apply sophisticated masking logic (exactly matching original entropix)
-    if cur_pos == 0:
+    if cur_pos == 0 and attn_mask is not None:
         scores = scores + attn_mask
     mask = jnp.where(scores != 0.0, scores, DEFAULT_MASK_VALUE)
     padded_logits = jnp.where((mask >= DEFAULT_MASK_VALUE * 0.5), scores, DEFAULT_MASK_VALUE)
