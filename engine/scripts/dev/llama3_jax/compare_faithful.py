@@ -30,7 +30,7 @@ def load_faithful_implementation(mode):
     """Load the faithful entropix implementation."""
     if mode == "faithful":
         try:
-            from solution_entropix_faithful import xfmr, LLAMA_1B_PARAMS, XfmrWeights, KVCache, load_and_convert_weights
+            from solution import xfmr, LLAMA_1B_PARAMS, XfmrWeights, KVCache, load_and_convert_weights
             print("✅ Successfully imported faithful entropix implementation")
             
             # Load real weights using the implemented function

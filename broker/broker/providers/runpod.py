@@ -72,8 +72,8 @@ def _make_graphql_request(query: str, variables: Optional[Dict] = None) -> Dict[
     return data["data"]
 
 
-def search_gpu_offers(cuda_version: Optional[str] = None) -> List[GPUOffer]:
-    """Search for available GPU offers on RunPod with optional CUDA version filtering"""
+def search_gpu_offers(cuda_version: Optional[str] = None, manufacturer: Optional[str] = None) -> List[GPUOffer]:
+    """Search for available GPU offers on RunPod with optional CUDA version and manufacturer filtering"""
     # Build lowestPrice input with optional CUDA version filtering
     lowest_price_input = "{ gpuCount: 1 }"
     if cuda_version:
@@ -86,6 +86,7 @@ def search_gpu_offers(cuda_version: Optional[str] = None) -> List[GPUOffer]:
             id
             displayName
             memoryInGb
+            manufacturer
             secureCloud
             communityCloud
             lowestPrice(input: {lowest_price_input}) {{
@@ -101,6 +102,12 @@ def search_gpu_offers(cuda_version: Optional[str] = None) -> List[GPUOffer]:
         offers = []
         
         for gpu_type in data.get("gpuTypes", []):
+            # Filter by manufacturer if specified
+            if manufacturer and gpu_type.get("manufacturer"):
+                gpu_manufacturer = gpu_type["manufacturer"].lower()
+                if manufacturer.lower() not in gpu_manufacturer:
+                    continue
+            
             # Create offers for both secure and community cloud if available
             price_info = gpu_type.get("lowestPrice", {})
             
