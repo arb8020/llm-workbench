@@ -97,17 +97,17 @@ class KVCache(NamedTuple):
         ck = jax.lax.dynamic_update_slice(self.k, jnp.bfloat16(xk[None, ...]), (layer_idx, 0, cur_pos, 0, 0))
         cv = jax.lax.dynamic_update_slice(self.v, jnp.bfloat16(xv[None, ...]), (layer_idx, 0, cur_pos, 0, 0))
         
+        # Debug logging for layer 0 only
+        if layer_idx == 0:
+            print(f"L{layer_idx} cur_pos={cur_pos} seq_len={seq_len} xk_shape={xk.shape}")
+        
         # Key logic: cur_pos == 0 vs cur_pos > 0 (exactly matching original)
         if cur_pos == 0:
             keys = jnp.repeat(xk, n_rep, axis=2)      # Use fresh keys
             values = jnp.repeat(xv, n_rep, axis=2)    # Use fresh values
         else:
-            # For incremental generation, return keys/values up to current position + seq_len
-            total_len = cur_pos + seq_len
-            cached_keys = ck[layer_idx][:, :total_len]   # Slice to current length
-            cached_values = cv[layer_idx][:, :total_len] # Slice to current length
-            keys = jnp.repeat(cached_keys, n_rep, axis=2)    
-            values = jnp.repeat(cached_values, n_rep, axis=2)
+            keys = jnp.repeat(ck[layer_idx], n_rep, axis=2)    # Use cached keys for THIS LAYER
+            values = jnp.repeat(cv[layer_idx], n_rep, axis=2)  # Use cached values for THIS LAYER
         
         return keys, values, KVCache(k=ck, v=cv)
 
@@ -148,6 +148,10 @@ def attention(x: jax.Array, layer_weights: LayerWeights, model_params: ModelPara
               attn_mask: Optional[jax.Array] = None) -> Tuple[jax.Array, KVCache]:
     """Multi-head attention with KV caching (faithful to entropix)"""
     bsz, seq_len, _ = x.shape
+    
+    # Debug logging for layer 0 only
+    if layer_idx == 0:
+        print(f"ATT L{layer_idx}: cur_pos={cur_pos} x.shape={x.shape} mask={attn_mask is not None}")
     n_rep = model_params.n_local_heads // model_params.n_local_kv_heads
     
     # Linear projections - use .T for faithful transpose operation
