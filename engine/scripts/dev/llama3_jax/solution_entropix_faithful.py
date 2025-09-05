@@ -91,9 +91,7 @@ class KVCache(NamedTuple):
     
     def update(self, xk: jax.Array, xv: jax.Array, layer_idx: int, cur_pos: int, n_rep: int):
         """Update cache with new key-value pairs (exactly matching original entropix)"""
-        # Debug shapes
         seq_len = xk.shape[1] 
-        print(f"KV Update: layer={layer_idx}, cur_pos={cur_pos}, xk.shape={xk.shape}, seq_len={seq_len}")
         
         # Use dynamic_update_slice like original entropix
         ck = jax.lax.dynamic_update_slice(self.k, jnp.bfloat16(xk[None, ...]), (layer_idx, 0, cur_pos, 0, 0))
@@ -104,8 +102,12 @@ class KVCache(NamedTuple):
             keys = jnp.repeat(xk, n_rep, axis=2)      # Use fresh keys
             values = jnp.repeat(xv, n_rep, axis=2)    # Use fresh values
         else:
-            keys = jnp.repeat(ck[layer_idx], n_rep, axis=2)    # Use cached keys for THIS LAYER
-            values = jnp.repeat(cv[layer_idx], n_rep, axis=2)  # Use cached values for THIS LAYER
+            # For incremental generation, return keys/values up to current position + seq_len
+            total_len = cur_pos + seq_len
+            cached_keys = ck[layer_idx][:, :total_len]   # Slice to current length
+            cached_values = cv[layer_idx][:, :total_len] # Slice to current length
+            keys = jnp.repeat(cached_keys, n_rep, axis=2)    
+            values = jnp.repeat(cached_values, n_rep, axis=2)
         
         return keys, values, KVCache(k=ck, v=cv)
 
