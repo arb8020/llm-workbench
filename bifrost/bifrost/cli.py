@@ -265,6 +265,7 @@ def exec(
 def deploy(
     ssh_connection: str = typer.Argument(..., help="SSH connection string (user@host:port or 'ssh -p port user@host')"),
     command: str = typer.Argument(..., help="Command to execute after deployment"),
+    working_dir: Optional[str] = typer.Option(None, "--working-dir", help="Working directory to run command in (defaults to ~/.bifrost/workspace)"),
     env: Optional[List[str]] = typer.Option(None, "--env", "-e", help="Environment variables (KEY=VALUE) or KEY to copy from local env"),
     env_file: Optional[List[Path]] = typer.Option(None, "--env-file", "-f", help="Read environment variables from .env file(s)"),
     dotenv: bool = typer.Option(False, "--dotenv", help="Load .env from current working directory if present"),
@@ -285,7 +286,7 @@ def deploy(
         client = BifrostClient(ssh_connection, ssh_key_path=ssh_key)
         
         # Deploy and execute
-        result = client.deploy(command, env_dict, uv_extra=uv_extra)
+        result = client.deploy(command, env_dict, uv_extra=uv_extra, working_dir=working_dir)
         
         # Show output
         console.print("\n--- Command Output ---")

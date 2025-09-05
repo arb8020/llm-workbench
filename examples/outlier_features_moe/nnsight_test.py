@@ -18,6 +18,7 @@ def extract_and_print_activations(model_name="mistralai/Mixtral-8x7B-v0.1",
     print(f"[{time.time()-start_time:.1f}s] Starting model initialization: {model_name}")
     print("DEBUG: About to call LanguageModel() - this will download if not cached...")
     
+    print(f'using model: {model_name}')
     # This step includes download + creating meta model
     model = LanguageModel(model_name, device_map="auto")
     

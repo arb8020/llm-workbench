@@ -240,14 +240,14 @@ class BifrostClient:
                 raise
             raise JobError(f"Execution failed: {e}")
     
-    def deploy(self, command: str, env: Optional[Dict[str, str]] = None, isolated: bool = False, uv_extra: Optional[str] = None) -> str:
+    def deploy(self, command: str, env: Optional[Dict[str, str]] = None, isolated: bool = False, uv_extra: Optional[str] = None, working_dir: Optional[str] = None) -> str:
         """
         Deploy local code and execute command (convenience method).
         
         This method:
         1. Calls push() to deploy code
-        2. Calls exec() to run command in deployed directory
-        3. Equivalent to: push() followed by exec(command, working_dir=code_path)
+        2. Calls exec() to run command in specified working directory
+        3. Equivalent to: push() followed by exec(command, working_dir=working_dir or code_path)
         
         Mental model: Like deployment tools - deploy and start application
         
@@ -256,6 +256,7 @@ class BifrostClient:
             env: Environment variables to set
             isolated: Create isolated worktree with job_id (default: False)
             uv_extra: Optional extra group for uv sync (e.g., 'interp')
+            working_dir: Working directory to run command in (defaults to deployed code path)
             
         Returns:
             Command output as string
@@ -265,7 +266,9 @@ class BifrostClient:
             JobError: Deployment or execution failed
         """
         code_path = self.push(isolated=isolated, uv_extra=uv_extra)
-        return self.exec(command, env, working_dir=code_path)
+        # Use specified working_dir or default to deployed code path
+        exec_working_dir = working_dir or code_path
+        return self.exec(command, env, working_dir=exec_working_dir)
     
     def run(self, command: str, env: Optional[Dict[str, str]] = None, no_deploy: bool = False) -> str:
         """
