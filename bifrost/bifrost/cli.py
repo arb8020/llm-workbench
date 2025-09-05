@@ -262,7 +262,9 @@ def exec(
 def deploy(
     ssh_connection: str = typer.Argument(..., help="SSH connection string (user@host:port or 'ssh -p port user@host')"),
     command: str = typer.Argument(..., help="Command to execute after deployment"),
-    env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables (KEY=value)"),
+    env: Optional[List[str]] = typer.Option(None, "--env", "-e", help="Environment variables (KEY=VALUE) or KEY to copy from local env"),
+    env_file: Optional[List[Path]] = typer.Option(None, "--env-file", "-f", help="Read environment variables from .env file(s)"),
+    dotenv: bool = typer.Option(False, "--dotenv", help="Load .env from current working directory if present"),
     ssh_key: Optional[str] = typer.Option(None, "--ssh-key", help="Path to SSH private key file"),
 ):
     """Deploy local code and execute command (convenience: push + exec)."""
@@ -272,10 +274,8 @@ def deploy(
         console.print(f"🚀 Deploying and executing on {ssh_connection}")
         console.print(f"Command: {command}")
         
-        # Parse environment variables
-        env_dict = parse_env(env)
-        if env_dict:
-            console.print(f"🔐 Environment variables: {', '.join(sorted(env_dict.keys()))}")
+        # Process environment variables securely
+        env_dict = process_env_vars(env, env_file, dotenv)
         
         # Create client with optional SSH key
         client = BifrostClient(ssh_connection, ssh_key_path=ssh_key)
