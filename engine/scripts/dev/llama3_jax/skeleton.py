@@ -98,8 +98,8 @@ class Llama3Config:
         assert self.n_layers > 0, "n_layers must be positive"
         assert self.n_heads % self.n_kv_heads == 0, f"n_heads ({self.n_heads}) must be divisible by n_kv_heads ({self.n_kv_heads})"
 
-@dataclass(frozen=True)
-class Llama3State:
+# @dataclass(frozen=True)
+# class Llama3State:
     
 
 # rms norm 
@@ -110,7 +110,7 @@ class Llama3State:
 # rope
 
 # how many blocks in llama 3.1-8b, concise, ignore notes
-""" Llama 3.1-8b has 32 transformer blocks/layers."""
+# """ Llama 3.1-8b has 32 transformer blocks/layers."""
 
 def llama3_forward(input_ids: jnp.ndarray, weights: Dict[str, Array], config: Llama3Config) -> jnp.ndarray:
     """Forward pass through Llama3 model"""
