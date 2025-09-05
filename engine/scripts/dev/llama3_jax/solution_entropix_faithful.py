@@ -97,9 +97,6 @@ class KVCache(NamedTuple):
         ck = jax.lax.dynamic_update_slice(self.k, jnp.bfloat16(xk[None, ...]), (layer_idx, 0, cur_pos, 0, 0))
         cv = jax.lax.dynamic_update_slice(self.v, jnp.bfloat16(xv[None, ...]), (layer_idx, 0, cur_pos, 0, 0))
         
-        # Debug logging for layer 0 only
-        if layer_idx == 0:
-            print(f"L{layer_idx} cur_pos={cur_pos} seq_len={seq_len} xk_shape={xk.shape}")
         
         # Key logic: cur_pos == 0 vs cur_pos > 0 (exactly matching original)
         if cur_pos == 0:
@@ -126,16 +123,16 @@ def precompute_freqs_cis(seq_len: int, n_elem: int, base: int = 10000, dtype: jn
     freqs = jnp.outer(t, freqs)
     return jax.lax.complex(jnp.cos(freqs), jnp.sin(freqs))
 
-def apply_rotary_emb(xq: jax.Array, xk: jax.Array, freqs_cis: jax.Array, dtype: jnp.dtype = jnp.float32) -> Tuple[jax.Array, jax.Array]:
+def apply_rotary_emb(xq: jax.Array, xk: jax.Array, freqs_cis: jax.Array, cur_pos: int = 0, dtype: jnp.dtype = jnp.float32) -> Tuple[jax.Array, jax.Array]:
     """Apply rotary position embedding (faithful to entropix)"""
     reshape_xq = xq.astype(jnp.float32).reshape(*xq.shape[:-1], -1, 2)
     reshape_xk = xk.astype(jnp.float32).reshape(*xk.shape[:-1], -1, 2)
     xq_ = jax.lax.complex(reshape_xq[..., 0], reshape_xq[..., 1])
     xk_ = jax.lax.complex(reshape_xk[..., 0], reshape_xk[..., 1])
     
-    # Slice freqs_cis to match sequence length
+    # Slice freqs_cis to match current position and sequence length
     seq_len = xq.shape[1]
-    freqs_cis_sliced = freqs_cis[:seq_len]
+    freqs_cis_sliced = freqs_cis[cur_pos:cur_pos + seq_len]
     
     xq_out = xq_ * freqs_cis_sliced[None, :, None, :]
     xk_out = xk_ * freqs_cis_sliced[None, :, None, :]
@@ -149,9 +146,6 @@ def attention(x: jax.Array, layer_weights: LayerWeights, model_params: ModelPara
     """Multi-head attention with KV caching (faithful to entropix)"""
     bsz, seq_len, _ = x.shape
     
-    # Debug logging for layer 0 only
-    if layer_idx == 0:
-        print(f"ATT L{layer_idx}: cur_pos={cur_pos} x.shape={x.shape} mask={attn_mask is not None}")
     n_rep = model_params.n_local_heads // model_params.n_local_kv_heads
     
     # Linear projections - use .T for faithful transpose operation
@@ -159,8 +153,8 @@ def attention(x: jax.Array, layer_weights: LayerWeights, model_params: ModelPara
     xk = jnp.dot(x, layer_weights.wk.T).reshape(bsz, seq_len, model_params.n_local_kv_heads, model_params.head_dim)
     xv = jnp.dot(x, layer_weights.wv.T).reshape(bsz, seq_len, model_params.n_local_kv_heads, model_params.head_dim)
     
-    # Apply RoPE (exactly matching original entropix - no position slicing!)
-    xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
+    # Apply RoPE (exactly matching original entropix - with correct position!)
+    xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis, cur_pos=cur_pos)
     
     # Update KV cache and get keys/values
     keys, values, kvcache = kvcache.update(xk, xv, layer_idx, cur_pos, n_rep)
