@@ -193,6 +193,7 @@ def push(
     ssh_connection: str = typer.Argument(..., help="SSH connection string (user@host:port)"),
     target_dir: Optional[str] = typer.Option(None, "--target-dir", help="Specific directory name for worktree"),
     ssh_key: Optional[str] = typer.Option(None, "--ssh-key", help="Path to SSH private key file"),
+    uv_extra: Optional[str] = typer.Option(None, "--uv-extra", help="Install optional dependencies from specified extra group (e.g., 'interp')"),
 ):
     """Push/sync local code to remote instance without execution."""
     try:
@@ -206,7 +207,7 @@ def push(
         client = BifrostClient(ssh_connection, ssh_key_path=ssh_key)
         
         # Deploy code only
-        worktree_path = client.push(target_dir)
+        worktree_path = client.push(target_dir=target_dir, uv_extra=uv_extra)
         
         console.print("✅ Code deployed successfully")
         console.print(f"📂 Worktree path: {worktree_path}")
@@ -266,6 +267,7 @@ def deploy(
     env_file: Optional[List[Path]] = typer.Option(None, "--env-file", "-f", help="Read environment variables from .env file(s)"),
     dotenv: bool = typer.Option(False, "--dotenv", help="Load .env from current working directory if present"),
     ssh_key: Optional[str] = typer.Option(None, "--ssh-key", help="Path to SSH private key file"),
+    uv_extra: Optional[str] = typer.Option(None, "--uv-extra", help="Install optional dependencies from specified extra group (e.g., 'interp')"),
 ):
     """Deploy local code and execute command (convenience: push + exec)."""
     try:
@@ -281,7 +283,7 @@ def deploy(
         client = BifrostClient(ssh_connection, ssh_key_path=ssh_key)
         
         # Deploy and execute
-        result = client.deploy(command, env_dict)
+        result = client.deploy(command, env_dict, uv_extra=uv_extra)
         
         # Show output
         console.print("\n--- Command Output ---")
@@ -306,6 +308,7 @@ def run(
     dotenv: bool = typer.Option(False, "--dotenv", help="Load .env from current working directory if present"),
     no_deploy: bool = typer.Option(False, "--no-deploy", help="Skip git deployment (legacy mode)"),
     detach: bool = typer.Option(False, "--detach", help="Run job in background (detached mode)"),
+    uv_extra: Optional[str] = typer.Option(None, "--uv-extra", help="Install optional dependencies from specified extra group (e.g., 'interp')"),
 ):
     """DEPRECATED: Use 'deploy' instead. Run a command on remote GPU instance with automatic code deployment."""
     console.print("⚠️  WARNING: 'bifrost run' is deprecated. Use 'bifrost deploy' instead.", style="yellow")

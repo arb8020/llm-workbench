@@ -126,7 +126,7 @@ class BifrostClient:
         except Exception as e:
             raise ConnectionError(f"Failed to load SSH key from {key_path}: {e}")
     
-    def push(self, isolated: bool = False, target_dir: Optional[str] = None) -> str:
+    def push(self, isolated: bool = False, target_dir: Optional[str] = None, uv_extra: Optional[str] = None) -> str:
         """
         Push/sync local code to remote instance without execution.
         
@@ -141,6 +141,7 @@ class BifrostClient:
         Args:
             isolated: Create isolated worktree with job_id (default: False)
             target_dir: Custom directory name (only used with isolated=True)
+            uv_extra: Optional extra group for uv sync (e.g., 'interp')
             
         Returns:
             Path to deployed code directory
@@ -154,13 +155,13 @@ class BifrostClient:
             
             if isolated:
                 # Use existing isolated worktree deployment
-                worktree_path = deployment.deploy_code_only(target_dir)
+                worktree_path = deployment.deploy_code_only(target_dir, uv_extra)
                 self.logger.info(f"Code deployed to isolated worktree: {worktree_path}")
                 return worktree_path
             else:
                 # Use workspace deployment (shared directory)
                 workspace_path = target_dir or "~/.bifrost/workspace"
-                deployment.deploy_to_workspace(workspace_path)
+                deployment.deploy_to_workspace(workspace_path, uv_extra)
                 self.logger.info(f"Code deployed to workspace: {workspace_path}")
                 return workspace_path
         except Exception as e:
@@ -251,7 +252,7 @@ class BifrostClient:
                 raise
             raise JobError(f"Execution failed: {e}")
     
-    def deploy(self, command: str, env: Optional[Dict[str, str]] = None, isolated: bool = False) -> str:
+    def deploy(self, command: str, env: Optional[Dict[str, str]] = None, isolated: bool = False, uv_extra: Optional[str] = None) -> str:
         """
         Deploy local code and execute command (convenience method).
         
@@ -266,6 +267,7 @@ class BifrostClient:
             command: Command to execute after deployment
             env: Environment variables to set
             isolated: Create isolated worktree with job_id (default: False)
+            uv_extra: Optional extra group for uv sync (e.g., 'interp')
             
         Returns:
             Command output as string
@@ -274,7 +276,7 @@ class BifrostClient:
             ConnectionError: SSH connection failed
             JobError: Deployment or execution failed
         """
-        code_path = self.push(isolated=isolated)
+        code_path = self.push(isolated=isolated, uv_extra=uv_extra)
         return self.exec(command, env, working_dir=code_path)
     
     def run(self, command: str, env: Optional[Dict[str, str]] = None, no_deploy: bool = False) -> str:

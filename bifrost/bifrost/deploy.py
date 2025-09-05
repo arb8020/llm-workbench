@@ -79,13 +79,17 @@ class GitDeployment:
         self.ssh_port = ssh_port
         self.job_id = job_id or str(uuid.uuid4())[:8]  # Use provided job_id or generate one
     
-    def detect_bootstrap_command(self, client: paramiko.SSHClient, worktree_path: str) -> str:
+    def detect_bootstrap_command(self, client: paramiko.SSHClient, worktree_path: str, uv_extra: Optional[str] = None) -> str:
         """Detect Python dependency files and return appropriate bootstrap command."""
         
         # Check for dependency files in order of preference
+        uv_sync_cmd = "pip install uv && uv sync"
+        if uv_extra:
+            uv_sync_cmd += f" --extra {uv_extra}"
+            
         dep_files = [
-            ("uv.lock", "pip install uv && uv sync"),
-            ("pyproject.toml", "pip install uv && uv sync"), 
+            ("uv.lock", uv_sync_cmd),
+            ("pyproject.toml", uv_sync_cmd), 
             ("requirements.txt", "pip install -r requirements.txt")
         ]
         
@@ -311,7 +315,7 @@ class GitDeployment:
         cmd = f"rm -rf ~/.bifrost/jobs/{self.job_id}"
         client.exec_command(cmd)
     
-    def deploy_and_execute(self, command: str, env_vars: Optional[Dict[str, str]] = None) -> int:
+    def deploy_and_execute(self, command: str, env_vars: Optional[Dict[str, str]] = None, uv_extra: Optional[str] = None) -> int:
         """Deploy code and execute command using shared workspace for better Python imports."""
         
         # Create SSH client
@@ -327,7 +331,7 @@ class GitDeployment:
             workspace_path = self.deploy_to_workspace()
             
             # Detect and add bootstrap command
-            bootstrap_cmd = self.detect_bootstrap_command(client, workspace_path)
+            bootstrap_cmd = self.detect_bootstrap_command(client, workspace_path, uv_extra)
             
             # Build full command with working directory and bootstrap
             full_command = f"cd {workspace_path} && {bootstrap_cmd}{command}"
@@ -353,7 +357,7 @@ class GitDeployment:
         finally:
             client.close()
     
-    def deploy_to_workspace(self, workspace_path: str = "~/.bifrost/workspace") -> str:
+    def deploy_to_workspace(self, workspace_path: str = "~/.bifrost/workspace", uv_extra: Optional[str] = None) -> str:
         """Deploy code to shared workspace directory.
         
         This method:
@@ -365,6 +369,7 @@ class GitDeployment:
         
         Args:
             workspace_path: Path to workspace directory (default: ~/.bifrost/workspace)
+            uv_extra: Optional extra group for uv sync (e.g., 'interp')
             
         Returns:
             Path to workspace directory
@@ -395,7 +400,7 @@ class GitDeployment:
             self.create_or_update_workspace(client, bare_repo_path, workspace_path)
             
             # Install dependencies
-            bootstrap_cmd = self.detect_bootstrap_command(client, workspace_path)
+            bootstrap_cmd = self.detect_bootstrap_command(client, workspace_path, uv_extra)
             if bootstrap_cmd:
                 bootstrap_only = bootstrap_cmd.rstrip(" && ")
                 console.print(f"🔄 Installing dependencies: {bootstrap_only}")
@@ -415,7 +420,7 @@ class GitDeployment:
         finally:
             client.close()
     
-    def deploy_code_only(self, target_dir: Optional[str] = None) -> str:
+    def deploy_code_only(self, target_dir: Optional[str] = None, uv_extra: Optional[str] = None) -> str:
         """Deploy code without executing commands. Returns worktree path.
         
         This method:
@@ -427,6 +432,7 @@ class GitDeployment:
         
         Args:
             target_dir: Optional specific directory name for worktree
+            uv_extra: Optional extra group for uv sync (e.g., 'interp')
             
         Returns:
             Path to deployed worktree on remote instance
@@ -476,7 +482,7 @@ class GitDeployment:
                 worktree_path = self.create_worktree(client, repo_name)
             
             # Install dependencies
-            bootstrap_cmd = self.detect_bootstrap_command(client, worktree_path)
+            bootstrap_cmd = self.detect_bootstrap_command(client, worktree_path, uv_extra)
             if bootstrap_cmd:
                 # Remove the trailing " && " from bootstrap command for standalone execution
                 bootstrap_only = bootstrap_cmd.rstrip(" && ")
@@ -541,7 +547,8 @@ class GitDeployment:
         repo_name: str, 
         commit_hash: str, 
         command: str, 
-        env_vars: Optional[Dict[str, str]]
+        env_vars: Optional[Dict[str, str]],
+        uv_extra: Optional[str] = None
     ) -> str:
         """Execute the main deployment steps for detached job."""
         
@@ -555,7 +562,7 @@ class GitDeployment:
         worktree_path = self.create_worktree(client, repo_name)
         
         # Prepare command with bootstrap
-        bootstrap_cmd = self.detect_bootstrap_command(client, worktree_path)
+        bootstrap_cmd = self.detect_bootstrap_command(client, worktree_path, uv_extra)
         full_command = f"{bootstrap_cmd}{command}"
         
         # Set up job execution

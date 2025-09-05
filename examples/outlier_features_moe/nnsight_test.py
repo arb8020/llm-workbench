@@ -1,5 +1,6 @@
 import os
 import nnsight
+from nnsight import LanguageModel
 import argparse
 from collections import defaultdict
 
