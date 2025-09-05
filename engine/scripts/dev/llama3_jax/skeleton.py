@@ -192,13 +192,25 @@ class Llama3Config:
 """
 
 
+def rms_norm(x_BLD: jnp.ndarray, weight: jnp.ndarray, epsilon: float = 1e-5) -> jnp.ndarray:
+    """RMSNorm: A Simple Yet Effective Normalization Method For Deep Neural Networks
+    Zhang et al. (2019) https://arxiv.org/abs/1910.07467"""
+    
+    squared_inputs = jax.lax.pow(x_BLD, 2)
+    mean_squared = squared_inputs.mean(-1, keepdims=True)
+    stabilized_mean = mean_squared + epsilon
+    rms = jax.lax.rsqrt(stabilized_mean)
+    normalized = weight * (inputs * rms)
+    return normalized
+    
+
 def project_input_ids(input_ids: jnp.ndarray, weights: Dict[str, Array], config: Llama3Config) -> jnp.ndarray:
     projected_BLD = weights['model.embed_tokens.weight'][input_ids]
 
     return projected_BLD
 
 def llama3_forward(input_ids: jnp.ndarray, weights: Dict[str, Array], config: Llama3Config) -> jnp.ndarray:
-   """Forward pass through Llama3 model"""
+    """Forward pass through Llama3 model"""
     batch_size, seq_len = input_ids.shape
     vocab_size = config.vocab_size
 
