@@ -136,13 +136,14 @@ fi
         console.print("📋 Uploaded job wrapper script")
     
     def start_tmux_session(self, client: paramiko.SSHClient, job_id: str, 
-                          command: str, env_vars: Optional[Dict[str, str]] = None) -> str:
+                          command: str, env_vars: Optional[Dict[str, str]] = None, 
+                          wrapper_script: str = "job_wrapper.sh") -> str:
         """Start tmux session for detached job execution."""
         
         tmux_session = f"bifrost_{job_id}"
         
         # Build the command - use double quotes to avoid nested single quote issues
-        wrapper_cmd = f'~/.bifrost/scripts/job_wrapper.sh {job_id} "{command}"'
+        wrapper_cmd = f'~/.bifrost/scripts/{wrapper_script} {job_id} "{command}"'
         
         # Add environment variables if provided
         if env_vars:

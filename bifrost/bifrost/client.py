@@ -226,26 +226,14 @@ class BifrostClient:
                     full_command = command
                     self.logger.warning("No code deployed yet. Running from home directory. Consider running push() first.")
             
-            # Execute command with environment variables if provided
-            if env:
-                from .deploy import execute_with_env_injection
-                exit_code, stdout_content, stderr_content = execute_with_env_injection(
-                    ssh_client, full_command, env
-                )
-                if exit_code != 0:
-                    raise JobError(f"Command failed with exit code {exit_code}: {stderr_content}")
-                return stdout_content
-            else:
-                # Execute simple command without environment variables
-                stdin, stdout, stderr = ssh_client.exec_command(full_command)
-                exit_code = stdout.channel.recv_exit_status()
-                output = stdout.read().decode('utf-8')
-                error = stderr.read().decode('utf-8')
-                
-                if exit_code != 0:
-                    raise JobError(f"Command failed with exit code {exit_code}: {error}")
-                
-                return output
+            # Always use streaming execution for consistent real-time output
+            from .deploy import execute_with_env_injection
+            exit_code, stdout_content, stderr_content = execute_with_env_injection(
+                ssh_client, full_command, env or {}
+            )
+            if exit_code != 0:
+                raise JobError(f"Command failed with exit code {exit_code}: {stderr_content}")
+            return stdout_content
             
         except Exception as e:
             if isinstance(e, (ConnectionError, JobError)):

@@ -21,8 +21,10 @@ if str(_workbench_root) not in sys.path:
 
 from shared.logging_config import setup_logging, parse_logger_levels
 from .deploy import GitDeployment
+from .jobs_cli import jobs_app
 
 app = typer.Typer(help="Bifrost - Remote GPU execution tool")
+app.add_typer(jobs_app, name="jobs")
 console = Console()
 
 

@@ -83,6 +83,7 @@ def extract_and_print_activations(model_name="mistralai/Mixtral-8x7B-v0.1",
 if __name__ == "__main__":
     # Simple usage
     activations = extract_and_print_activations(
+        model_name="allenai/OLMoE-1B-7B-0125-Instruct",
         text="Hello world, this is a test.",
         layer_idx=3
     )

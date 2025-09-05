@@ -614,3 +614,158 @@ class GitDeployment:
         console.print("💡 Use 'bifrost logs {job_id}' to monitor progress (coming in Phase 2)")
         
         return job_id
+
+    def deploy_and_execute_detached_workspace(self, command: str, env_vars: Optional[Dict[str, str]] = None, job_id: Optional[str] = None) -> str:
+        """Deploy code to shared workspace and execute command in detached mode."""
+        
+        if not job_id:
+            job_id = generate_job_id()
+        console.print(f"🆔 Using job ID: {job_id}")
+        
+        # Detect git repo
+        repo_name, commit_hash = self.detect_git_repo()
+        
+        # Create SSH client and job manager
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        job_manager = JobManager(self.ssh_user, self.ssh_host, self.ssh_port)
+        
+        try:
+            # Connect to remote
+            console.print(f"🔗 Connecting to {self.ssh_user}@{self.ssh_host}:{self.ssh_port}")
+            client.connect(hostname=self.ssh_host, port=self.ssh_port, username=self.ssh_user)
+            
+            # Deploy to workspace (shared directory) - reuse existing client
+            workspace_path = "~/.bifrost/workspace"  
+            self._deploy_to_existing_workspace(client, workspace_path, repo_name, commit_hash)
+            
+            # Update job wrapper to use workspace directory instead of job-specific worktree
+            self._upload_workspace_job_wrapper_script(client)
+            
+            # Prepare command with bootstrap
+            bootstrap_cmd = self.detect_bootstrap_command(client, workspace_path)
+            full_command = f"{bootstrap_cmd}{command}"
+            
+            # Set up job execution with workspace path
+            job_manager.create_job_metadata(
+                client, job_id, full_command, workspace_path, commit_hash, repo_name
+            )
+            
+            # Start detached execution with workspace wrapper
+            tmux_session = job_manager.start_tmux_session(client, job_id, full_command, env_vars, "workspace_job_wrapper.sh")
+            
+            console.print(f"🚀 Job {job_id} started in session {tmux_session}")
+            console.print(f"💡 Use 'bifrost jobs logs {self.ssh_user}@{self.ssh_host}:{self.ssh_port} {job_id}' to monitor progress")
+            
+            return job_id
+            
+        except Exception as e:
+            console.print(f"❌ Failed to start detached job: {e}")
+            console.print(f"🔍 Job data preserved for debugging: ~/.bifrost/jobs/{job_id}")
+            raise
+        finally:
+            client.close()
+
+    def _upload_workspace_job_wrapper_script(self, client: paramiko.SSHClient) -> None:
+        """Upload job wrapper script that uses workspace directory."""
+        
+        # Create scripts directory
+        stdin, stdout, stderr = client.exec_command("mkdir -p ~/.bifrost/scripts")
+        exit_code = stdout.channel.recv_exit_status()
+        if exit_code != 0:
+            error = stderr.read().decode()
+            raise RuntimeError(f"Failed to create scripts directory: {error}")
+        
+        # Job wrapper script for workspace-based jobs
+        wrapper_script = '''#!/bin/bash
+# Job execution wrapper for workspace-based jobs
+
+JOB_ID=$1
+COMMAND=$2
+JOB_DIR=~/.bifrost/jobs/$JOB_ID
+WORKSPACE_DIR=~/.bifrost/workspace
+
+# Setup job metadata
+echo "running" > $JOB_DIR/status
+echo "$(date -Iseconds)" > $JOB_DIR/start_time
+echo $$ > $JOB_DIR/pid
+
+# Change to workspace directory
+cd $WORKSPACE_DIR
+
+# Execute command with logging
+echo "Starting job $JOB_ID in $(pwd)" >> $JOB_DIR/job.log
+echo "Command: $COMMAND" >> $JOB_DIR/job.log
+echo "----------------------------------------" >> $JOB_DIR/job.log
+
+# Run command and capture exit code
+bash -c "$COMMAND" 2>&1 | tee -a $JOB_DIR/job.log
+EXIT_CODE=${PIPESTATUS[0]}
+
+# Update job metadata
+echo $EXIT_CODE > $JOB_DIR/exit_code
+echo "$(date -Iseconds)" > $JOB_DIR/end_time
+
+if [ $EXIT_CODE -eq 0 ]; then
+    echo "completed" > $JOB_DIR/status
+    echo "Job $JOB_ID completed successfully" >> $JOB_DIR/job.log
+else
+    echo "failed" > $JOB_DIR/status
+    echo "Job $JOB_ID failed with exit code $EXIT_CODE" >> $JOB_DIR/job.log
+fi
+'''
+        
+        # Upload wrapper script
+        wrapper_cmd = f"cat > ~/.bifrost/scripts/workspace_job_wrapper.sh << 'EOF'\n{wrapper_script}\nEOF"
+        stdin, stdout, stderr = client.exec_command(wrapper_cmd)
+        exit_code = stdout.channel.recv_exit_status()
+        if exit_code != 0:
+            error = stderr.read().decode()
+            raise RuntimeError(f"Failed to upload workspace job wrapper script: {error}")
+        
+        # Make script executable
+        stdin, stdout, stderr = client.exec_command("chmod +x ~/.bifrost/scripts/workspace_job_wrapper.sh")
+        exit_code = stdout.channel.recv_exit_status()
+        if exit_code != 0:
+            error = stderr.read().decode()
+            raise RuntimeError(f"Failed to make wrapper script executable: {error}")
+        
+        console.print("📋 Uploaded workspace job wrapper script")
+
+    def _deploy_to_existing_workspace(self, client: paramiko.SSHClient, workspace_path: str, repo_name: str, commit_hash: str) -> None:
+        """Deploy to workspace using existing SSH client."""
+        
+        # Set up remote structure
+        bare_repo_path = self.setup_remote_structure(client, repo_name)
+        
+        # Push code to remote
+        self.push_code(repo_name, commit_hash, bare_repo_path)
+        
+        # Create or update workspace
+        console.print(f"🏗️  Setting up workspace: {workspace_path}")
+        
+        # Check if workspace exists
+        stdin, stdout, stderr = client.exec_command(f"test -d {workspace_path}")
+        workspace_exists = stdout.channel.recv_exit_status() == 0
+        
+        if workspace_exists:
+            # Update existing workspace
+            console.print("🔄 Updating existing workspace...")
+            stdin, stdout, stderr = client.exec_command(f"cd {workspace_path} && git pull origin main")
+            exit_code = stdout.channel.recv_exit_status()
+            if exit_code != 0:
+                error = stderr.read().decode()
+                console.print(f"⚠️ Git pull failed, will recreate workspace: {error}")
+                stdin, stdout, stderr = client.exec_command(f"rm -rf {workspace_path}")
+                workspace_exists = False
+        
+        if not workspace_exists:
+            # Create new workspace
+            console.print("🆕 Creating new workspace...")
+            stdin, stdout, stderr = client.exec_command(f"git clone {bare_repo_path} {workspace_path}")
+            exit_code = stdout.channel.recv_exit_status()
+            if exit_code != 0:
+                error = stderr.read().decode()
+                raise RuntimeError(f"Failed to create workspace: {error}")
+        
+        console.print(f"✅ Workspace ready at {workspace_path}")
