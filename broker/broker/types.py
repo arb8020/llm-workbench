@@ -361,6 +361,7 @@ class ProvisionRequest:
     ssh_startup_script: Optional[str] = None  # SSH key injection script
     container_disk_gb: Optional[int] = None  # Container disk size in GB (default: 50)
     volume_disk_gb: Optional[int] = None  # Volume disk size in GB (default: 0)
+    memory_gb: Optional[int] = None  # System memory allocation in GB (default: provider minimum)
     # Port exposure configuration
     exposed_ports: Optional[List[int]] = None  # Ports to expose via HTTP proxy
     enable_http_proxy: bool = True  # Enable RunPod's HTTP proxy

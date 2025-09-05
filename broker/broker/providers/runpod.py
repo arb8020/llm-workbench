@@ -197,7 +197,7 @@ def provision_instance(request: ProvisionRequest, ssh_startup_script: Optional[s
         "containerDiskInGb": request.container_disk_gb or 50,  # Default 50GB for ML workloads, configurable
         "volumeInGb": request.volume_disk_gb or 0,  # Default 0GB, configurable
         "minVcpuCount": 1,  # Required minimum CPU
-        "minMemoryInGb": 4,  # Required minimum memory
+        "minMemoryInGb": request.memory_gb or 4,  # Use requested memory or default 4GB minimum
         "ports": _build_ports_string(request.exposed_ports, request.enable_http_proxy),
         "startSsh": True,  # This enables SSH daemon
         "startJupyter": request.start_jupyter,  # Auto-start Jupyter Lab
@@ -262,25 +262,20 @@ def get_instance_details_enhanced(instance_id: str) -> Optional[dict]:
                     isIpPublic
                     privatePort
                     publicPort
+                    type
+                }
+                gpus {
+                    id
+                    gpuUtilPercent
+                    memoryUtilPercent
                 }
             }
             machine {
                 podHostId
-                cpuUtilPercent
-                memoryUtilPercent
-                diskUtilPercent
-                gpuUtilPercent
                 gpuType {
                     displayName
                     manufacturer
                     memoryInGb
-                }
-                gpuTelemetry {
-                    id
-                    percentUtilization
-                    temperatureCelcius
-                    memoryUtilization
-                    powerWatts
                 }
             }
         }

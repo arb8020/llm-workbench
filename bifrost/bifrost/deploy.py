@@ -42,6 +42,9 @@ def execute_with_env_injection(
 ) -> Tuple[int, str, str]:
     """Execute command with secure environment variable injection via stdin."""
     
+    # Always print the command being executed
+    console.print(f"🔄 Executing: {command}")
+    
     if env_dict:
         # Create environment payload
         env_payload = make_env_payload(env_dict)
@@ -62,10 +65,54 @@ def execute_with_env_injection(
         # No environment variables, execute normally
         stdin, stdout, stderr = client.exec_command(command)
     
-    # Get outputs
-    stdout_content = stdout.read().decode()
-    stderr_content = stderr.read().decode()
+    # Stream output in real-time
+    console.print("\n--- Remote Output ---")
+    stdout_buffer = []
+    stderr_buffer = []
+    
+    # Set channels to non-blocking mode for real-time streaming
+    stdout.channel.settimeout(0.1)
+    stderr.channel.settimeout(0.1)
+    
+    while not stdout.channel.exit_status_ready():
+        # Read from stdout
+        try:
+            chunk = stdout.read(1024).decode()
+            if chunk:
+                print(chunk, end='', flush=True)
+                stdout_buffer.append(chunk)
+        except Exception:
+            pass  # No data available
+            
+        # Read from stderr  
+        try:
+            chunk = stderr.read(1024).decode()
+            if chunk:
+                console.print(chunk, style="red", end='')
+                stderr_buffer.append(chunk)
+        except Exception:
+            pass  # No data available
+    
+    # Read any remaining output
+    try:
+        remaining_stdout = stdout.read().decode()
+        if remaining_stdout:
+            print(remaining_stdout, end='', flush=True)
+            stdout_buffer.append(remaining_stdout)
+    except Exception:
+        pass
+        
+    try:
+        remaining_stderr = stderr.read().decode()
+        if remaining_stderr:
+            console.print(remaining_stderr, style="red", end='')
+            stderr_buffer.append(remaining_stderr)
+    except Exception:
+        pass
+    
     exit_code = stdout.channel.recv_exit_status()
+    stdout_content = ''.join(stdout_buffer)
+    stderr_content = ''.join(stderr_buffer)
     
     return exit_code, stdout_content, stderr_content
 
@@ -337,20 +384,9 @@ class GitDeployment:
             full_command = f"cd {workspace_path} && {bootstrap_cmd}{command}"
             
             # Execute command with secure environment injection
-            console.print(f"🔄 Executing in workspace: {command}")
             exit_code, stdout_content, stderr_content = execute_with_env_injection(
                 client, full_command, env_vars
             )
-            
-            # Stream output
-            console.print("\n--- Remote Output ---")
-            if stdout_content:
-                print(stdout_content.rstrip())
-            
-            # Only show errors if command failed (non-zero exit code)
-            if stderr_content and exit_code != 0:
-                console.print("\n--- Remote Errors ---", style="red")
-                console.print(stderr_content, style="red")
             
             return exit_code
             

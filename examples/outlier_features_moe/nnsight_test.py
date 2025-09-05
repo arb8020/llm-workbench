@@ -17,10 +17,12 @@ def extract_and_print_activations(model_name="mistralai/Mixtral-8x7B-v0.1",
     if not os.environ.get('HF_TOKEN'):
         print("Warning: HF_TOKEN environment variable not set.")
     
-    # Load model
     print(f"Loading {model_name}...")
     model = LanguageModel(model_name, device_map="auto")
-    
+    print(f"Model loaded. Model is on device: {next(model.parameters()).device}")  # This will show which device (CPU/GPU) the model is on
+
+
+        
     # Tokenize input
     print(f"Input text: '{text}'")
     inputs = model.tokenizer(text, return_tensors="pt")

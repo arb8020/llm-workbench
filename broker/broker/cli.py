@@ -233,6 +233,7 @@ def create(
     allow_proxy: bool = typer.Option(False, "--allow-proxy", help="Allow proxy SSH connections (default: wait for direct SSH)"),
     container_disk: Optional[int] = typer.Option(None, "--container-disk", help="Container disk size in GB (default: 50GB)"),
     volume_disk: Optional[int] = typer.Option(None, "--volume-disk", help="Volume disk size in GB (default: 0GB)"),
+    memory: Optional[int] = typer.Option(None, "--memory", help="System memory allocation in GB (default: provider minimum)"),
     # Jupyter configuration
     jupyter: bool = typer.Option(False, "--jupyter", help="Auto-start Jupyter Lab on port 8888"),
     jupyter_password: Optional[str] = typer.Option(None, "--jupyter-password", help="Jupyter authentication token (default: random)")
@@ -302,6 +303,12 @@ def create(
             create_kwargs["volume_disk_gb"] = volume_disk
             if not print_ssh:
                 console.print(f"💾 Volume disk: {volume_disk}GB")
+        
+        # Add memory configuration if specified
+        if memory is not None:
+            create_kwargs["memory_gb"] = memory
+            if not print_ssh:
+                console.print(f"🧠 System memory: {memory}GB")
         
         # Add Jupyter configuration if enabled
         if jupyter:
@@ -992,63 +999,114 @@ def display_enhanced_instance_info(instance_data: dict, live_metrics: bool, inst
         f"Cost: ~${(instance_data.get('costPerHr', 0) * (uptime_seconds / 3600)):.2f} ({uptime_seconds / 3600:.1f}h × ${instance_data.get('costPerHr', 0):.3f}/hr)"
     ]
     
-    # Add utilization if available
-    if machine:
-        cpu_util = machine.get('cpuUtilPercent', 0)
-        mem_util = machine.get('memoryUtilPercent', 0)
-        disk_util = machine.get('diskUtilPercent', 0)
-        
-        util_info = "Real-time Utilization:\n"
-        util_info += f"• CPU: {cpu_util}% ({instance_data.get('vcpuCount', '?')} vCPUs available)\n"
-        util_info += f"• Memory: {mem_util}% ({instance_data.get('memoryInGb', '?')}GB RAM available)\n"
-        util_info += f"• Disk: {disk_util}% ({instance_data.get('containerDiskInGb', '?')}GB container)"
-        
-        # Add warning for high disk usage
-        if disk_util > 75:
-            util_info += " ⚠️ High usage!"
-        
-        status_info.append(util_info)
+    # System utilization note - RunPod API doesn't provide system-level metrics
+    util_info = "💻 [bold]System Resources[/bold]:\n"
+    util_info += f"• CPU: [dim]Not available via API[/dim] ({instance_data.get('vcpuCount', '?')} vCPUs total)\n"
+    util_info += f"• RAM: [dim]Not available via API[/dim] ({instance_data.get('memoryInGb', '?')}GB total)\n"
+    util_info += f"• Disk: [dim]Not available via API[/dim] ({instance_data.get('containerDiskInGb', '?')}GB container)\n"
+    util_info += f"\n💡 [yellow]Use --live-metrics flag for real system utilization via SSH[/yellow]"
+    
+    status_info.append(util_info)
     
     console.print(Panel("\n".join(status_info), title="📊 Status & Performance", box=box.ROUNDED))
     
-    # GPU Telemetry section
+    # GPU Telemetry section - try multiple sources for GPU data
     gpu_telemetry = machine.get('gpuTelemetry', []) if machine else []
-    if gpu_telemetry:
+    runtime_gpus = runtime.get('gpus', []) if runtime else []
+    
+    # Use telemetry data if available, otherwise fall back to runtime GPU data
+    if gpu_telemetry or runtime_gpus:
         telemetry_info = []
-        for i, gpu in enumerate(gpu_telemetry):
-            gpu_id = gpu.get('id', f'GPU-{i}')
-            util = gpu.get('percentUtilization', 0)
-            temp = gpu.get('temperatureCelcius', 0)
-            mem_util = gpu.get('memoryUtilization', 0)
-            power = gpu.get('powerWatts', 0)
-            
-            # Add temperature warning
-            temp_warning = ""
-            if temp > 80:
-                temp_warning = " 🔥 Hot!"
-            elif temp > 70:
-                temp_warning = " ⚠️ Warm"
-            
-            # Add power efficiency info
-            power_info = f"{power:.1f}W" if power > 0 else "N/A"
-            
-            telemetry_info.append(f"[bold]{gpu_id}[/bold]:")
-            telemetry_info.append(f"• Utilization: {util:.1f}%")
-            telemetry_info.append(f"• Memory: {mem_util:.1f}% utilized")
-            telemetry_info.append(f"• Temperature: {temp:.1f}°C{temp_warning}")
-            telemetry_info.append(f"• Power: {power_info}")
-            if i < len(gpu_telemetry) - 1:
-                telemetry_info.append("")  # Add spacing between GPUs
         
-        console.print(Panel("\n".join(telemetry_info), title="🎮 GPU Telemetry", box=box.ROUNDED))
+        # Get GPU type info from machine
+        gpu_type_info = machine.get('gpuType', {}) if machine else {}
+        total_vram = gpu_type_info.get('memoryInGb', 0)
+        gpu_name = gpu_type_info.get('displayName', 'Unknown GPU')
+        
+        # Create utilization bar function (reuse from above)
+        def create_util_bar(percent):
+            """Create a visual utilization bar"""
+            bar_length = 15  # Shorter for GPU section
+            filled = int(percent / 100 * bar_length)
+            empty = bar_length - filled
+            bar = "█" * filled + "░" * empty
+            
+            if percent >= 90:
+                return f"[red]{bar}[/red]"
+            elif percent >= 70:
+                return f"[yellow]{bar}[/yellow]"
+            elif percent >= 40:
+                return f"[green]{bar}[/green]"
+            else:
+                return f"[dim]{bar}[/dim]"
+        
+        # Process GPU telemetry data (preferred source)
+        if gpu_telemetry:
+            for i, gpu in enumerate(gpu_telemetry):
+                gpu_id = gpu.get('id', f'GPU-{i}')
+                util = gpu.get('percentUtilization', 0)
+                temp = gpu.get('temperatureCelcius', 0)
+                mem_util = gpu.get('memoryUtilization', 0)
+                power = gpu.get('powerWatts', 0)
+                
+                # Calculate VRAM usage if we have total VRAM
+                vram_used = f"{(mem_util * total_vram / 100):.1f}" if total_vram > 0 else "?"
+                vram_info = f"{vram_used}/{total_vram}GB" if total_vram > 0 else f"{mem_util:.1f}%"
+                
+                # Temperature warnings
+                temp_warning = ""
+                if temp > 80:
+                    temp_warning = " 🔥"
+                elif temp > 70:
+                    temp_warning = " ⚠️"
+                
+                # Power efficiency 
+                power_info = f"{power:.0f}W" if power > 0 else "N/A"
+                efficiency = f"({util/power:.1f}% per W)" if power > 0 and util > 0 else ""
+                
+                telemetry_info.append(f"🎮 [bold]{gpu_name}[/bold] (#{gpu_id}):")
+                telemetry_info.append(f"• Compute: {util:5.1f}% {create_util_bar(util)}")
+                telemetry_info.append(f"• VRAM:    {mem_util:5.1f}% {create_util_bar(mem_util)} ({vram_info})")
+                telemetry_info.append(f"• Temp:    {temp:5.1f}°C{temp_warning}")
+                telemetry_info.append(f"• Power:   {power_info} {efficiency}")
+                
+                if i < len(gpu_telemetry) - 1:
+                    telemetry_info.append("")  # Add spacing between GPUs
+        
+        # Fall back to runtime GPU data if no telemetry
+        elif runtime_gpus:
+            for i, gpu in enumerate(runtime_gpus):
+                gpu_id = gpu.get('id', f'GPU-{i}')
+                gpu_util = gpu.get('gpuUtilPercent', 0)
+                mem_util = gpu.get('memoryUtilPercent', 0)
+                
+                # Calculate VRAM usage if we have total VRAM
+                vram_used = f"{(mem_util * total_vram / 100):.1f}" if total_vram > 0 else "?"
+                vram_info = f"{vram_used}/{total_vram}GB" if total_vram > 0 else f"{mem_util:.1f}%"
+                
+                telemetry_info.append(f"🎮 [bold]{gpu_name}[/bold] (#{gpu_id}):")
+                telemetry_info.append(f"• Compute: {gpu_util:5.1f}% {create_util_bar(gpu_util)}")
+                telemetry_info.append(f"• VRAM:    {mem_util:5.1f}% {create_util_bar(mem_util)} ({vram_info})")
+                
+                if i < len(runtime_gpus) - 1:
+                    telemetry_info.append("")  # Add spacing between GPUs
+        
+        if telemetry_info:
+            console.print(Panel("\n".join(telemetry_info), title="🎮 GPU Metrics", box=box.ROUNDED))
     
     # Hardware Configuration section
+    gpu_type_info = machine.get('gpuType', {}) if machine else {}
+    gpu_display_name = gpu_type_info.get('displayName', 'Unknown GPU')
+    gpu_vram = gpu_type_info.get('memoryInGb', '?')
+    gpu_manufacturer = gpu_type_info.get('manufacturer', 'Unknown')
+    
     hardware_info = [
-        f"GPU: {instance_data.get('gpuCount', 1)} × [bold]GPU Type[/bold]", # TODO: Get GPU type from machine data
+        f"GPU: {instance_data.get('gpuCount', 1)} × [bold]{gpu_display_name}[/bold] ({gpu_vram}GB VRAM each)",
+        f"Manufacturer: [cyan]{gpu_manufacturer}[/cyan]",
         f"vCPU: {instance_data.get('vcpuCount', '?')} cores",
-        f"Memory: {instance_data.get('memoryInGb', '?')}GB RAM",
+        f"System RAM: {instance_data.get('memoryInGb', '?')}GB",
         f"Container Disk: {instance_data.get('containerDiskInGb', '?')}GB",
-        f"Volume Disk: {instance_data.get('volumeInGb', 0)}GB" + (" (not mounted)" if instance_data.get('volumeInGb', 0) == 0 else "")
+        f"Volume Disk: {instance_data.get('volumeInGb', 0)}GB" + (" (not mounted)" if instance_data.get('volumeInGb', 0) == 0 else " (mounted)")
     ]
     
     console.print(Panel("\n".join(hardware_info), title="🖥️ Hardware Configuration", box=box.ROUNDED))
@@ -1083,18 +1141,39 @@ def display_enhanced_instance_info(instance_data: dict, live_metrics: bool, inst
     
     console.print(Panel("\n".join(container_info), title="🐳 Container Details", box=box.ROUNDED))
     
-    # Live disk usage if requested
+    # Live system metrics if requested
     if live_metrics and ssh_info:
-        console.print("\n🔍 [yellow]Fetching live disk usage via SSH...[/yellow]")
+        console.print("\n🔍 [yellow]Fetching live system metrics via SSH...[/yellow]")
         try:
-            result = subprocess.run([
-                "bifrost", "launch", ssh_info, "df -h / && echo && du -sh /root/.cache /root/.bifrost 2>/dev/null || true"
-            ], capture_output=True, text=True, timeout=30)
-            
-            if result.returncode == 0:
-                console.print(Panel(result.stdout.strip(), title="💾 Live Disk Usage", box=box.ROUNDED))
+            # Parse SSH connection info (format: username@host:port)
+            if '@' in ssh_info and ':' in ssh_info:
+                user_host, port = ssh_info.rsplit(':', 1)
+                username, host = user_host.split('@', 1)
+                
+                # Commands to get system utilization
+                cmd = (
+                    "echo '=== CPU & Memory ===' && "
+                    "top -bn1 | grep 'Cpu\\|Mem\\|KiB Mem' | head -3 && "
+                    "echo '=== Disk Usage ===' && "
+                    "df -h / && "
+                    "echo '=== GPU Info ===' && "
+                    "nvidia-smi --query-gpu=utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu,power.draw --format=csv,noheader,nounits 2>/dev/null || echo 'nvidia-smi not available'"
+                )
+                
+                result = subprocess.run([
+                    "ssh", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no", 
+                    "-p", port, f"{username}@{host}", cmd
+                ], capture_output=True, text=True, timeout=30)
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    console.print(Panel(result.stdout.strip(), title="📊 Live System Metrics", box=box.ROUNDED))
+                else:
+                    console.print("[yellow]⚠️ Could not fetch live metrics (SSH failed or no output)[/yellow]")
+                    if result.stderr.strip():
+                        console.print(f"[dim]Error: {result.stderr.strip()[:100]}...[/dim]")
             else:
-                console.print("[yellow]⚠️ Could not fetch live disk usage[/yellow]")
+                console.print("[yellow]⚠️ Invalid SSH connection format[/yellow]")
+                
         except Exception as e:
             console.print(f"[yellow]⚠️ Live metrics failed: {e}[/yellow]")
 
