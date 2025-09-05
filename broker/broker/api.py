@@ -20,6 +20,9 @@ def search(
     provider: Optional[str] = None,
     cuda_version: Optional[str] = None,
     manufacturer: Optional[str] = None,
+    # Resource requirements for accurate pricing
+    memory_gb: Optional[int] = None,
+    container_disk_gb: Optional[int] = None,
     # New sorting parameters
     sort: Optional[Callable[[Any], Any]] = None,
     reverse: bool = False
@@ -44,7 +47,8 @@ def search(
     
     # Get all offers from providers
     if provider is None or provider == "runpod":
-        runpod_offers = runpod.search_gpu_offers(cuda_version=cuda_version, manufacturer=manufacturer)
+        runpod_offers = runpod.search_gpu_offers(cuda_version=cuda_version, manufacturer=manufacturer, 
+                                                 memory_gb=memory_gb, container_disk_gb=container_disk_gb)
         offers.extend(runpod_offers)
     
     # Apply pandas-style query if provided
@@ -170,6 +174,10 @@ def create(
         suitable_offers = query
     else:
         # Query object or None - search for suitable offers
+        # Extract memory and disk from kwargs to pass to search
+        memory_gb = kwargs.get('memory_gb')
+        container_disk_gb = kwargs.get('container_disk_gb')
+        
         suitable_offers = search(
             query=query,
             gpu_type=gpu_type,
@@ -177,6 +185,8 @@ def create(
             provider=provider,
             cuda_version=cuda_version,
             manufacturer=manufacturer,
+            memory_gb=memory_gb,
+            container_disk_gb=container_disk_gb,
             sort=sort,
             reverse=reverse
         )

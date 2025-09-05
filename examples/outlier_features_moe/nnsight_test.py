@@ -1,37 +1,45 @@
 import os
 import torch
 from nnsight import LanguageModel
+import time
 
 def extract_and_print_activations(model_name="mistralai/Mixtral-8x7B-v0.1", 
                                  text="The quick brown fox jumps over the lazy dog.", 
                                  layer_idx=3):
     """
     Simple function to extract and print residual stream activations before layer k.
-    
-    Args:
-        model_name: HuggingFace model identifier
-        text: Input text
-        layer_idx: Layer index (0-indexed, so layer_idx=3 means before layer 3)
     """
+    start_time = time.time()
+    
     # Check for HuggingFace token
     if not os.environ.get('HF_TOKEN'):
         print("Warning: HF_TOKEN environment variable not set.")
     
-    print(f"Loading {model_name}...")
+    print(f"[{time.time()-start_time:.1f}s] Starting model initialization: {model_name}")
+    print("DEBUG: About to call LanguageModel() - this will download if not cached...")
+    
+    # This step includes download + creating meta model
     model = LanguageModel(model_name, device_map="auto")
-    print(f"Model loaded. Model is on device: {next(model.parameters()).device}")  # This will show which device (CPU/GPU) the model is on
-
-
-        
-    # Tokenize input
+    
+    print(f"[{time.time()-start_time:.1f}s] DEBUG: LanguageModel object created successfully")
+    print(f"Model is on device: {next(model.parameters()).device}")  # Should show "meta"
+    
+    # Tokenization (fast)
+    print(f"[{time.time()-start_time:.1f}s] DEBUG: Starting tokenization...")
     print(f"Input text: '{text}'")
     inputs = model.tokenizer(text, return_tensors="pt")
-    print(f"Tokenized input shape: {inputs['input_ids'].shape}")
+    print(f"[{time.time()-start_time:.1f}s] DEBUG: Tokenization complete. Shape: {inputs['input_ids'].shape}")
     
-    # Forward pass with tracing to get activations before layer k
-    print(f"Extracting activations before layer {layer_idx}...")
+    # This is where the real loading happens
+    print(f"[{time.time()-start_time:.1f}s] DEBUG: About to enter trace context - MODEL WILL LOAD TO REAL DEVICES NOW")
+    print("This is the slow step - model loading from meta to actual hardware...")
     
     with model.trace(inputs) as tracer:
+        print(f"[{time.time()-start_time:.1f}s] DEBUG: Inside trace context - model is now loaded!")
+        print(f"Model is now on device: {next(model.parameters()).device}")  # Should show actual device
+        
+        print(f"[{time.time()-start_time:.1f}s] DEBUG: Setting up activation extraction for layer {layer_idx}...")
+        
         if layer_idx == 0:
             # Before first layer - use embeddings
             activations = model.model.embed_tokens.output
@@ -41,9 +49,14 @@ def extract_and_print_activations(model_name="mistralai/Mixtral-8x7B-v0.1",
         
         # Save the activations tensor
         activations.save()
+        print(f"[{time.time()-start_time:.1f}s] DEBUG: Activation saving set up, about to exit trace context...")
+    
+    # Trace context has exited - inference is complete
+    print(f"[{time.time()-start_time:.1f}s] DEBUG: Trace context exited - inference complete!")
     
     # Print activation details
-    print(f"\nActivation shape: {activations.value.shape}")
+    print(f"[{time.time()-start_time:.1f}s] Processing results...")
+    print(f"Activation shape: {activations.value.shape}")
     print(f"Activation dtype: {activations.value.dtype}")
     print(f"Activation device: {activations.value.device}")
     
@@ -58,6 +71,12 @@ def extract_and_print_activations(model_name="mistralai/Mixtral-8x7B-v0.1",
     # Print first few values as sample
     print(f"\nFirst 5 values of first token, first 10 dimensions:")
     print(act_tensor[0, 0, :10])
+
+    torch.save(activations.value, f'activations_layer{layer_idx}.pt')
+    print(f"Activations saved to: activations_layer{layer_idx}.pt")
+    
+    total_time = time.time() - start_time
+    print(f"\n[COMPLETE] Total runtime: {total_time:.1f} seconds ({total_time/60:.1f} minutes)")
     
     return activations.value
 

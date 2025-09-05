@@ -65,9 +65,9 @@ def _internal_search(gpu_type=None, max_price=None, min_vram=None, provider=None
         combined_query = query_conditions[0]
         for condition in query_conditions[1:]:
             combined_query = combined_query & condition
-        offers = client.search(query=combined_query, cuda_version=cuda_version, sort=sort_func, reverse=reverse)
+        offers = client.search(query=combined_query, cuda_version=cuda_version, manufacturer=manufacturer, sort=sort_func, reverse=reverse)
     else:
-        offers = client.search(cuda_version=cuda_version, sort=sort_func, reverse=reverse)
+        offers = client.search(cuda_version=cuda_version, manufacturer=manufacturer, sort=sort_func, reverse=reverse)
     
     return offers
 
@@ -80,6 +80,7 @@ def search(
     provider: Optional[str] = typer.Option(None, "--provider", help="Specific provider to search"),
     cloud_type: Optional[str] = typer.Option(None, "--cloud-type", help="Cloud type: 'secure' or 'community'"),
     cuda_version: Optional[str] = typer.Option(None, "--cuda-version", help="CUDA version filter (e.g., '12.0', '11.8')"),
+    manufacturer: Optional[str] = typer.Option(None, "--manufacturer", help="GPU manufacturer (e.g., 'nvidia', 'amd')"),
     sort_by: Optional[str] = typer.Option("value", "--sort", help="Sort by: 'price', 'memory', 'value' (memory/price)"),
     reverse: bool = typer.Option(False, "--reverse", help="Sort in descending order"),
     analysis: bool = typer.Option(False, "--analysis", help="Show availability analysis by cloud type")
@@ -124,9 +125,9 @@ def search(
         combined_query = query_conditions[0]
         for condition in query_conditions[1:]:
             combined_query = combined_query & condition
-        offers = client.search(query=combined_query, cuda_version=cuda_version, sort=sort_func, reverse=reverse)
+        offers = client.search(query=combined_query, cuda_version=cuda_version, manufacturer=manufacturer, sort=sort_func, reverse=reverse)
     else:
-        offers = client.search(cuda_version=cuda_version, sort=sort_func, reverse=reverse)
+        offers = client.search(cuda_version=cuda_version, manufacturer=manufacturer, sort=sort_func, reverse=reverse)
     
     if not offers:
         console.print("❌ No GPU offers found matching your criteria")
@@ -225,6 +226,7 @@ def create(
     cloud_type: Optional[str] = typer.Option("secure", "--cloud-type", help="Cloud type: 'secure' (default) or 'community'"),
     max_price: Optional[float] = typer.Option(None, "--max-price", help="Maximum price per hour"),
     min_vram: Optional[int] = typer.Option(None, "--min-vram", help="Minimum VRAM in GB"),
+    manufacturer: Optional[str] = typer.Option(None, "--manufacturer", help="GPU manufacturer (e.g., 'nvidia', 'amd')"),
     image: str = typer.Option("runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04", "--image", help="Docker image"),
     name: Optional[str] = typer.Option(None, "--name", help="Instance name"),
     sort_by: Optional[str] = typer.Option("value", "--sort", help="Sort by: 'price', 'memory', 'value' (memory/price)"),
@@ -292,6 +294,12 @@ def create(
             "reverse": (sort_by != "price"),  # Descending for memory/value, ascending for price
             "max_attempts": max_attempts
         }
+        
+        # Add manufacturer filter if specified
+        if manufacturer:
+            create_kwargs["manufacturer"] = manufacturer
+            if not print_ssh:
+                console.print(f"🏭 Filtering by manufacturer: {manufacturer}")
         
         # Add disk configuration if specified
         if container_disk is not None:
@@ -567,7 +575,8 @@ def instances_list(
     simple: bool = typer.Option(False, "--simple", help="Simple output format for scripting (id,name,status,ssh)"),
     json_output: bool = typer.Option(False, "--json", help="JSON output format for scripting"),
     name: Optional[str] = typer.Option(None, "--name", help="Filter by instance name"),
-    ssh_only: bool = typer.Option(False, "--ssh-only", help="Output only SSH connection strings (one per line)")
+    ssh_only: bool = typer.Option(False, "--ssh-only", help="Output only SSH connection strings (one per line)"),
+    proxy_ok: bool = typer.Option(False, "--proxy-ok", help="Allow proxy SSH connections in --ssh-only output (default: direct SSH only)")
 ):
     """List user instances"""
     if not simple and not json_output and not ssh_only:
@@ -600,6 +609,13 @@ def instances_list(
         for instance in instances:
             # Only output running instances with SSH info
             if str(instance.status).lower() == "instancestatus.running" and instance.public_ip and instance.ssh_port:
+                # Check if this is a proxy connection (RunPod proxy uses ssh.runpod.io)
+                is_proxy = instance.public_ip == "ssh.runpod.io"
+                
+                # Skip proxy connections unless --proxy-ok is specified
+                if is_proxy and not proxy_ok:
+                    continue
+                
                 if instance.ssh_port == 22:
                     ssh_cmd = f"ssh {instance.ssh_username}@{instance.public_ip}"
                 else:

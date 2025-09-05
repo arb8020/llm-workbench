@@ -188,6 +188,7 @@ class GPUClient:
         max_price_per_hour: Optional[float] = None,
         provider: Optional[str] = None,
         cuda_version: Optional[str] = None,
+        manufacturer: Optional[str] = None,
         # Sorting
         sort: Optional[Callable[[Any], Any]] = None,
         reverse: bool = False
@@ -208,6 +209,7 @@ class GPUClient:
             max_price_per_hour=max_price_per_hour,
             provider=provider,
             cuda_version=cuda_version,
+            manufacturer=manufacturer,
             sort=sort,
             reverse=reverse
         )

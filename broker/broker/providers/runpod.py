@@ -72,9 +72,10 @@ def _make_graphql_request(query: str, variables: Optional[Dict] = None) -> Dict[
     return data["data"]
 
 
-def search_gpu_offers(cuda_version: Optional[str] = None, manufacturer: Optional[str] = None) -> List[GPUOffer]:
+def search_gpu_offers(cuda_version: Optional[str] = None, manufacturer: Optional[str] = None, 
+                      memory_gb: Optional[int] = None, container_disk_gb: Optional[int] = None) -> List[GPUOffer]:
     """Search for available GPU offers on RunPod with optional CUDA version and manufacturer filtering"""
-    # Build lowestPrice input with optional CUDA version filtering
+    # Build lowestPrice input - RunPod API only supports basic parameters
     lowest_price_input = "{ gpuCount: 1 }"
     if cuda_version:
         lowest_price_input = f'{{ gpuCount: 1, cudaVersion: "{cuda_version}" }}'
