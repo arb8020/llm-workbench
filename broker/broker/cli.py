@@ -232,7 +232,10 @@ def create(
     print_ssh: bool = typer.Option(False, "--print-ssh", help="Print SSH connection string when ready (for piping to bifrost)"),
     allow_proxy: bool = typer.Option(False, "--allow-proxy", help="Allow proxy SSH connections (default: wait for direct SSH)"),
     container_disk: Optional[int] = typer.Option(None, "--container-disk", help="Container disk size in GB (default: 50GB)"),
-    volume_disk: Optional[int] = typer.Option(None, "--volume-disk", help="Volume disk size in GB (default: 0GB)")
+    volume_disk: Optional[int] = typer.Option(None, "--volume-disk", help="Volume disk size in GB (default: 0GB)"),
+    # Jupyter configuration
+    jupyter: bool = typer.Option(False, "--jupyter", help="Auto-start Jupyter Lab on port 8888"),
+    jupyter_password: Optional[str] = typer.Option(None, "--jupyter-password", help="Jupyter authentication token (default: random)")
 ):
     """Provision a new GPU instance using pandas-style search"""
     if not print_ssh:
@@ -300,6 +303,26 @@ def create(
             if not print_ssh:
                 console.print(f"💾 Volume disk: {volume_disk}GB")
         
+        # Add Jupyter configuration if enabled
+        if jupyter:
+            create_kwargs["start_jupyter"] = True
+            create_kwargs["exposed_ports"] = [8888]
+            create_kwargs["enable_http_proxy"] = True
+            
+            if jupyter_password:
+                create_kwargs["jupyter_password"] = jupyter_password
+            else:
+                # Generate random password if not provided
+                import secrets
+                import string
+                chars = string.ascii_letters + string.digits
+                jupyter_password = ''.join(secrets.choice(chars) for _ in range(12))
+                create_kwargs["jupyter_password"] = jupyter_password
+            
+            if not print_ssh:
+                console.print(f"📓 Jupyter Lab will be started on port 8888")
+                console.print(f"🔑 Jupyter token: {jupyter_password}")
+        
         instance = client.create(**create_kwargs)
     except Exception as e:
         console.print(f"❌ Provisioning failed: {e}")
@@ -346,6 +369,19 @@ def create(
             console.print(f"   Status: {instance.status}")
             console.print(f"   GPU: {instance.gpu_type} x{instance.gpu_count}")
             console.print(f"   Price: ${instance.price_per_hour:.3f}/hr")
+            
+            # Add Jupyter information if enabled
+            if jupyter:
+                proxy_url = instance.get_proxy_url(8888)
+                console.print(f"")
+                console.print(f"📓 [bold green]Jupyter Lab:[/bold green]")
+                console.print(f"   🔗 Proxy URL: {proxy_url}")
+                console.print(f"   🔑 Token: {jupyter_password}")
+                console.print(f"")
+                console.print(f"🔌 [bold blue]For Google Colab connection:[/bold blue]")
+                console.print(f"   1. Wait for SSH: [cyan]broker instances status {instance.id}[/cyan]")
+                console.print(f"   2. SSH tunnel: [cyan]ssh -p <port> root@<ip> -L 8888:localhost:8888[/cyan]")  
+                console.print(f"   3. Connect Colab to: [cyan]http://localhost:8888/?token={jupyter_password}[/cyan]")
     else:
         console.print("❌ Failed to provision instance")
         sys.exit(1)

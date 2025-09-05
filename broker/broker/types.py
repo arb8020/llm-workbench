@@ -365,6 +365,9 @@ class ProvisionRequest:
     exposed_ports: Optional[List[int]] = None  # Ports to expose via HTTP proxy
     enable_http_proxy: bool = True  # Enable RunPod's HTTP proxy
     manufacturer: Optional[str] = None  # GPU manufacturer filter (e.g., "nvidia", "amd")
+    # Jupyter configuration
+    start_jupyter: bool = False  # Auto-start Jupyter Lab
+    jupyter_password: Optional[str] = None  # Jupyter authentication token
 
 
 @dataclass

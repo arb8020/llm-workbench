@@ -181,6 +181,13 @@ def provision_instance(request: ProvisionRequest, ssh_startup_script: Optional[s
             "value": ssh_startup_script
         })
     
+    # Add Jupyter password if provided
+    if request.jupyter_password:
+        env_vars.append({
+            "key": "JUPYTER_PASSWORD",
+            "value": request.jupyter_password
+        })
+    
     pod_input = {
         "gpuCount": request.gpu_count,
         "imageName": request.image,
@@ -192,7 +199,8 @@ def provision_instance(request: ProvisionRequest, ssh_startup_script: Optional[s
         "minVcpuCount": 1,  # Required minimum CPU
         "minMemoryInGb": 4,  # Required minimum memory
         "ports": _build_ports_string(request.exposed_ports, request.enable_http_proxy),
-        "startSsh": True,  # ← MISSING! This enables SSH daemon
+        "startSsh": True,  # This enables SSH daemon
+        "startJupyter": request.start_jupyter,  # Auto-start Jupyter Lab
         "env": env_vars
     }
     

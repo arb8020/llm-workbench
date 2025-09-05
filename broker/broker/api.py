@@ -122,6 +122,9 @@ def create(
     # Port exposure configuration
     exposed_ports: Optional[List[int]] = None,
     enable_http_proxy: bool = True,
+    # Jupyter configuration  
+    start_jupyter: bool = False,
+    jupyter_password: Optional[str] = None,
     # Retry parameters
     max_attempts: int = 3,
     **kwargs
@@ -204,6 +207,8 @@ def create(
                 spot_instance=offer.spot,
                 exposed_ports=exposed_ports,
                 enable_http_proxy=enable_http_proxy,
+                start_jupyter=start_jupyter,
+                jupyter_password=jupyter_password,
                 manufacturer=manufacturer,
                 **kwargs
             )
