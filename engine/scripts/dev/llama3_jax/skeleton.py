@@ -11,9 +11,11 @@ Usage:
 import jax
 import jax.numpy as jnp
 import einops
+import numpy as np
 from typing import Dict, Optional, Callable
 from dataclasses import dataclass
 from jax import Array
+from engine.core.utils.weights import load_llama_weights, download_llama_weights
 
 """
 B: batch size
@@ -48,27 +50,89 @@ class Llama3Config:
         assert self.n_heads % self.n_kv_heads == 0, f"n_heads ({self.n_heads}) must be divisible by n_kv_heads ({self.n_kv_heads})"
 
 
+# rms norm 
+# rms norm
+# swiglu
+# kv cache
+# gqa
+# rope
+
+
 def llama3_forward(input_ids: jnp.ndarray, weights: Dict[str, Array], config: Llama3Config) -> jnp.ndarray:
     """Forward pass through Llama3 model"""
-    # TODO: Implement the full Llama3 forward pass
-    # 1. Token embeddings (no positional embeddings in Llama3)
-    # 2. Precompute RoPE frequencies
-    # 3. Pass through transformer blocks
-    # 4. Final RMS norm
-    # 5. Language modeling head (often tied to input embeddings)
-    
     batch_size, seq_len = input_ids.shape
-    
-    # Placeholder return - replace with actual implementation
     return jnp.zeros((batch_size, seq_len, config.vocab_size))
 
+def convert_hf_weights_to_jax_format(hf_weights: Dict[str, Array]) -> Dict[str, Array]:
+    """Convert HuggingFace weight names to our expected format."""
+    converted = {}
+    
+    for name, param in hf_weights.items():
+        # Keep original names but add some friendly aliases
+        converted[name] = param
+        
+        # Add friendly aliases that our code expects
+        if name == 'model.embed_tokens.weight':
+            converted['embed_tokens'] = param
+        elif name == 'model.norm.weight':
+            converted['norm'] = param
+        elif name == 'lm_head.weight':
+            converted['lm_head'] = param
+    
+    return converted
+
+def load_and_print_real_weights() -> Dict[str, Array]:
+    """Load real LLaMA weights and print some info about them."""
+    print("📦 Loading real LLaMA-3.1-8B weights from HuggingFace...")
+    
+    # Download and load weights
+    model_dir = download_llama_weights("meta-llama/Llama-3.1-8B-Instruct")
+    weights_obj = load_llama_weights(model_dir)
+    
+    # Convert to JAX arrays and print info
+    hf_weights = {}
+    print("\n🔍 Original HuggingFace weight shapes:")
+    for name, param in weights_obj.params.items():
+        hf_weights[name] = jnp.array(param)
+        if any(key in name for key in ['embed_tokens', 'norm', 'lm_head', 'layers.0.']):
+            print(f"  {name}: {param.shape}")
+    
+    # Convert to our expected format
+    weights = convert_hf_weights_to_jax_format(hf_weights)
+    
+    print(f"\n📊 Total parameters: {len(weights_obj.params):,}")
+    total_params = sum(p.size for p in weights_obj.params.values())
+    print(f"📈 Total parameter count: {total_params:,}")
+    
+    # Print some converted weight names for debugging
+    print(f"\n🔄 Sample converted weight names:")
+    sample_names = [k for k in weights.keys() if any(x in k for x in ['embed_tokens', 'norm', 'layers.0.', 'lm_head'])][:5]
+    for name in sample_names:
+        print(f"  {name}: {weights[name].shape}")
+    
+    return weights
 
 if __name__ == "__main__":
     config = Llama3Config(training=True)
     test_input = jnp.array([[1, 2, 3, 4, 5]])  # dummy tokens
     
-    # TODO: Load actual Llama3 weights
-    dummy_weights = {}
+    # Load actual Llama3 weights
+    print("🚀 LLaMA-3.1 JAX Implementation - Loading real weights")
+    print("Starting with real weight loading...")
+    print()
     
-    logits = llama3_forward(test_input, dummy_weights, config)
-    print(f"Output shape: {logits.shape}")
+    try:
+        real_weights = load_and_print_real_weights()
+        
+        print("\n🔥 Running LLaMA forward pass with real weights...")
+        logits = llama3_forward(test_input, real_weights, config)
+        print(f"Output shape: {logits.shape}")
+        
+    except KeyboardInterrupt:
+        print("\n🛑 Interrupted by user")
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    print("\n✅ Script completed!")
