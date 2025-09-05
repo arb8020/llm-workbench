@@ -19,6 +19,7 @@ def search(
     max_price_per_hour: Optional[float] = None,
     provider: Optional[str] = None,
     cuda_version: Optional[str] = None,
+    manufacturer: Optional[str] = None,
     # New sorting parameters
     sort: Optional[Callable[[Any], Any]] = None,
     reverse: bool = False
@@ -32,6 +33,7 @@ def search(
         max_price_per_hour: Legacy - Maximum price per hour filter
         provider: Specific provider to search (default: all providers)
         cuda_version: Filter by specific CUDA version (e.g., "12.0", "11.8")
+        manufacturer: Filter by GPU manufacturer (e.g., "nvidia", "amd")
         sort: Callable to extract sort key (e.g., lambda x: x.memory_gb/x.price_per_hour)
         reverse: Sort in descending order (default: False)
     
@@ -42,7 +44,7 @@ def search(
     
     # Get all offers from providers
     if provider is None or provider == "runpod":
-        runpod_offers = runpod.search_gpu_offers(cuda_version=cuda_version)
+        runpod_offers = runpod.search_gpu_offers(cuda_version=cuda_version, manufacturer=manufacturer)
         offers.extend(runpod_offers)
     
     # Apply pandas-style query if provided
@@ -114,6 +116,7 @@ def create(
     max_price_per_hour: Optional[float] = None,
     provider: Optional[str] = None,
     cuda_version: Optional[str] = None,
+    manufacturer: Optional[str] = None,
     sort: Optional[Callable[[Any], Any]] = None,
     reverse: bool = False,
     # Port exposure configuration
@@ -134,6 +137,7 @@ def create(
         max_price_per_hour: Filter by max price (used if query is None)
         provider: Filter by provider (used if query is None)
         cuda_version: Filter by CUDA version (used if query is None)
+        manufacturer: Filter by GPU manufacturer (used if query is None)
         sort: Sort key function (used if query is None)
         reverse: Sort order (used if query is None)
         max_attempts: Try up to this many offers before giving up
@@ -169,6 +173,7 @@ def create(
             max_price_per_hour=max_price_per_hour,
             provider=provider,
             cuda_version=cuda_version,
+            manufacturer=manufacturer,
             sort=sort,
             reverse=reverse
         )
@@ -199,6 +204,7 @@ def create(
                 spot_instance=offer.spot,
                 exposed_ports=exposed_ports,
                 enable_http_proxy=enable_http_proxy,
+                manufacturer=manufacturer,
                 **kwargs
             )
             
