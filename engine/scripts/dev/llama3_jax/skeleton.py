@@ -112,9 +112,100 @@ class Llama3Config:
 # how many blocks in llama 3.1-8b, concise, ignore notes
 # """ Llama 3.1-8b has 32 transformer blocks/layers."""
 
+
+"""
+🔍 Original HuggingFace weight shapes:
+  model.embed_tokens.weight: (128256, 4096)
+  model.layers.0.input_layernorm.weight: (4096,)
+  model.layers.0.mlp.down_proj.weight: (4096, 14336)
+  model.layers.0.mlp.gate_proj.weight: (14336, 4096)
+  model.layers.0.mlp.up_proj.weight: (14336, 4096)
+  model.layers.0.post_attention_layernorm.weight: (4096,)
+  model.layers.0.self_attn.k_proj.weight: (1024, 4096)
+  model.layers.0.self_attn.o_proj.weight: (4096, 4096)
+  model.layers.0.self_attn.q_proj.weight: (4096, 4096)
+  model.layers.0.self_attn.v_proj.weight: (1024, 4096)
+  model.layers.1.input_layernorm.weight: (4096,)
+  model.layers.1.post_attention_layernorm.weight: (4096,)
+  model.layers.2.input_layernorm.weight: (4096,)
+  model.layers.2.post_attention_layernorm.weight: (4096,)
+  model.layers.3.input_layernorm.weight: (4096,)
+  model.layers.3.post_attention_layernorm.weight: (4096,)
+  model.layers.4.input_layernorm.weight: (4096,)
+  model.layers.4.post_attention_layernorm.weight: (4096,)
+  model.layers.5.input_layernorm.weight: (4096,)
+  model.layers.5.post_attention_layernorm.weight: (4096,)
+  model.layers.6.input_layernorm.weight: (4096,)
+  model.layers.6.post_attention_layernorm.weight: (4096,)
+  model.layers.7.input_layernorm.weight: (4096,)
+  model.layers.7.post_attention_layernorm.weight: (4096,)
+  model.layers.8.input_layernorm.weight: (4096,)
+  model.layers.8.post_attention_layernorm.weight: (4096,)
+  model.layers.10.input_layernorm.weight: (4096,)
+  model.layers.10.post_attention_layernorm.weight: (4096,)
+  model.layers.11.input_layernorm.weight: (4096,)
+  model.layers.11.post_attention_layernorm.weight: (4096,)
+  model.layers.12.input_layernorm.weight: (4096,)
+  model.layers.12.post_attention_layernorm.weight: (4096,)
+  model.layers.13.input_layernorm.weight: (4096,)
+  model.layers.13.post_attention_layernorm.weight: (4096,)
+  model.layers.14.input_layernorm.weight: (4096,)
+  model.layers.14.post_attention_layernorm.weight: (4096,)
+  model.layers.15.input_layernorm.weight: (4096,)
+  model.layers.15.post_attention_layernorm.weight: (4096,)
+  model.layers.16.input_layernorm.weight: (4096,)
+  model.layers.16.post_attention_layernorm.weight: (4096,)
+  model.layers.17.input_layernorm.weight: (4096,)
+  model.layers.17.post_attention_layernorm.weight: (4096,)
+  model.layers.18.input_layernorm.weight: (4096,)
+  model.layers.18.post_attention_layernorm.weight: (4096,)
+  model.layers.19.input_layernorm.weight: (4096,)
+  model.layers.19.post_attention_layernorm.weight: (4096,)
+  model.layers.9.input_layernorm.weight: (4096,)
+  model.layers.9.post_attention_layernorm.weight: (4096,)
+  model.layers.20.input_layernorm.weight: (4096,)
+  model.layers.20.post_attention_layernorm.weight: (4096,)
+  model.layers.21.input_layernorm.weight: (4096,)
+  model.layers.21.post_attention_layernorm.weight: (4096,)
+  model.layers.22.input_layernorm.weight: (4096,)
+  model.layers.22.post_attention_layernorm.weight: (4096,)
+  model.layers.23.input_layernorm.weight: (4096,)
+  model.layers.23.post_attention_layernorm.weight: (4096,)
+  model.layers.24.input_layernorm.weight: (4096,)
+  model.layers.24.post_attention_layernorm.weight: (4096,)
+  model.layers.25.input_layernorm.weight: (4096,)
+  model.layers.25.post_attention_layernorm.weight: (4096,)
+  model.layers.26.input_layernorm.weight: (4096,)
+  model.layers.26.post_attention_layernorm.weight: (4096,)
+  model.layers.27.input_layernorm.weight: (4096,)
+  model.layers.27.post_attention_layernorm.weight: (4096,)
+  model.layers.28.input_layernorm.weight: (4096,)
+  model.layers.28.post_attention_layernorm.weight: (4096,)
+  model.layers.29.input_layernorm.weight: (4096,)
+  model.layers.29.post_attention_layernorm.weight: (4096,)
+  model.layers.30.input_layernorm.weight: (4096,)
+  model.layers.30.post_attention_layernorm.weight: (4096,)
+  lm_head.weight: (128256, 4096)
+  model.layers.31.input_layernorm.weight: (4096,)
+  model.layers.31.post_attention_layernorm.weight: (4096,)
+  model.norm.weight: (4096,)
+"""
+
+
+def project_input_ids(input_ids: jnp.ndarray, weights: Dict[str, Array], config: Llama3Config) -> jnp.ndarray:
+    projected_BLD = weights['model.embed_tokens.weight'][input_ids]
+
+    return projected_BLD
+
 def llama3_forward(input_ids: jnp.ndarray, weights: Dict[str, Array], config: Llama3Config) -> jnp.ndarray:
-    """Forward pass through Llama3 model"""
+   """Forward pass through Llama3 model"""
     batch_size, seq_len = input_ids.shape
+    vocab_size = config.vocab_size
+
+    project_BLD = project_input_ids(input_ids, weights, config)
+
+
+
     return jnp.zeros((batch_size, seq_len, config.vocab_size))
 
 if __name__ == "__main__":

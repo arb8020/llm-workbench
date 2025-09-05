@@ -296,24 +296,6 @@ def gpt2_forward(input_ids: jnp.ndarray, weights: Dict[str, Array], config: GPT2
     batch_size, seq_len = input_ids.shape
     vocab_size = config.vocab_size
 
-    # Validate required weight keys exist
-    required_keys = [
-        'wte.weight', 'wpe.weight', 'ln_f.weight', 'ln_f.bias'
-    ]
-    # Add layer-specific keys
-    for i in range(config.n_layers):
-        layer_keys = [
-            f'h.{i}.ln_1.weight', f'h.{i}.ln_1.bias',
-            f'h.{i}.attn.c_attn.weight', f'h.{i}.attn.c_attn.bias',
-            f'h.{i}.attn.c_proj.weight', f'h.{i}.attn.c_proj.bias',
-            f'h.{i}.ln_2.weight', f'h.{i}.ln_2.bias',
-            f'h.{i}.mlp.c_fc.weight', f'h.{i}.mlp.c_fc.bias',
-            f'h.{i}.mlp.c_proj.weight', f'h.{i}.mlp.c_proj.bias'
-        ]
-        required_keys.extend(layer_keys)
-    
-    validate_gpt2_weights(weights, required_keys)
-
     projected_embedded_BLD = project_and_embed(input_ids, weights, config)
     x_BLD = projected_embedded_BLD
 
