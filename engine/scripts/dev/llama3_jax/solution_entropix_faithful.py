@@ -126,8 +126,13 @@ def apply_rotary_emb(xq: jax.Array, xk: jax.Array, freqs_cis: jax.Array, dtype: 
     reshape_xk = xk.astype(jnp.float32).reshape(*xk.shape[:-1], -1, 2)
     xq_ = jax.lax.complex(reshape_xq[..., 0], reshape_xq[..., 1])
     xk_ = jax.lax.complex(reshape_xk[..., 0], reshape_xk[..., 1])
-    xq_out = xq_ * freqs_cis[None, :, None, :]
-    xk_out = xk_ * freqs_cis[None, :, None, :]
+    
+    # Slice freqs_cis to match sequence length
+    seq_len = xq.shape[1]
+    freqs_cis_sliced = freqs_cis[:seq_len]
+    
+    xq_out = xq_ * freqs_cis_sliced[None, :, None, :]
+    xk_out = xk_ * freqs_cis_sliced[None, :, None, :]
     xq_out = jnp.stack((jnp.real(xq_out), jnp.imag(xq_out)), axis=-1).reshape(*xq_out.shape[:-1], -1)
     xk_out = jnp.stack((jnp.real(xk_out), jnp.imag(xk_out)), axis=-1).reshape(*xk_out.shape[:-1], -1)
     return xq_out.astype(dtype), xk_out.astype(dtype)
