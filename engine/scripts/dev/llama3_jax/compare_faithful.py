@@ -30,13 +30,14 @@ def load_faithful_implementation(mode):
     """Load the faithful entropix implementation."""
     if mode == "faithful":
         try:
-            from solution_entropix_faithful import xfmr, LLAMA_1B_PARAMS, XfmrWeights, KVCache
+            from solution_entropix_faithful import xfmr, LLAMA_1B_PARAMS, XfmrWeights, KVCache, load_and_convert_weights
             print("✅ Successfully imported faithful entropix implementation")
             
-            # For now, return placeholders until we can load real weights
-            print("⏳ Weight loading not yet implemented - using dummy weights for architecture test")
-            dummy_weights = None  # Will implement when we have model access
-            return xfmr, dummy_weights, LLAMA_1B_PARAMS
+            # Load real weights using the implemented function
+            print("📦 Loading Llama-3.2-1B weights...")
+            weights = load_and_convert_weights("meta-llama/Llama-3.2-1B-Instruct")
+            print("✅ Weight loading complete!")
+            return xfmr, weights, LLAMA_1B_PARAMS
         except ImportError as e:
             print(f"❌ Failed to import faithful implementation: {e}")
             sys.exit(1)
@@ -70,38 +71,44 @@ def sample_next_token(logits: jnp.ndarray, temperature: float = 1.0, top_k: int 
         return int(jax.random.categorical(key, jnp.log(probs)))
 
 def generate_tokens_jax(xfmr_fn, weights, config, prompt_tokens: np.ndarray, 
-                       n_generate: int = 10, temperature: float = 1.0) -> tuple[np.ndarray, dict]:
+                       n_generate: int = 10, temperature: float = 0.0) -> tuple[np.ndarray, dict]:
     """Generate tokens using JAX implementation with KV caching"""
     batch_size, prompt_len = prompt_tokens.shape
     generated_tokens = []
     kv_cache = None
     
-    # Convert to JAX array
-    current_tokens = jnp.array(prompt_tokens)
-    
     print(f"🔥 Generating {n_generate} tokens with JAX (prompt length: {prompt_len})")
     
     generation_times = []
+    cur_pos = 0
+    
+    # Full sequence for first forward pass (including prompt)
+    current_sequence = jnp.array(prompt_tokens)
     
     for i in range(n_generate):
         start_time = time.time()
         
         if i == 0:
             # First forward pass - process entire prompt
-            logits, kv_cache = xfmr_fn(weights, config, current_tokens, 0, kv_cache)
+            logits, kv_cache = xfmr_fn(weights, config, current_sequence, cur_pos, kv_cache)
             cur_pos = prompt_len
         else:
-            # Subsequent passes - only process new token
-            new_token_array = jnp.array([[next_token]])
-            logits, kv_cache = xfmr_fn(weights, config, new_token_array, cur_pos, kv_cache)
+            # Subsequent passes - only process new token with KV cache
+            new_token_input = jnp.array([[next_token]])
+            logits, kv_cache = xfmr_fn(weights, config, new_token_input, cur_pos, kv_cache)
             cur_pos += 1
         
-        # Sample next token
-        next_token = sample_next_token(logits[0], temperature)
+        # Sample next token (greedy for deterministic comparison if temperature=0)
+        if temperature == 0.0:
+            next_token = int(jnp.argmax(logits[0, -1]))
+        else:
+            next_token = sample_next_token(logits[0], temperature)
+        
         generated_tokens.append(next_token)
         
-        # Prepare for next iteration
-        current_tokens = jnp.array([[next_token]])
+        # Update sequence for next iteration (only used in first pass)
+        if i == 0:
+            current_sequence = jnp.concatenate([current_sequence, jnp.array([[next_token]])], axis=1)
         
         generation_times.append(time.time() - start_time)
         
@@ -180,19 +187,89 @@ def test_generation_comparison(xfmr_fn, weights, config, n_generate: int = 10):
         return False
 
 def test_kv_cache_functionality(xfmr_fn, weights, config):
-    """Test that KV cache is working correctly"""
+    """Test that KV cache is working correctly by comparing cached vs non-cached results"""
     print("\n🧪 Testing KV Cache Functionality")
     print("=" * 60)
     
-    try:
-        # This would test KV cache consistency
-        # For now, just verify the function signature works
-        print("✅ KV cache architecture test passed")
-        print("⏳ Full KV cache validation pending weight loading")
+    if weights is None:
+        print("⏳ Skipping KV cache test - weights not loaded")
         return True
+    
+    try:
+        # Test sequence: prompt + one generated token
+        prompt_tokens = jnp.array([[1, 2, 3, 4, 5]])  # Simple test sequence
+        batch_size, seq_len = prompt_tokens.shape
+        
+        print(f"Testing with prompt: {prompt_tokens.tolist()}")
+        
+        # Method 1: Full recomputation for each step
+        print("🔄 Method 1: Full recomputation")
+        full_sequence = prompt_tokens
+        logits_recompute_list = []
+        
+        for step in range(2):  # Generate 2 tokens
+            logits, _ = xfmr_fn(weights, config, full_sequence, 0, None)
+            next_token = int(jnp.argmax(logits[0, -1]))
+            logits_recompute_list.append(logits[0, -1])
+            
+            # Extend sequence
+            full_sequence = jnp.concatenate([full_sequence, jnp.array([[next_token]])], axis=1)
+            print(f"  Step {step+1}: token {next_token}")
+        
+        # Method 2: KV cache incremental computation
+        print("🚀 Method 2: KV cache incremental")
+        kv_cache = None
+        current_input = prompt_tokens
+        cur_pos = 0
+        logits_cached_list = []
+        
+        for step in range(2):  # Generate 2 tokens
+            logits, kv_cache = xfmr_fn(weights, config, current_input, cur_pos, kv_cache)
+            next_token = int(jnp.argmax(logits[0, -1]))
+            logits_cached_list.append(logits[0, -1])
+            
+            # Update for next iteration
+            if step == 0:
+                cur_pos = seq_len  # After processing prompt
+            else:
+                cur_pos += 1  # After processing previous token
+            
+            current_input = jnp.array([[next_token]])  # Next input is just the new token
+            print(f"  Step {step+1}: token {next_token}")
+        
+        # Compare logits from both methods
+        print("🔍 Comparing recompute vs KV cache logits...")
+        all_match = True
+        max_diff = 0.0
+        
+        for step in range(2):
+            logits_recompute = logits_recompute_list[step]
+            logits_cached = logits_cached_list[step]
+            
+            # Compare logits
+            abs_diff = jnp.abs(logits_recompute - logits_cached)
+            max_step_diff = float(jnp.max(abs_diff))
+            max_diff = max(max_diff, max_step_diff)
+            
+            step_match = jnp.allclose(logits_recompute, logits_cached, rtol=1e-4, atol=1e-3)
+            all_match = all_match and step_match
+            
+            print(f"  Step {step+1}: max_diff={max_step_diff:.6f}, match={step_match}")
+        
+        print(f"Overall max difference: {max_diff:.6f}")
+        print(f"KV cache correctness: {'✅ PASS' if all_match else '❌ FAIL'}")
+        
+        if all_match:
+            print("🎉 KV cache produces identical results to full recomputation!")
+        else:
+            print("⚠️  KV cache results differ from full recomputation")
+        
+        return all_match
         
     except Exception as e:
         print(f"❌ KV cache test failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def main():
