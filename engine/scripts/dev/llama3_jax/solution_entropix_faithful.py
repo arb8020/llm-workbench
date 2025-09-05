@@ -91,6 +91,10 @@ class KVCache(NamedTuple):
     
     def update(self, xk: jax.Array, xv: jax.Array, layer_idx: int, cur_pos: int, n_rep: int):
         """Update cache with new key-value pairs (exactly matching original entropix)"""
+        # Debug shapes
+        seq_len = xk.shape[1] 
+        print(f"KV Update: layer={layer_idx}, cur_pos={cur_pos}, xk.shape={xk.shape}, seq_len={seq_len}")
+        
         # Use dynamic_update_slice like original entropix
         ck = jax.lax.dynamic_update_slice(self.k, jnp.bfloat16(xk[None, ...]), (layer_idx, 0, cur_pos, 0, 0))
         cv = jax.lax.dynamic_update_slice(self.v, jnp.bfloat16(xv[None, ...]), (layer_idx, 0, cur_pos, 0, 0))
