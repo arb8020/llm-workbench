@@ -18,7 +18,7 @@ def extract_targeted_activations(
         print("Warning: HF_TOKEN environment variable not set.")
 
     print(f"[{time.time()-t0:.1f}s] Loading model: {model_name}")
-    llm = LanguageModel(model_name, device_map="auto", torch_dtype="auto")
+    llm = LanguageModel(model_name, device_map="auto", )# torch_dtype="auto")
 
     token_info = llm.tokenizer(text, return_tensors="pt")
     print(f"Input text: '{text}'")
