@@ -88,9 +88,6 @@ def extract_and_print_activations(model_name="mistralai/Mixtral-8x7B-v0.1",
     print(f"  Mean: {stats_tensor.mean().item():.4f}")
     print(f"  Std:  {stats_tensor.std().item():.4f}")
 
-    print(f"\nFirst 5 values of first token, first 10 dimensions:")
-    print(act_for_stats[0, 0, :10])
-
     out_path = f'activations_layer{layer_idx}.pt'
     torch.save(act_for_stats, out_path)
     print(f"Activations saved to: {out_path}")
