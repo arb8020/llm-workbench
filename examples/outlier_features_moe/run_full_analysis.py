@@ -22,7 +22,7 @@ def main():
                        help="HuggingFace dataset identifier")
     parser.add_argument("--num-sequences", type=int, default=16,
                        help="Number of text sequences to extract")
-    parser.add_argument("--sequence-length", type=int, default=2048,
+    parser.add_argument("--sequence-length", type=int, default=2048*4,
                        help="Target length of each sequence in characters")
     parser.add_argument("--batch-size", type=int, default=4,
                        help="Number of sequences to process in each batch")
