@@ -11,14 +11,21 @@ from pathlib import Path
 # Import functions from the other scripts
 from extract_activations import extract_activations
 from analyze_activations import analyze_run_for_outliers
+from dataset_utils import get_text_sequences
 
 
 def main():
     parser = argparse.ArgumentParser(description="Extract and analyze activations for outlier features")
     parser.add_argument("--model", default="allenai/OLMoE-1B-7B-0125-Instruct", 
                        help="HuggingFace model identifier")
-    parser.add_argument("--text", default="The capital of France is Paris.", 
-                       help="Input text to analyze")
+    parser.add_argument("--dataset", default="HuggingFaceFW/fineweb-edu",
+                       help="HuggingFace dataset identifier")
+    parser.add_argument("--num-sequences", type=int, default=16,
+                       help="Number of text sequences to extract")
+    parser.add_argument("--sequence-length", type=int, default=2048,
+                       help="Target length of each sequence in characters")
+    parser.add_argument("--batch-size", type=int, default=4,
+                       help="Number of sequences to process in each batch")
     parser.add_argument("--layers", nargs="+", type=int, default=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
                        help="Layer indices to extract (e.g., --layers 0 1 2 3)")
     parser.add_argument("--save-dir", default="./full_analysis_results",
@@ -32,50 +39,127 @@ def main():
     print("FULL OUTLIER ANALYSIS PIPELINE")
     print("="*60)
     print(f"Model: {args.model}")
-    print(f"Text: '{args.text}'")
+    print(f"Dataset: {args.dataset}")
+    print(f"Sequences: {args.num_sequences} x {args.sequence_length} chars")
+    print(f"Batch size: {args.batch_size}")
     print(f"Layers: {args.layers}")
     print(f"Threshold: {args.threshold}")
     print(f"Save dir: {args.save_dir}")
     
-    # Step 1: Extract activations
+    # Validate arguments
+    assert args.num_sequences > 0, "num_sequences must be positive"
+    assert args.sequence_length > 0, "sequence_length must be positive"  
+    assert args.batch_size > 0, "batch_size must be positive"
+    assert args.num_sequences % args.batch_size == 0, f"num_sequences ({args.num_sequences}) must be divisible by batch_size ({args.batch_size})"
+    
+    # Step 0: Load dataset sequences
+    print("\n" + "="*40)
+    print("STEP 0: LOADING DATASET SEQUENCES")
+    print("="*40)
+    
+    try:
+        text_sequences = get_text_sequences(
+            dataset_name=args.dataset,
+            num_sequences=args.num_sequences,
+            sequence_length=args.sequence_length
+        )
+        print(f"✅ Loaded {len(text_sequences)} sequences")
+        
+    except Exception as e:
+        print(f"❌ Dataset loading failed: {e}")
+        sys.exit(1)
+    
+    # Step 1: Extract activations in batches
     print("\n" + "="*40)
     print("STEP 1: EXTRACTING ACTIVATIONS")
     print("="*40)
     
+    num_batches = args.num_sequences // args.batch_size
+    all_run_dirs = []
+    
     try:
-        run_dir, metadata = extract_activations(
-            model_name=args.model,
-            text=args.text,
-            layers=args.layers,
-            save_dir=args.save_dir
-        )
-        print(f"✅ Extraction completed. Results saved to: {run_dir}")
+        for batch_idx in range(num_batches):
+            start_idx = batch_idx * args.batch_size
+            end_idx = start_idx + args.batch_size
+            batch_texts = text_sequences[start_idx:end_idx]
+            
+            print(f"\nProcessing batch {batch_idx + 1}/{num_batches} ({len(batch_texts)} sequences)")
+            
+            run_dir, metadata = extract_activations(
+                model_name=args.model,
+                texts=batch_texts,
+                layers=args.layers,
+                save_dir=args.save_dir
+            )
+            all_run_dirs.append(run_dir)
+            print(f"✅ Batch {batch_idx + 1} completed: {run_dir}")
+        
+        print(f"\n✅ All {num_batches} batches completed!")
         
     except Exception as e:
         print(f"❌ Extraction failed: {e}")
         sys.exit(1)
     
-    # Step 2: Analyze for outliers
+    # Step 2: Analyze for outliers across all batches
     print("\n" + "="*40)
     print("STEP 2: ANALYZING FOR OUTLIERS")
     print("="*40)
     
+    all_systematic_outliers = []
+    all_outlier_info = []
+    
     try:
-        systematic_outliers, outlier_info = analyze_run_for_outliers(
-            run_dir=run_dir,
-            magnitude_threshold=args.threshold
-        )
+        for i, run_dir in enumerate(all_run_dirs, 1):
+            print(f"\nAnalyzing batch {i}/{len(all_run_dirs)}: {run_dir}")
+            
+            systematic_outliers, outlier_info = analyze_run_for_outliers(
+                run_dir=run_dir,
+                magnitude_threshold=args.threshold
+            )
+            
+            all_systematic_outliers.extend(systematic_outliers)
+            all_outlier_info.append(outlier_info)
+            
+            print(f"Batch {i}: Found {len(systematic_outliers)} systematic outlier features")
         
-        print(f"\n✅ Analysis completed!")
-        print(f"Found {len(systematic_outliers)} systematic outlier features")
+        print(f"\n✅ Analysis completed across all {len(all_run_dirs)} batches!")
+        print(f"Total systematic outlier features found: {len(all_systematic_outliers)}")
         
-        # Summary
-        if systematic_outliers:
-            print(f"\nTop outlier features:")
-            for i, feature in enumerate(systematic_outliers[:3], 1):
-                print(f"  {i}. Feature {feature['feature_dim']}: max_mag={feature['max_magnitude']:.2f}")
+        # Aggregate summary across all batches
+        if all_systematic_outliers:
+            # Group by feature dimension and aggregate
+            feature_aggregates = {}
+            for feature in all_systematic_outliers:
+                dim = feature['feature_dim']
+                if dim not in feature_aggregates:
+                    feature_aggregates[dim] = {
+                        'feature_dim': dim,
+                        'max_magnitude': feature['max_magnitude'],
+                        'occurrences': 1
+                    }
+                else:
+                    feature_aggregates[dim]['max_magnitude'] = max(
+                        feature_aggregates[dim]['max_magnitude'],
+                        feature['max_magnitude']
+                    )
+                    feature_aggregates[dim]['occurrences'] += 1
+            
+            # Sort by max magnitude
+            top_features = sorted(feature_aggregates.values(), 
+                                key=lambda x: x['max_magnitude'], reverse=True)
+            
+            print(f"\nTop outlier features across all batches:")
+            for i, feature in enumerate(top_features[:5], 1):
+                print(f"  {i}. Feature {feature['feature_dim']}: max_mag={feature['max_magnitude']:.2f}, "
+                      f"appeared in {feature['occurrences']}/{len(all_run_dirs)} batches")
+        else:
+            print("\nNo systematic outlier features found across any batch.")
+            print("Consider:")
+            print("- Using longer sequences or more complex text")
+            print("- Trying different layers")
+            print("- Lowering the magnitude threshold")
         
-        return run_dir, systematic_outliers, outlier_info
+        return all_run_dirs, all_systematic_outliers, all_outlier_info
         
     except Exception as e:
         print(f"❌ Analysis failed: {e}")

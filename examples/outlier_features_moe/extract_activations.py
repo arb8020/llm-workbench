@@ -6,9 +6,45 @@ from nnsight import LanguageModel
 from pathlib import Path
 from datetime import datetime
 
+def extract_activations_batch(model, texts: list[str], layers: list[int]) -> dict[str, torch.Tensor]:
+    """
+    Pure function: extract activations from batch of texts.
+    
+    Args:
+        model: Loaded nnsight LanguageModel
+        texts: List of input texts to process
+        layers: List of layer indices to extract from
+        
+    Returns:
+        Dict mapping layer names to activation tensors
+    """
+    assert isinstance(texts, list), f"Expected list of texts, got {type(texts)}"
+    assert len(texts) > 0, "texts cannot be empty"
+    assert isinstance(layers, list), f"Expected list of layers, got {type(layers)}"
+    assert len(layers) > 0, "layers cannot be empty"
+    
+    activations = {}
+    with model.trace(texts) as tracer:
+        for layer_idx in layers:
+            ln_into_attn = model.model.layers[layer_idx].input_layernorm.output.save()
+            ln_into_mlp = model.model.layers[layer_idx].post_attention_layernorm.output.save()
+            
+            activations[f"layer_{layer_idx}_ln_attn"] = ln_into_attn
+            activations[f"layer_{layer_idx}_ln_mlp"] = ln_into_mlp
+    
+    # Convert proxies to tensors
+    result = {}
+    for layer_name, activation_proxy in activations.items():
+        tensor = activation_proxy.detach().cpu()
+        assert tensor.dim() == 3, f"Expected 3D tensor for {layer_name}, got shape {tensor.shape}"
+        result[layer_name] = tensor
+    
+    return result
+
+
 def extract_activations(
     model_name="allenai/OLMoE-1B-7B-0125-Instruct",
-    text="Hello world, this is a test.",
+    texts=None,
     layers=[0, 1],
     save_dir="./activations"
 ):
@@ -17,10 +53,17 @@ def extract_activations(
     
     Args:
         model_name: HuggingFace model identifier
-        text: Input text to process
+        texts: List of input texts to process (or single string for backwards compatibility)
         layers: List of layer indices to extract from
         save_dir: Base directory to save activations
     """
+    # Backwards compatibility: convert single text to list
+    if isinstance(texts, str):
+        texts = [texts]
+    elif texts is None:
+        texts = ["Hello world, this is a test."]
+    
+    assert isinstance(texts, list), f"Expected list of texts, got {type(texts)}"
     # Create timestamped run directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = Path(save_dir) / f"run_{timestamp}"
@@ -29,22 +72,12 @@ def extract_activations(
     # Load model
     llm = LanguageModel(model_name, device_map="auto")
     
-    # Extract activations
-    activations = {}
-    with llm.trace(text) as tracer:
-        for layer_idx in layers:
-            ln_into_attn = llm.model.layers[layer_idx].input_layernorm.output.save()
-            ln_into_mlp = llm.model.layers[layer_idx].post_attention_layernorm.output.save()
-            
-            activations[f"layer_{layer_idx}_ln_attn"] = ln_into_attn
-            activations[f"layer_{layer_idx}_ln_mlp"] = ln_into_mlp
+    # Extract activations using pure batch function
+    activations = extract_activations_batch(llm, texts, layers)
         
     # Save activations and metadata
     saved_files = []
-    for layer_name, activation_proxy in activations.items():
-        # Get the actual tensor
-        tensor = activation_proxy.detach().cpu()
-        
+    for layer_name, tensor in activations.items():
         # Save activation
         activation_file = run_dir / f"{layer_name}_activations.pt"
         torch.save(tensor, activation_file)
@@ -55,11 +88,12 @@ def extract_activations(
     # Save metadata
     metadata = {
         "model_name": model_name,
-        "input_text": text,
+        "input_texts": texts,
+        "batch_size": len(texts),
         "layers_extracted": layers,
         "timestamp": timestamp, 
         "saved_files": saved_files,
-        "shapes": {name: list(activation_proxy.detach().cpu().shape) for name, activation_proxy in activations.items()}
+        "shapes": {name: list(tensor.shape) for name, tensor in activations.items()}
     }
         
     metadata_file = run_dir / "metadata.json"
@@ -75,7 +109,7 @@ def extract_activations(
 if __name__ == "__main__":
     # Extract activations
     run_dir, metadata = extract_activations(
-        text="The capital of France is Paris.",
+        texts=["The capital of France is Paris.", "Hello world, this is a test."],
         layers=[0, 1, 2, 3],  # Extract from first 4 layers
         save_dir="./my_activations"
     )
