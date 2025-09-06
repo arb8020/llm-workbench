@@ -53,6 +53,7 @@ interp = [
     "transformers<4.54",  # Constrain transformers to avoid aimv2 conflict
     "fastapi>=0.100.0",
     "uvicorn>=0.20.0",
+    "datasets>=2.0.0",  # For streaming dataset support
 ]
 
 # All optional dependencies
