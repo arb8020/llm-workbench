@@ -31,12 +31,16 @@ def extract_activations(
     
     # Extract activations
     activations = {}
+
     with llm.trace(text) as tracer:
-        for layer_idx in layers:
-            # Get hidden states from this layer
-            hidden_states = llm.model.layers[layer_idx].output[0].save()
-            activations[f"layer_{layer_idx}"] = hidden_states
-    
+        for layer_idx in  layers:
+            ln_into_attn = layer.input_layernorm.output.save()
+            ln_into_mlp = layer.post_attention_layernorm.output.save()
+            
+            # Storing activations with consistent naming using ln_into_...
+            activations[f"layer_{layer_idx}_ln_attn"] = ln_into_attn
+            activations[f"layer_{layer_idx}_ln_mlp"] = ln_into_mlp
+        
     # Save activations and metadata
     saved_files = []
     for layer_name, activation_proxy in activations.items():
