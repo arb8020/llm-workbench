@@ -6,7 +6,7 @@ def explore_model_structure(model_name="allenai/OLMoE-1B-7B-0125-Instruct", laye
     Explore the structure of a specific layer to find all available components
     """
     print(f"Loading model: {model_name}")
-    llm = LanguageModel(model_name, device_map="auto", torch_dtype="auto")
+    llm = LanguageModel(model_name, device_map="auto", )# torch_dtype="auto")
     
     print(f"\n=== OVERALL MODEL STRUCTURE ===")
     print("Top-level attributes:")
