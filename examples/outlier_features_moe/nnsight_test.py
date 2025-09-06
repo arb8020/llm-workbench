@@ -1,134 +1,113 @@
-
 import os
 import time
 import torch
 from nnsight import LanguageModel
-from collections import defaultdict
-import re
 
-def print_model_layer_shapes(model):
+def extract_targeted_activations(model_name="allenai/OLMoE-1B-7B-0125-Instruct",
+                                text="Hello world, this is a test.",
+                                target_layers=[0, 1, 2, 3]):
     """
-    Print the shapes of model layer components by analyzing the model architecture.
-    Groups components by layer pattern and prints unique component shapes.
-    """
-    print("\n=== Model Layer Architecture ===")
-    
-    # Group by everything after the layer number
-    layer_components = defaultdict(list)
-
-    for name, module in model.named_modules():
-        print(name)
-        if hasattr(module, 'weight'):
-            # Split on common layer patterns
-            parts = re.split(r'\.(\d+)\.', name)
-            if len(parts) > 2:
-                # parts[0] = prefix, parts[1] = layer_num, parts[2] = component
-                component = parts[2]
-                if component not in layer_components[parts[0]]:
-                    layer_components[parts[0]].append(component)
-                    print(f"{parts[0]}.N.{component}: {module.weight.shape}")
-    
-    print("=== End Architecture ===\n")
-
-def extract_and_print_activations(model_name="mistralai/Mixtral-8x7B-v0.1",
-                                  text="The quick brown fox jumps over the lazy dog.",
-                                  layer_idx=3):
-    """
-    Extract and print residual stream activations before layer k.
-    For k > 0 we hook layers[k].input (i.e., what goes into block k).
-    For k == 0 we use the token embeddings.
+    Extract activations from specific components where outliers occur:
+    - Attention projections: q_proj, k_proj, v_proj, o_proj
+    - MoE components: gate, experts (adapting for MoE instead of standard FFN)
     """
     start_time = time.time()
 
     if not os.environ.get('HF_TOKEN'):
         print("Warning: HF_TOKEN environment variable not set.")
 
-    print(f"[{time.time()-start_time:.1f}s] Starting model initialization: {model_name}")
-    print("DEBUG: About to call LanguageModel() - this will download if not cached...")
-
-    print(f"using model: {model_name}")
+    print(f"[{time.time()-start_time:.1f}s] Loading model: {model_name}")
     model = LanguageModel(model_name, device_map="auto")
 
-    print(f"[{time.time()-start_time:.1f}s] DEBUG: LanguageModel object created successfully")
-    try:
-        print(f"Model is on device: {next(model.parameters()).device}")
-    except StopIteration:
-        print("Model parameters not initialized yet (meta).")
-    
-    # Print model layer shapes
-    print_model_layer_shapes(model)
-
-    print(f"[{time.time()-start_time:.1f}s] DEBUG: Starting tokenization...")
-    print(f"Input text: '{text}'")
+    print(f"[{time.time()-start_time:.1f}s] Starting tokenization...")
     inputs = model.tokenizer(text, return_tensors="pt")
-    print(f"[{time.time()-start_time:.1f}s] DEBUG: Tokenization complete. Shape: {inputs['input_ids'].shape}")
+    print(f"Input text: '{text}'")
+    print(f"Token shape: {inputs['input_ids'].shape}")
 
-    print(f"[{time.time()-start_time:.1f}s] DEBUG: About to enter trace context - MODEL WILL LOAD TO REAL DEVICES NOW")
-    print("This is the slow step - model loading from meta to actual hardware...")
+    # Storage for all activations
+    all_activations = {}
+
+    print(f"[{time.time()-start_time:.1f}s] Setting up activation hooks...")
 
     with model.trace(inputs) as tracer:
-        print(f"[{time.time()-start_time:.1f}s] DEBUG: Inside trace context - model is now loaded!")
-        try:
-            print(f"Model is now on device: {next(model.parameters()).device}")
-        except StopIteration:
-            pass
-
-        # Validate layer index
+        print(f"[{time.time()-start_time:.1f}s] Inside trace context...")
+        
         n_layers = len(model.model.layers)
-        if layer_idx < 0 or layer_idx > n_layers:
-            raise ValueError(f"layer_idx must be in [0, {n_layers}] (0 for embeddings). Got {layer_idx}.")
+        print(f"Model has {n_layers} layers, extracting from layers: {target_layers}")
+        
+        for layer_idx in target_layers:
+            if layer_idx >= n_layers:
+                print(f"Warning: Layer {layer_idx} doesn't exist (max: {n_layers-1})")
+                continue
+                
+            layer = model.model.layers[layer_idx]
+            layer_activations = {}
+            
+            # Attention projection INPUTS (activations going INTO the projection layers)
+            print(f"  Setting up attention hooks for layer {layer_idx}...")
+            layer.self_attn.q_proj.input.save()
+            layer.self_attn.k_proj.input.save() 
+            layer.self_attn.v_proj.input.save()
+            layer.self_attn.o_proj.input.save()
+            
+            # FFN expansion layer INPUT (activations going INTO the first FFN layer)
+            print(f"  Setting up MoE hooks for layer {layer_idx}...")
+            layer.mlp.gate.input.save()
+            # For MoE, we might also want to check experts input
+            # layer.mlp.experts.input.save()
+            
+            # Store references for later extraction
+            all_activations[f"layer_{layer_idx}"] = {
+                'q_proj_input': layer.self_attn.q_proj.input,
+                'k_proj_input': layer.self_attn.k_proj.input,
+                'v_proj_input': layer.self_attn.v_proj.input,
+                'o_proj_input': layer.self_attn.o_proj.input,
+                'gate_input': layer.mlp.gate.input,
+                # 'experts_input': layer.mlp.experts.input,
+            }
 
-        print(f"[{time.time()-start_time:.1f}s] DEBUG: Setting up activation extraction for layer {layer_idx}...")
+    print(f"[{time.time()-start_time:.1f}s] Trace complete, extracting activations...")
 
-        if layer_idx == 0:
-            # Output of the embedding lookup (batch, seq, d_model)
-            node = model.model.embed_tokens.output
-        else:
-            layer_mod = model.model.layers[layer_idx]
-            # nnsight versions may expose either .input or .inputs
-            if hasattr(layer_mod, "input"):
-                node = layer_mod.input[0]
-            elif hasattr(layer_mod, "inputs"):
-                node = layer_mod.inputs[0]
-            else:
-                raise RuntimeError("Could not find layer input on this nnsight version.")
+    # Extract and process all saved activations
+    extracted_activations = {}
+    
+    for layer_name, components in all_activations.items():
+        print(f"\nProcessing {layer_name}:")
+        layer_data = {}
+        
+        for comp_name, node in components.items():
+            try:
+                # Get the activation tensor
+                act_tensor = getattr(node, "value", node)
+                act_cpu = act_tensor.detach().cpu()
+                
+                # Convert to float for stable statistics
+                stats_tensor = act_cpu.float() if act_cpu.dtype in (torch.float16, torch.bfloat16) else act_cpu
+                
+                print(f"  {comp_name}: shape={tuple(act_cpu.shape)}, "
+                      f"dtype={act_cpu.dtype}, "
+                      f"min={stats_tensor.min().item():.3f}, "
+                      f"max={stats_tensor.max().item():.3f}, "
+                      f"mean={stats_tensor.mean().item():.3f}")
+                
+                layer_data[comp_name] = act_cpu
+                
+            except Exception as e:
+                print(f"  {comp_name}: ERROR - {e}")
+                
+        extracted_activations[layer_name] = layer_data
 
-        node.save()
-        print(f"[{time.time()-start_time:.1f}s] DEBUG: Activation saving set up, about to exit trace context...")
-
-    print(f"[{time.time()-start_time:.1f}s] DEBUG: Trace context exited - inference complete!")
-    print(f"[{time.time()-start_time:.1f}s] Processing results...")
-
-    # In some nnsight versions, `node` is already a Tensor after the trace.
-    # In others, it's a Node with a .value property. Handle both:
-    act_tensor = getattr(node, "value", node)
-
-    # Move to CPU for printing/saving (and optionally cast for stable stats)
-    act_for_stats = act_tensor.detach().cpu()
-    stats_tensor = act_for_stats.float() if act_for_stats.dtype in (torch.float16, torch.bfloat16) else act_for_stats
-
-    print(f"Activation shape: {tuple(act_for_stats.shape)}")
-    print(f"Activation dtype: {act_for_stats.dtype}")
-    print(f"Activation device: {act_for_stats.device}")
-
-    print(f"\nActivation statistics:")
-    print(f"  Min:  {stats_tensor.min().item():.4f}")
-    print(f"  Max:  {stats_tensor.max().item():.4f}")
-    print(f"  Mean: {stats_tensor.mean().item():.4f}")
-    print(f"  Std:  {stats_tensor.std().item():.4f}")
-
-    out_path = f'activations_layer{layer_idx}.pt'
-    torch.save(act_for_stats, out_path)
-    print(f"Activations saved to: {out_path}")
+    # Save all activations
+    save_path = 'targeted_activations.pt'
+    torch.save(extracted_activations, save_path)
+    print(f"\nAll activations saved to: {save_path}")
 
     total_time = time.time() - start_time
-    print(f"\n[COMPLETE] Total runtime: {total_time:.1f} seconds ({total_time/60:.1f} minutes)")
+    print(f"\n[COMPLETE] Total runtime: {total_time:.1f} seconds")
 
-    return act_for_stats
+    return extracted_activations
 
 if __name__ == "__main__":
-    activations = extract_and_print_activations(
-        model_name="allenai/OLMoE-1B-7B-0125-Instruct",
-        text="Hello world, this is a test.",
-        layer_idx=3
+    activations = extract_targeted_activations(
+        target_layers=[0, 1, 2, 3]  # Start with just a few layers for testing
     )
