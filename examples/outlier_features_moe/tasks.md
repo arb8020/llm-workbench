@@ -5,6 +5,9 @@ prenorm_preffn_BLD = layernorm(x_BLD) # record this
 x_BLD = x_BLD + ffn(prenorm_preffn_BLD)
 ```
 
+take above, check for magnitude >= 6.0
+
+
 [x] get colab and broker working together
 [x] fix some broker stuff
 [x] fix deps
@@ -14,8 +17,8 @@ x_BLD = x_BLD + ffn(prenorm_preffn_BLD)
 [x] fix input data to be more robust (2048 tok, more sequences)
 [x] add actual tokenizer
 
-[ ] get more models working
-[ ] 
+[x] get more models working
+[x] wrote local model shape/layer name checker
 
 [ ] todo: fix streaming logs from remote (tail -f not working asf)
 [ ] consider reviving bifrost jobs

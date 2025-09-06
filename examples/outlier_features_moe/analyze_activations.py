@@ -36,28 +36,32 @@ def find_outliers_in_activations(activations, magnitude_threshold=6.0):
     """
     Find outlier features across all layers and sequence positions.
     
+    Paper methodology: "We track dimensions h_i, 0 ≤ i ≤ h, which have at least one value 
+    with a magnitude of α ≥ 6"
+    
     Args:
         activations: Dict of {layer_name: tensor} from load_activations()
-        magnitude_threshold: Minimum magnitude to consider as outlier
+        magnitude_threshold: Minimum magnitude to consider as outlier (paper uses 6.0)
         
     Returns:
         outlier_info: Dict with outlier statistics and locations
     """
     print(f"Searching for outliers with magnitude >= {magnitude_threshold}")
     
-    # Track outliers by feature dimension across all layers
+    # Track outliers by feature dimension h_i across all layers - this is key for paper's methodology
+    # Paper: "we only collect statistics if these outliers occur in the SAME feature dimension h_i"
     feature_outliers = defaultdict(list)  # feature_dim -> [(layer, seq_pos, value), ...]
     layer_stats = {}  # layer_name -> stats
     
     for layer_name, tensor in activations.items():
         print(f"\nAnalyzing {layer_name}: shape={tuple(tensor.shape)}")
         
-        # tensor shape: (batch, seq_len, d_model)
+        # tensor shape: (batch, seq_len, d_model) where d_model contains feature dimensions h_i
         batch_size, seq_len, d_model = tensor.shape
         
-        # Find outliers in this layer
+        # Find outliers in this layer using paper's magnitude criterion (≥ 6.0)
         outlier_mask = torch.abs(tensor) >= magnitude_threshold
-        outlier_positions = torch.where(outlier_mask)
+        outlier_positions = torch.where(outlier_mask)  # Returns (batch_idx, seq_idx, feature_idx) tuples
         
         num_outliers = outlier_mask.sum().item()
         max_val = tensor.abs().max().item()
@@ -72,20 +76,22 @@ def find_outliers_in_activations(activations, magnitude_threshold=6.0):
         print(f"  Found {num_outliers} outliers ({layer_stats[layer_name]['outlier_percentage']:.3f}%)")
         print(f"  Max magnitude: {max_val:.3f}")
         
-        # Record outliers by feature dimension
+        # Record outliers by feature dimension h_i - this implements paper's tracking requirement
         if num_outliers > 0:
             batch_indices, seq_indices, feature_indices = outlier_positions
             values = tensor[outlier_positions]
             
+            # Group outliers by their feature dimension h_i (not by layer or sequence position)
             for i in range(len(feature_indices)):
-                feature_dim = feature_indices[i].item()
-                seq_pos = seq_indices[i].item()
-                value = values[i].item()
+                feature_dim = feature_indices[i].item()  # This is h_i in paper notation
+                seq_pos = seq_indices[i].item()          # Position in sequence dimension s
+                value = values[i].item()                 # The actual activation value with magnitude ≥ 6.0
                 
+                # Track each occurrence: same h_i can appear in multiple layers/positions
                 feature_outliers[feature_dim].append({
-                    'layer': layer_name,
-                    'seq_pos': seq_pos,
-                    'value': value
+                    'layer': layer_name,  # Which transformer layer (part of "hidden states X_l")
+                    'seq_pos': seq_pos,   # Which sequence position (part of "sequence dimensions s")
+                    'value': value        # The outlier magnitude
                 })
     
     return {
@@ -98,18 +104,17 @@ def analyze_systematic_outliers(outlier_info, min_layer_percentage=0.25, min_seq
     """
     Find systematic outliers that appear consistently across layers and sequence positions.
     
-    Following the paper's criteria:
-    - Magnitude >= 6.0 (already filtered)
-    - Affects at least 25% of layers
-    - Affects at least 6% of sequence dimensions
+    Paper's exact criteria: "We define outliers according to the following criteria: 
+    the magnitude of the feature is at least 6.0, affects at least 25% of layers, 
+    and affects at least 6% of the sequence dimensions."
     
     Args:
         outlier_info: Output from find_outliers_in_activations()
-        min_layer_percentage: Minimum fraction of layers that must have this outlier
-        min_seq_percentage: Minimum fraction of sequence positions that must have this outlier
+        min_layer_percentage: Paper uses 25% - "at least 25% of transformer layers"
+        min_seq_percentage: Paper uses 6% - "at least 6% of all sequence dimensions s"
         
     Returns:
-        systematic_outliers: List of feature dimensions that meet criteria
+        systematic_outliers: List of feature dimensions h_i that meet all criteria
     """
     feature_outliers = outlier_info['feature_outliers']
     layer_stats = outlier_info['layer_stats']
@@ -125,17 +130,19 @@ def analyze_systematic_outliers(outlier_info, min_layer_percentage=0.25, min_seq
     print(f"Criteria: ≥{min_layer_percentage*100}% of {total_layers} layers, ≥{min_seq_percentage*100}% of {seq_len} seq positions")
     
     for feature_dim, outlier_list in feature_outliers.items():
-        # Count unique layers this feature appears in
+        # Paper criterion 1: "affects at least 25% of layers"
+        # Count how many different transformer layers have outliers in this same feature dimension h_i
         layers_with_outlier = set(item['layer'] for item in outlier_list)
         layer_percentage = len(layers_with_outlier) / total_layers
         
-        # Count unique sequence positions this feature appears in
+        # Paper criterion 2: "affects at least 6% of the sequence dimensions"
+        # Count unique sequence positions where this feature h_i has outliers "across all hidden states X_l"
         seq_positions_with_outlier = set(item['seq_pos'] for item in outlier_list)
         seq_percentage = len(seq_positions_with_outlier) / seq_len
         
-        # Check if meets systematic criteria
-        meets_layer_criteria = layer_percentage >= min_layer_percentage
-        meets_seq_criteria = seq_percentage >= min_seq_percentage
+        # Apply paper's systematic criteria (magnitude ≥6.0 already applied in previous step)
+        meets_layer_criteria = layer_percentage >= min_layer_percentage    # ≥25% layers
+        meets_seq_criteria = seq_percentage >= min_seq_percentage           # ≥6% sequence positions
         
         if meets_layer_criteria and meets_seq_criteria:
             max_magnitude = max(abs(item['value']) for item in outlier_list)
