@@ -1,3 +1,4 @@
+# fix load_activations to work with extract_activations
 import os
 import json
 import torch
@@ -80,14 +81,21 @@ def load_activations(run_dir):
     metadata_file = run_path / "metadata.json"
     with open(metadata_file, 'r') as f:
         metadata = json.load(f)
+
+
     
-    # Load activations
+    
     activations = {}
     for layer_idx in metadata["layers_extracted"]:
         activation_file = run_path / f"layer_{layer_idx}_activations.pt"
-        activations[f"layer_{layer_idx}"] = torch.load(activation_file, map_location='cpu')
-        print(f"Loaded layer_{layer_idx}: shape={tuple(activations[f'layer_{layer_idx}'].shape)}")
-    
+        # Load both layernorm activations for this layer
+        layer_activations = torch.load(activation_file, map_location='cpu')
+        activations[f"layer_{layer_idx}_ln_attn"] = layer_activations["ln_attn"]  
+        activations[f"layer_{layer_idx}_ln_mlp"] = layer_activations["ln_mlp"]
+        print(f"Loaded layer_{layer_idx} activations:")
+        print(f"  ln_attn shape={tuple(activations[f'layer_{layer_idx}_ln_attn'].shape)}")
+        print(f"  ln_mlp shape={tuple(activations[f'layer_{layer_idx}_ln_mlp'].shape)}")
+        
     return activations, metadata
 
 if __name__ == "__main__":
