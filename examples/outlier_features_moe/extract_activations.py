@@ -1,4 +1,3 @@
-# fix load_activations to work with extract_activations
 import os
 import json
 import torch
@@ -60,7 +59,6 @@ def extract_activations(
         "layers_extracted": layers,
         "timestamp": timestamp, 
         "saved_files": saved_files,
-        # Updated to use the actual activation keys from our dictionary
         "shapes": {name: list(activation_proxy.detach().cpu().shape) for name, activation_proxy in activations.items()}
     }
         
@@ -73,33 +71,6 @@ def extract_activations(
     
     return run_dir, metadata
 
-def load_activations(run_dir):
-    """Load activations from a run directory."""
-    run_path = Path(run_dir)
-    
-    # Load metadata
-    metadata_file = run_path / "metadata.json"
-    with open(metadata_file, 'r') as f:
-        metadata = json.load(f)
-    
-    activations = {}
-    for layer_idx in metadata["layers_extracted"]:
-        # Load each activation file separately (matching how they were saved)
-        attn_file = run_path / f"layer_{layer_idx}_ln_attn_activations.pt"
-        mlp_file = run_path / f"layer_{layer_idx}_ln_mlp_activations.pt"
-        
-        attn_tensor = torch.load(attn_file, map_location='cpu')
-        mlp_tensor = torch.load(mlp_file, map_location='cpu')
-        
-        activations[f"layer_{layer_idx}_ln_attn"] = attn_tensor
-        activations[f"layer_{layer_idx}_ln_mlp"] = mlp_tensor
-        
-        print(f"Loaded layer_{layer_idx} activations:")
-        print(f"  ln_attn shape={tuple(attn_tensor.shape)}")
-        print(f"  ln_mlp shape={tuple(mlp_tensor.shape)}")
-        
-    return activations, metadata
-
 
 if __name__ == "__main__":
     # Extract activations
@@ -108,12 +79,3 @@ if __name__ == "__main__":
         layers=[0, 1, 2, 3],  # Extract from first 4 layers
         save_dir="./my_activations"
     )
-    
-    print("\n" + "="*50)
-    print("LOADING TEST")
-    print("="*50)
-    
-    # Test loading
-    loaded_activations, loaded_metadata = load_activations(run_dir)
-    print(f"\nLoaded run from: {loaded_metadata['timestamp']}")
-    print(f"Original text: '{loaded_metadata['input_text']}'")
