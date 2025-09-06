@@ -33,11 +33,10 @@ def extract_activations(
     activations = {}
 
     with llm.trace(text) as tracer:
-        for layer_idx in  layers:
-            ln_into_attn = layer.input_layernorm.output.save()
-            ln_into_mlp = layer.post_attention_layernorm.output.save()
+        for layer_idx in layers:
+            ln_into_attn = layer_idx.input_layernorm.output.save()
+            ln_into_mlp = layer_idx.post_attention_layernorm.output.save()
             
-            # Storing activations with consistent naming using ln_into_...
             activations[f"layer_{layer_idx}_ln_attn"] = ln_into_attn
             activations[f"layer_{layer_idx}_ln_mlp"] = ln_into_mlp
         
