@@ -1,75 +1,55 @@
 import torch
 from nnsight import LanguageModel
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from torchinfo import summary
+import torch
 
 def explore_model_structure(model_name="allenai/OLMoE-1B-7B-0125-Instruct", layer_idx=0):
     """
-    Explore the structure of a specific layer to find all available components
+    Explore the structure of a model using torchinfo
     """
     print(f"Loading model: {model_name}")
-    llm = LanguageModel(model_name, device_map="auto", )# torch_dtype="auto")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto")
     
-    print(f"\n=== OVERALL MODEL STRUCTURE ===")
-    print("Top-level attributes:")
-    for attr in sorted(dir(llm.model)):
-        if not attr.startswith('_'):
-            try:
-                obj = getattr(llm.model, attr)
-                if hasattr(obj, '__len__') and not isinstance(obj, str):
-                    print(f"  {attr}: {type(obj)} (len={len(obj)})")
-                else:
-                    print(f"  {attr}: {type(obj)}")
-            except:
-                print(f"  {attr}: <error accessing>")
+    # Create sample input
+    sample_text = "Hello world"
+    inputs = tokenizer(sample_text, return_tensors="pt")
     
-    print(f"\n=== LAYER {layer_idx} STRUCTURE ===")
-    layer = llm.model.layers[layer_idx]
+    print("\n=== MODEL SUMMARY ===")
+    # Show overall model structure
+    print(summary(model, 
+                 input_data=dict(**inputs),
+                 depth=3, 
+                 col_names=("input_size", "output_size", "num_params")))
     
-    def explore_module(module, name="", depth=0, max_depth=3):
-        indent = "  " * depth
-        print(f"{indent}{name}: {type(module).__name__}")
+    print("\n=== LAYER DETAIL ===")
+    # Show specific layer structure if available
+    if hasattr(model, 'transformer') and hasattr(model.transformer, 'h'):
+        layer = model.transformer.h[layer_idx]
+        # Analyze the layer structure
+        print(summary(layer,
+                     input_data=(inputs['input_ids'],),  
+                     depth=3,
+                     col_names=("input_size", "output_size", "num_params")))
         
-        if depth >= max_depth:
-            return
+        # Show attention mechanism
+        if hasattr(layer, 'attn'):
+            print("\n=== ATTENTION MECHANISM ===")
+            print(summary(layer.attn,
+                        input_data=(inputs['input_ids'],),
+                        depth=2,
+                        col_names=("input_size", "output_size", "num_params")))
             
-        for attr_name in sorted(dir(module)):
-            if attr_name.startswith('_'):
-                continue
-                
-            try:
-                attr = getattr(module, attr_name)
-                if isinstance(attr, torch.nn.Module):
-                    full_name = f"{name}.{attr_name}" if name else attr_name
-                    explore_module(attr, full_name, depth + 1, max_depth)
-                elif callable(attr) and not isinstance(attr, type):
-                    continue  # Skip methods
-                else:
-                    try:
-                        attr_info = str(type(attr))
-                        if hasattr(attr, 'shape'):
-                            attr_info += f" shape={attr.shape}"
-                        print(f"{indent}  {attr_name}: {attr_info}")
-                    except:
-                        pass
-            except:
-                continue
+        # Show MLP structure
+        if hasattr(layer, 'mlp'):
+            print("\n=== MLP STRUCTURE ===")
+            print(summary(layer.mlp,
+                        input_data=(inputs['input_ids'],),
+                        depth=2,
+                        col_names=("input_size", "output_size", "num_params")))
     
-    explore_module(layer)
-    
-    print(f"\n=== ATTENTION STRUCTURE ===")
-    if hasattr(layer, 'self_attn'):
-        explore_module(layer.self_attn, "self_attn", depth=0, max_depth=2)
-    
-    print(f"\n=== MLP STRUCTURE ===")
-    if hasattr(layer, 'mlp'):
-        explore_module(layer.mlp, "mlp", depth=0, max_depth=2)
-    
-    print(f"\n=== LAYER NORM CANDIDATES ===")
-    for attr_name in dir(layer):
-        if 'norm' in attr_name.lower() and not attr_name.startswith('_'):
-            attr = getattr(layer, attr_name)
-            print(f"  {attr_name}: {type(attr)}")
-    
-    return llm
+    return model
 
 if __name__ == "__main__":
     model = explore_model_structure()
