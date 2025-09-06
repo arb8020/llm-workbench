@@ -50,7 +50,7 @@ backends = [
 interp = [
     "nnsight>=0.4",
     "vllm>=0.8.0",  # Allow resolver maximum flexibility
-    "transformers<4.54",  # Constrain transformers to avoid aimv2 conflict
+    "transformers",  # Latest stable release for gpt_oss and glm4_moe support
     "fastapi>=0.100.0",
     "uvicorn>=0.20.0",
     "datasets>=4.0.0",  # For streaming dataset support - tested compatible with pyarrow >=21.0.0
