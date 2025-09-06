@@ -3,6 +3,31 @@ import os
 import time
 import torch
 from nnsight import LanguageModel
+from collections import defaultdict
+import re
+
+def print_model_layer_shapes(model):
+    """
+    Print the shapes of model layer components by analyzing the model architecture.
+    Groups components by layer pattern and prints unique component shapes.
+    """
+    print("\n=== Model Layer Architecture ===")
+    
+    # Group by everything after the layer number
+    layer_components = defaultdict(list)
+
+    for name, module in model.named_modules():
+        if hasattr(module, 'weight'):
+            # Split on common layer patterns
+            parts = re.split(r'\.(\d+)\.', name)
+            if len(parts) > 2:
+                # parts[0] = prefix, parts[1] = layer_num, parts[2] = component
+                component = parts[2]
+                if component not in layer_components[parts[0]]:
+                    layer_components[parts[0]].append(component)
+                    print(f"{parts[0]}.N.{component}: {module.weight.shape}")
+    
+    print("=== End Architecture ===\n")
 
 def extract_and_print_activations(model_name="mistralai/Mixtral-8x7B-v0.1",
                                   text="The quick brown fox jumps over the lazy dog.",
@@ -28,6 +53,9 @@ def extract_and_print_activations(model_name="mistralai/Mixtral-8x7B-v0.1",
         print(f"Model is on device: {next(model.parameters()).device}")
     except StopIteration:
         print("Model parameters not initialized yet (meta).")
+    
+    # Print model layer shapes
+    print_model_layer_shapes(model)
 
     print(f"[{time.time()-start_time:.1f}s] DEBUG: Starting tokenization...")
     print(f"Input text: '{text}'")

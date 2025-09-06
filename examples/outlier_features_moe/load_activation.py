@@ -10,7 +10,7 @@ def main():
     print("Device:", act.device)
 
     # Show sample of first token embedding
-    print("First token embedding (first 5 dims):", act[0,0,:5])
+    # print("First token embedding (first 5 dims):", act[0,0,:5])
 
     # Calculate and print basic statistics
     print("Mean:", act.mean().item())
