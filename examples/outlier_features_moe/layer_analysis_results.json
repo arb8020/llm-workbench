@@ -1,0 +1,66 @@
+[
+  {
+    "model_name": "allenai/OLMoE-1B-7B-0125-Instruct",
+    "model_type": "olmoe",
+    "architecture": "OlmoeForCausalLM",
+    "num_layers": 16,
+    "layer_access_pattern": "model.layers[i]",
+    "pre_attention_path": "model.layers.{i}.input_layernorm",
+    "pre_mlp_path": "model.layers.{i}.post_attention_layernorm",
+    "sample_layer_names": [
+      "model.layers.0.input_layernorm.weight",
+      "model.layers.0.mlp.experts.0.down_proj.weight",
+      "model.layers.0.mlp.experts.0.gate_proj.weight",
+      "model.layers.0.mlp.experts.0.up_proj.weight",
+      "model.layers.0.mlp.experts.1.down_proj.weight"
+    ]
+  },
+  {
+    "model_name": "Qwen/Qwen3-30B-A3B",
+    "model_type": "qwen3_moe",
+    "architecture": "Qwen3MoeForCausalLM",
+    "num_layers": 48,
+    "layer_access_pattern": "model.layers[i]",
+    "pre_attention_path": "model.layers.{i}.input_layernorm",
+    "pre_mlp_path": "model.layers.{i}.post_attention_layernorm",
+    "sample_layer_names": [
+      "model.layers.0.input_layernorm.weight",
+      "model.layers.0.mlp.experts.0.down_proj.weight",
+      "model.layers.0.mlp.experts.0.gate_proj.weight",
+      "model.layers.0.mlp.experts.0.up_proj.weight",
+      "model.layers.0.mlp.experts.1.down_proj.weight"
+    ]
+  },
+  {
+    "model_name": "openai/gpt-oss-120b",
+    "model_type": "gpt_oss",
+    "architecture": "GptOssForCausalLM",
+    "num_layers": 36,
+    "layer_access_pattern": "model.layers[i]",
+    "pre_attention_path": "model.layers.{i}.input_layernorm",
+    "pre_mlp_path": "model.layers.{i}.post_attention_layernorm",
+    "sample_layer_names": [
+      "model.layers.0.input_layernorm.weight",
+      "model.layers.0.mlp.experts.down_proj_bias",
+      "model.layers.0.mlp.experts.down_proj_blocks",
+      "model.layers.0.mlp.experts.down_proj_scales",
+      "model.layers.0.mlp.experts.gate_up_proj_bias"
+    ]
+  },
+  {
+    "model_name": "zai-org/GLM-4.5-Air",
+    "model_type": "glm4_moe",
+    "architecture": "Glm4MoeForCausalLM",
+    "num_layers": 46,
+    "layer_access_pattern": "model.layers[i]",
+    "pre_attention_path": "model.layers.{i}.input_layernorm",
+    "pre_mlp_path": "model.layers.{i}.post_attention_layernorm",
+    "sample_layer_names": [
+      "model.layers.0.input_layernorm.weight",
+      "model.layers.0.mlp.down_proj.weight",
+      "model.layers.0.mlp.gate_proj.weight",
+      "model.layers.0.mlp.up_proj.weight",
+      "model.layers.0.post_attention_layernorm.weight"
+    ]
+  }
+]

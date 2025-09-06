@@ -34,43 +34,31 @@ class ModelConfig:
     num_sequences: int = 4
     batch_size: int = 1
 
-# Predefined model configurations
+# Predefined model configurations - verified architectures with same layer access patterns
 DEFAULT_MODELS = {
-    "small": ModelConfig(
-        name="small",
-        model_id="microsoft/DialoGPT-small",  # ~117M params
-        min_vram_gb=4,
-        max_price_per_hour=0.20,
-    ),
-    "medium": ModelConfig(
-        name="medium", 
-        model_id="microsoft/DialoGPT-medium",  # ~345M params
-        min_vram_gb=6,
-        max_price_per_hour=0.30,
-    ),
-    "large": ModelConfig(
-        name="large",
-        model_id="microsoft/DialoGPT-large",  # ~762M params
-        min_vram_gb=8,
-        max_price_per_hour=0.40,
-    ),
-    "olmoe-1b": ModelConfig(
-        name="olmoe-1b",
-        model_id="allenai/OLMoE-1B-7B-0125-Instruct",  # ~1B params
+    "olmoe": ModelConfig(
+        name="olmoe",
+        model_id="allenai/OLMoE-1B-7B-0125-Instruct",  # 16 layers, 1B params
         min_vram_gb=16,
         max_price_per_hour=0.60,
     ),
-    "llama-7b": ModelConfig(
-        name="llama-7b",
-        model_id="meta-llama/Llama-2-7b-hf",  # ~7B params
+    "qwen3": ModelConfig(
+        name="qwen3", 
+        model_id="Qwen/Qwen3-30B-A3B",  # 48 layers, 30B params (3B active)
         min_vram_gb=24,
-        max_price_per_hour=1.00,
+        max_price_per_hour=1.20,
     ),
-    "llama-13b": ModelConfig(
-        name="llama-13b", 
-        model_id="meta-llama/Llama-2-13b-hf",  # ~13B params
+    "gpt-oss": ModelConfig(
+        name="gpt-oss",
+        model_id="openai/gpt-oss-120b",  # 36 layers, 120B params (5B active)
+        min_vram_gb=80,
+        max_price_per_hour=2.00,
+    ),
+    "glm": ModelConfig(
+        name="glm",
+        model_id="zai-org/GLM-4.5-Air",  # 46 layers, 106B params (12B active)
         min_vram_gb=48,
-        max_price_per_hour=1.50,
+        max_price_per_hour=1.80,
     )
 }
 
