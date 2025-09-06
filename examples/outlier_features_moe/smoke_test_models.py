@@ -14,11 +14,12 @@ from typing import Dict, List
 # Target models for outlier analysis
 MODELS = [
     "allenai/OLMoE-1B-7B-0125-Instruct",
-    "Qwen/Qwen2.5-7B",  # Using 7B as proxy for 30B architecture
-    "microsoft/DialoGPT-large",  # Using as proxy for gpt-oss-120b
+    "Qwen/Qwen3-30B-A3B",
+    "openai/gpt-oss-120b", 
     "mistralai/Mixtral-8x7B-Instruct-v0.1",
-    "Qwen/Qwen2.5-72B",  # Using 72B as proxy for 235B architecture  
-    "THUDM/glm-4-9b",  # Using 9B as proxy for GLM 4.5
+    "Qwen/Qwen3-235B-A22B",
+    "zai-org/GLM-4.5",
+    "zai-org/GLM-4.5-Air",
 ]
 
 def print_model_structure(model_name: str, max_depth: int = 3):
@@ -30,7 +31,7 @@ def print_model_structure(model_name: str, max_depth: int = 3):
     try:
         # Load config only (no weights)
         print("Loading config...")
-        config = AutoConfig.from_pretrained(model_name)
+        config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
         
         # Print basic config info
         print(f"Model type: {getattr(config, 'model_type', 'unknown')}")
