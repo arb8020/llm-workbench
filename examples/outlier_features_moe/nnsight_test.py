@@ -41,7 +41,7 @@ def extract_activations(
     saved_files = []
     for layer_name, activation_proxy in activations.items():
         # Get the actual tensor
-        tensor = activation_proxy.value.detach().cpu()
+        tensor = activation_proxy.detach().cpu()
         
         # Save activation
         activation_file = run_dir / f"{layer_name}_activations.pt"
