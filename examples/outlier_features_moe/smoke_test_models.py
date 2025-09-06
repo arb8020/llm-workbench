@@ -11,15 +11,12 @@ from transformers import AutoConfig, AutoModel
 import torch
 from typing import Dict, List
 
-# Target models for outlier analysis
+# Target models for outlier analysis - final 4 architectures
 MODELS = [
-    "allenai/OLMoE-1B-7B-0125-Instruct",
-    "Qwen/Qwen3-30B-A3B",
-    "openai/gpt-oss-120b", 
-    "mistralai/Mixtral-8x7B-Instruct-v0.1",
-    "Qwen/Qwen3-235B-A22B",
-    "zai-org/GLM-4.5",
-    "zai-org/GLM-4.5-Air",
+    "allenai/OLMoE-1B-7B-0125-Instruct",     # olmoe
+    "Qwen/Qwen3-30B-A3B",                    # qwen3_moe  
+    "openai/gpt-oss-120b",                   # gpt_oss
+    "zai-org/GLM-4.5-Air",                  # glm4_moe (using Air for efficiency)
 ]
 
 def print_model_structure(model_name: str, max_depth: int = 3):
