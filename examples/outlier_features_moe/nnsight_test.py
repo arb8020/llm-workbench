@@ -17,6 +17,7 @@ def print_model_layer_shapes(model):
     layer_components = defaultdict(list)
 
     for name, module in model.named_modules():
+        print(name)
         if hasattr(module, 'weight'):
             # Split on common layer patterns
             parts = re.split(r'\.(\d+)\.', name)
