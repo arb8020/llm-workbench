@@ -32,7 +32,6 @@ def extract_activations(
     
     # Extract activations
     activations = {}
-
     with llm.trace(text) as tracer:
         for layer_idx in layers:
             ln_into_attn = llm.model.layers[layer_idx].input_layernorm.output.save()
@@ -53,17 +52,18 @@ def extract_activations(
         saved_files.append(str(activation_file))
         
         print(f"Saved {layer_name}: shape={tuple(tensor.shape)} -> {activation_file}")
-    
+
     # Save metadata
     metadata = {
         "model_name": model_name,
         "input_text": text,
         "layers_extracted": layers,
-        "timestamp": timestamp,
+        "timestamp": timestamp, 
         "saved_files": saved_files,
-        "shapes": {f"layer_{i}": list(activations[f"layer_{i}"].shape) for i in layers}
+        # Updated to use the actual activation keys from our dictionary
+        "shapes": {name: list(activation.shape) for name, activation in activations.items()}
     }
-    
+        
     metadata_file = run_dir / "metadata.json"
     with open(metadata_file, 'w') as f:
         json.dump(metadata, f, indent=2)
