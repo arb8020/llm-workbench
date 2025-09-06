@@ -19,7 +19,7 @@ def main():
                        help="HuggingFace model identifier")
     parser.add_argument("--text", default="The capital of France is Paris.", 
                        help="Input text to analyze")
-    parser.add_argument("--layers", nargs="+", type=int, default=[0, 1, 2, 3],
+    parser.add_argument("--layers", nargs="+", type=int, default=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
                        help="Layer indices to extract (e.g., --layers 0 1 2 3)")
     parser.add_argument("--save-dir", default="./full_analysis_results",
                        help="Directory to save results")
