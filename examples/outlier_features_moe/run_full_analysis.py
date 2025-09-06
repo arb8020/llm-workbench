@@ -7,6 +7,7 @@ Combines extract_activations.py and analyze_activations.py into a single workflo
 import sys
 import argparse
 from pathlib import Path
+from transformers import AutoTokenizer
 
 # Import functions from the other scripts
 from extract_activations import extract_activations
@@ -22,12 +23,12 @@ def main():
                        help="HuggingFace dataset identifier")
     parser.add_argument("--num-sequences", type=int, default=16,
                        help="Number of text sequences to extract")
-    parser.add_argument("--sequence-length", type=int, default=2048*4,
-                       help="Target length of each sequence in characters")
+    parser.add_argument("--sequence-length", type=int, default=2048,
+                       help="Target length of each sequence in tokens")
     parser.add_argument("--batch-size", type=int, default=1,
                        help="Number of sequences to process in each batch")
-    parser.add_argument("--layers", nargs="+", type=int, default=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-                       help="Layer indices to extract (e.g., --layers 0 1 2 3)")
+    parser.add_argument("--layers", nargs="+", type=int, default=None,
+                       help="Specific layer indices to extract (e.g., --layers 0 1 2 3). If not specified, extracts from all layers.")
     parser.add_argument("--save-dir", default="./full_analysis_results",
                        help="Directory to save results")
     parser.add_argument("--threshold", type=float, default=6.0,
@@ -40,9 +41,12 @@ def main():
     print("="*60)
     print(f"Model: {args.model}")
     print(f"Dataset: {args.dataset}")
-    print(f"Sequences: {args.num_sequences} x {args.sequence_length} chars")
+    print(f"Sequences: {args.num_sequences} x {args.sequence_length} tokens")
     print(f"Batch size: {args.batch_size}")
-    print(f"Layers: {args.layers}")
+    if args.layers is None:
+        print("Layers: All layers (will be determined from model)")
+    else:
+        print(f"Layers: {args.layers}")
     print(f"Threshold: {args.threshold}")
     print(f"Save dir: {args.save_dir}")
     
@@ -52,21 +56,29 @@ def main():
     assert args.batch_size > 0, "batch_size must be positive"
     assert args.num_sequences % args.batch_size == 0, f"num_sequences ({args.num_sequences}) must be divisible by batch_size ({args.batch_size})"
     
-    # Step 0: Load dataset sequences
+    # Step 0: Load tokenizer and dataset sequences
     print("\n" + "="*40)
-    print("STEP 0: LOADING DATASET SEQUENCES")
+    print("STEP 0: LOADING TOKENIZER AND DATASET")
     print("="*40)
     
     try:
+        # Load tokenizer
+        print("Loading tokenizer...")
+        tokenizer = AutoTokenizer.from_pretrained(args.model)
+        print(f"✅ Tokenizer loaded: {tokenizer.__class__.__name__}")
+        
+        # Load dataset sequences using tokenizer
+        print("Loading dataset sequences...")
         text_sequences = get_text_sequences(
             dataset_name=args.dataset,
             num_sequences=args.num_sequences,
-            sequence_length=args.sequence_length
+            sequence_length=args.sequence_length,
+            tokenizer=tokenizer
         )
         print(f"✅ Loaded {len(text_sequences)} sequences")
         
     except Exception as e:
-        print(f"❌ Dataset loading failed: {e}")
+        print(f"❌ Dataset/tokenizer loading failed: {e}")
         sys.exit(1)
     
     # Step 1: Extract activations in batches

@@ -45,7 +45,7 @@ def extract_activations_batch(model, texts: list[str], layers: list[int]) -> dic
 def extract_activations(
     model_name="allenai/OLMoE-1B-7B-0125-Instruct",
     texts=None,
-    layers=[0, 1],
+    layers=None,
     save_dir="./activations"
 ):
     """
@@ -54,7 +54,7 @@ def extract_activations(
     Args:
         model_name: HuggingFace model identifier
         texts: List of input texts to process (or single string for backwards compatibility)
-        layers: List of layer indices to extract from
+        layers: List of layer indices to extract from. If None, extracts from all layers.
         save_dir: Base directory to save activations
     """
     # Backwards compatibility: convert single text to list
@@ -71,6 +71,17 @@ def extract_activations(
     
     # Load model
     llm = LanguageModel(model_name, device_map="auto")
+    
+    # Determine layers if not specified
+    if layers is None:
+        # Get all layer indices from the model
+        try:
+            num_layers = len(llm.model.layers)
+            layers = list(range(num_layers))
+            print(f"Auto-detected {num_layers} layers: {layers}")
+        except AttributeError:
+            # Fallback for models with different structure
+            raise ValueError(f"Could not auto-detect layers for model {model_name}. Please specify --layers explicitly.")
     
     # Extract activations using pure batch function
     activations = extract_activations_batch(llm, texts, layers)
