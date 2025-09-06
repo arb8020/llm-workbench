@@ -39,12 +39,25 @@ def print_model_structure(model_name: str, max_depth: int = 3):
         
         # Try to load model structure (config only, no weights)
         print(f"\nLoading model structure (no weights)...")
-        model = AutoModel.from_pretrained(
-            model_name,
-            config=config,
-            torch_dtype=torch.float16,
-            device_map="meta"  # This loads structure without weights
-        )
+        try:
+            model = AutoModel.from_pretrained(
+                model_name,
+                config=config,
+                torch_dtype=torch.float16,
+                device_map="meta",  # This loads structure without weights
+                trust_remote_code=True
+            )
+        except Exception as e:
+            print(f"Failed with device_map=meta: {e}")
+            print("Trying without device_map...")
+            # Fallback: create model from config directly
+            from transformers import AutoModelForCausalLM
+            try:
+                model = AutoModelForCausalLM.from_config(config)
+                print("✅ Created model from config successfully")
+            except Exception as e2:
+                print(f"Also failed with from_config: {e2}")
+                raise e  # Re-raise original error
         
         print(f"\nModel structure:")
         print_module_tree(model, max_depth=max_depth)
