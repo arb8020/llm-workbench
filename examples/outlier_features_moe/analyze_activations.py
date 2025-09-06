@@ -3,6 +3,33 @@ import numpy as np
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
+def load_activations(run_dir):
+    """Load activations from a run directory."""
+    run_path = Path(run_dir)
+    
+    # Load metadata
+    metadata_file = run_path / "metadata.json"
+    with open(metadata_file, 'r') as f:
+        metadata = json.load(f)
+    
+    activations = {}
+    for layer_idx in metadata["layers_extracted"]:
+        # Load each activation file separately (matching how they were saved)
+        attn_file = run_path / f"layer_{layer_idx}_ln_attn_activations.pt"
+        mlp_file = run_path / f"layer_{layer_idx}_ln_mlp_activations.pt"
+        
+        attn_tensor = torch.load(attn_file, map_location='cpu')
+        mlp_tensor = torch.load(mlp_file, map_location='cpu')
+        
+        activations[f"layer_{layer_idx}_ln_attn"] = attn_tensor
+        activations[f"layer_{layer_idx}_ln_mlp"] = mlp_tensor
+        
+        print(f"Loaded layer_{layer_idx} activations:")
+        print(f"  ln_attn shape={tuple(attn_tensor.shape)}")
+        print(f"  ln_mlp shape={tuple(mlp_tensor.shape)}")
+        
+    return activations, metadata
+
 def find_outliers_in_activations(activations, magnitude_threshold=6.0):
     """
     Find outlier features across all layers and sequence positions.
