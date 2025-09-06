@@ -57,7 +57,7 @@ def extract_activations(
         "layers_extracted": layers,
         "timestamp": timestamp,
         "saved_files": saved_files,
-        "shapes": {f"layer_{i}": list(activations[f"layer_{i}"].value.shape) for i in layers}
+        "shapes": {f"layer_{i}": list(activations[f"layer_{i}"].shape) for i in layers}
     }
     
     metadata_file = run_dir / "metadata.json"
