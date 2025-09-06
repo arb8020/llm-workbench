@@ -61,7 +61,7 @@ def extract_activations(
         "timestamp": timestamp, 
         "saved_files": saved_files,
         # Updated to use the actual activation keys from our dictionary
-        "shapes": {name: list(activation.shape) for name, activation in activations.items()}
+        "shapes": {name: list(activation_proxy.detach().cpu().shape) for name, activation_proxy in activations.items()}
     }
         
     metadata_file = run_dir / "metadata.json"
@@ -87,11 +87,13 @@ def load_activations(run_dir):
     
     activations = {}
     for layer_idx in metadata["layers_extracted"]:
-        activation_file = run_path / f"layer_{layer_idx}_activations.pt"
         # Load both layernorm activations for this layer
-        layer_activations = torch.load(activation_file, map_location='cpu')
-        activations[f"layer_{layer_idx}_ln_attn"] = layer_activations["ln_attn"]  
-        activations[f"layer_{layer_idx}_ln_mlp"] = layer_activations["ln_mlp"]
+        ln_attn_file = run_path / f"layer_{layer_idx}_ln_attn_activations.pt"
+        ln_mlp_file = run_path / f"layer_{layer_idx}_ln_mlp_activations.pt"
+        
+        activations[f"layer_{layer_idx}_ln_attn"] = torch.load(ln_attn_file, map_location='cpu')
+        activations[f"layer_{layer_idx}_ln_mlp"] = torch.load(ln_mlp_file, map_location='cpu')
+        
         print(f"Loaded layer_{layer_idx} activations:")
         print(f"  ln_attn shape={tuple(activations[f'layer_{layer_idx}_ln_attn'].shape)}")
         print(f"  ln_mlp shape={tuple(activations[f'layer_{layer_idx}_ln_mlp'].shape)}")
