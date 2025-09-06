@@ -24,7 +24,7 @@ def main():
                        help="Number of text sequences to extract")
     parser.add_argument("--sequence-length", type=int, default=2048*4,
                        help="Target length of each sequence in characters")
-    parser.add_argument("--batch-size", type=int, default=4,
+    parser.add_argument("--batch-size", type=int, default=1,
                        help="Number of sequences to process in each batch")
     parser.add_argument("--layers", nargs="+", type=int, default=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
                        help="Layer indices to extract (e.g., --layers 0 1 2 3)")
