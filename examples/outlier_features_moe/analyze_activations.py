@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from collections import defaultdict
 from typing import Dict, List, Tuple
+from pathlib import Path
 
 def load_activations(run_dir):
     """Load activations from a run directory."""
