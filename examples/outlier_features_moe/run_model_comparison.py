@@ -275,12 +275,97 @@ def cleanup_gpu(instance_id: str, keep_alive: bool = False):
     except Exception as e:
         print(f"Error terminating instance: {e}")
 
-def save_results(results: List[Dict], output_file: str):
+def is_result_fresh(result: Dict, max_age_hours: int = None) -> bool:
+    """Check if result is fresh enough based on timestamp."""
+    if max_age_hours is None:
+        return True
+    
+    if 'timestamp' not in result:
+        return False
+    
+    try:
+        from datetime import datetime, timezone
+        result_time = datetime.fromisoformat(result['timestamp'].replace('Z', '+00:00'))
+        now = datetime.now(timezone.utc)
+        age_hours = (now - result_time).total_seconds() / 3600
+        return age_hours <= max_age_hours
+    except Exception:
+        return False
+
+def is_valid_result(result: Dict) -> bool:
+    """Check if a result is complete and valid."""
+    required_fields = [
+        'model_name', 'model_id', 'timestamp', 
+        'percentage_layers_affected', 'layers_with_outliers'
+    ]
+    
+    # Check all required fields exist
+    for field in required_fields:
+        if field not in result:
+            return False
+    
+    # Check for error field (indicates failed run)
+    if 'error' in result:
+        return False
+    
+    # Check that numeric results are reasonable
+    if not isinstance(result['percentage_layers_affected'], (int, float)):
+        return False
+    
+    if not isinstance(result['layers_with_outliers'], int):
+        return False
+        
+    return True
+
+def load_existing_results(output_file: str) -> Dict[str, Dict]:
+    """Load existing results to avoid re-running completed analyses."""
+    if not Path(output_file).exists():
+        return {}
+    
+    try:
+        with open(output_file, 'r') as f:
+            results = json.load(f)
+        
+        # Convert list to dict keyed by model_id for precise matching
+        valid_results = {}
+        if isinstance(results, list):
+            for r in results:
+                if is_valid_result(r):
+                    # Use model_id as key for exact matching
+                    model_id = r.get('model_id', '')
+                    if model_id:
+                        valid_results[model_id] = r
+                    else:
+                        print(f"⚠️ Result missing model_id: {r.get('model_name', 'unknown')}")
+                else:
+                    print(f"⚠️ Invalid/incomplete result found for: {r.get('model_name', 'unknown')}")
+        
+        return valid_results
+        
+    except Exception as e:
+        print(f"⚠️ Could not load existing results: {e}")
+        return {}
+
+def save_results(results: List[Dict], output_file: str, incremental: bool = True):
     """Save comparison results to JSON file."""
     print(f"💾 Saving results to {output_file}")
     
+    if incremental:
+        # Load existing results and merge
+        existing = load_existing_results(output_file)
+        
+        # Update with new results
+        for result in results:
+            if result and 'model_id' in result:
+                existing[result['model_id']] = result
+        
+        # Convert back to list format
+        final_results = list(existing.values())
+    else:
+        final_results = results
+    
     with open(output_file, 'w') as f:
-        json.dump(results, f, indent=2)
+        json.dump(final_results, f, indent=2)
     
     # Also print summary table
     print("\n" + "="*80)
@@ -307,6 +392,12 @@ def main():
                        help="Output file for results")
     parser.add_argument("--keep-gpus", action="store_true",
                        help="Keep GPU instances running after analysis")
+    parser.add_argument("--force-rerun", action="store_true",
+                       help="Force re-run even if results already exist")
+    parser.add_argument("--incremental", action="store_true", default=True,
+                       help="Skip models that already have results (default: true)")
+    parser.add_argument("--max-age-hours", type=int, default=None,
+                       help="Maximum age of existing results in hours (default: no limit)")
     
     args = parser.parse_args()
     
@@ -320,6 +411,46 @@ def main():
             print("Must specify --models or --config")
             sys.exit(1)
         models = [DEFAULT_MODELS[name] for name in args.models]
+    
+    # Load existing results for incremental mode
+    existing_results = {}
+    if args.incremental and not args.force_rerun:
+        existing_results = load_existing_results(args.output)
+        
+        # Filter out models that already have results
+        models_to_run = []
+        for config in models:
+            if config.model_id in existing_results:
+                existing_result = existing_results[config.model_id]
+                
+                # Check if result is fresh enough
+                if is_result_fresh(existing_result, args.max_age_hours):
+                    age_info = ""
+                    if args.max_age_hours and 'timestamp' in existing_result:
+                        try:
+                            from datetime import datetime, timezone
+                            result_time = datetime.fromisoformat(existing_result['timestamp'].replace('Z', '+00:00'))
+                            age_hours = (datetime.now(timezone.utc) - result_time).total_seconds() / 3600
+                            age_info = f" ({age_hours:.1f}h old)"
+                        except:
+                            pass
+                    
+                    print(f"✅ Skipping {config.name} ({config.model_id}){age_info}")
+                    print(f"   Previous result: {existing_result['percentage_layers_affected']:.1f}% layers affected")
+                else:
+                    print(f"⏰ Result for {config.name} is too old, will re-run")
+                    models_to_run.append(config)
+            else:
+                models_to_run.append(config)
+        
+        models = models_to_run
+        
+        if not models:
+            print("🎉 All requested models already have results!")
+            # Just print the summary and exit
+            existing_list = list(existing_results.values())
+            save_results(existing_list, args.output, incremental=False)
+            return
     
     print(f"🎯 Running outlier analysis on {len(models)} models")
     
