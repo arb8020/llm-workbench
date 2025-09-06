@@ -191,7 +191,7 @@ def analyze_run_for_outliers(run_dir, magnitude_threshold=6.0):
     activations, metadata = load_activations(run_dir)
     
     print(f"\nAnalyzing model: {metadata['model_name']}")
-    print(f"Input text: '{metadata['input_text']}'")
+    print(f"Input text: '{metadata['input_texts']}'")
     
     # Find all outliers
     outlier_info = find_outliers_in_activations(activations, magnitude_threshold)
