@@ -258,21 +258,47 @@ def sync_results_from_remote(bifrost_client: BifrostClient, local_output_dir: Pa
     except Exception as e:
         print(f"⚠️ Could not sync log file: {e}")
     
-    # Sync results directory using efficient SFTP
+    # Sync outlier analysis results (metadata and summary only, skip large activation files)
     try:
+        # Check if results directory exists
         results_check = bifrost_client.exec(
             "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
             "ls -la full_analysis_results/ 2>/dev/null || echo 'NO_RESULTS_DIR'"
         )
         
         if "NO_RESULTS_DIR" not in results_check:
-            print("📦 Downloading full_analysis_results directory...")
-            result = bifrost_client.download_files(
-                remote_path="~/.bifrost/workspace/examples/outlier_features_moe/full_analysis_results",
-                local_path=str(local_output_dir / "full_analysis_results"),
-                recursive=True
-            )
-            print(f"✅ Synced {result.files_transferred} files, {result.total_size_mb:.1f}MB total")
+            print("📦 Downloading outlier analysis metadata (skipping large activation files)...")
+            
+            # Create local results directory
+            local_results_dir = local_output_dir / "full_analysis_results"
+            local_results_dir.mkdir(exist_ok=True)
+            
+            # Get list of run directories
+            run_dirs = bifrost_client.exec(
+                "cd ~/.bifrost/workspace/examples/outlier_features_moe/full_analysis_results && "
+                "ls -1 | grep '^run_'"
+            ).strip().split('\n')
+            
+            total_files = 0
+            for run_dir in run_dirs:
+                if run_dir and run_dir.startswith('run_'):
+                    print(f"  Syncing metadata from {run_dir}...")
+                    
+                    # Create local run directory
+                    local_run_dir = local_results_dir / run_dir
+                    local_run_dir.mkdir(exist_ok=True)
+                    
+                    # Only sync metadata.json files (skip .pt activation files)
+                    try:
+                        result = bifrost_client.download_files(
+                            remote_path=f"~/.bifrost/workspace/examples/outlier_features_moe/full_analysis_results/{run_dir}/metadata.json",
+                            local_path=str(local_run_dir / "metadata.json")
+                        )
+                        total_files += result.files_transferred
+                    except Exception as e:
+                        print(f"    ⚠️ No metadata.json in {run_dir}: {e}")
+            
+            print(f"✅ Synced {total_files} metadata files (activation files skipped to save bandwidth)")
         else:
             print("⚠️ No full_analysis_results directory found on remote")
     

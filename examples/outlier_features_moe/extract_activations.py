@@ -201,7 +201,7 @@ def extract_activations(
     # Save metadata
     metadata = {
         "model_name": model_name,
-        "input_texts": texts,
+        "sequence_texts": texts,
         "batch_size": len(texts),
         "layers_extracted": layers,
         "timestamp": timestamp, 
