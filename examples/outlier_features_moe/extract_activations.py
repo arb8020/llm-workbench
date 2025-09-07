@@ -9,7 +9,7 @@ from datetime import datetime
 def extract_activations_optimized(
     llm,  # Pre-loaded LanguageModel instance
     texts: list[str], 
-    layers: list[int],
+    layers: list[int] = None,
     save_dir: str = "./activations",
     chunk_size: int = 8
 ) -> tuple:
@@ -19,7 +19,7 @@ def extract_activations_optimized(
     Args:
         llm: Pre-loaded nnsight LanguageModel
         texts: List of input texts to process
-        layers: List of layer indices to extract from
+        layers: List of layer indices to extract from (None = all layers)
         save_dir: Directory to save results
         chunk_size: Number of layers to process at once
         
@@ -32,8 +32,15 @@ def extract_activations_optimized(
     
     assert isinstance(texts, list), f"Expected list of texts, got {type(texts)}"
     assert len(texts) > 0, "texts cannot be empty"
-    assert isinstance(layers, list), f"Expected list of layers, got {type(layers)}"
-    assert len(layers) > 0, "layers cannot be empty"
+    
+    # Auto-detect all layers if None provided
+    if layers is None:
+        num_layers = len(llm.model.layers)
+        layers = list(range(num_layers))
+        print(f"Auto-detected {num_layers} layers: {layers[0]}-{layers[-1]}")
+    else:
+        assert isinstance(layers, list), f"Expected list of layers, got {type(layers)}"
+        assert len(layers) > 0, "layers cannot be empty"
     
     # Create timestamped run directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
