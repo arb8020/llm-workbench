@@ -91,7 +91,7 @@ def extract_activations_optimized(
         "model_name": llm.tokenizer.name_or_path if hasattr(llm.tokenizer, 'name_or_path') else str(llm),
         "num_sequences": len(texts),
         "sequence_texts": texts,
-        "layers": layers,
+        "layers_extracted": layers,  # Fixed: renamed from "layers" to "layers_extracted" for compatibility
         "chunk_size": chunk_size,
         "num_chunks": len(layer_chunks),
         "saved_files": saved_files,
