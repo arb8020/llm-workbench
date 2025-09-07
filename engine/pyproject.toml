@@ -46,11 +46,19 @@ backends = [
     "requests>=2.28.0",
 ]
 
+# Minimal transformers testing (no vllm, no heavy deps)
+transformers-test = [
+    "nnsight>=0.4",
+    "transformers @ git+https://github.com/huggingface/transformers.git",  # Bleeding-edge for gpt_oss and glm4_moe support
+    "torch>=2.0.0",
+    "accelerate>=0.20.0",
+]
+
 # Interpretability support (nnsight integration)
 interp = [
     "nnsight>=0.4",
     "vllm>=0.8.0",  # Allow resolver maximum flexibility
-    "transformers",  # Latest stable release for gpt_oss and glm4_moe support
+    "transformers @ git+https://github.com/huggingface/transformers.git",  # Bleeding-edge for gpt_oss and glm4_moe support
     "fastapi>=0.100.0",
     "uvicorn>=0.20.0",
     "datasets>=4.0.0",  # For streaming dataset support - tested compatible with pyarrow >=21.0.0
