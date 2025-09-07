@@ -96,7 +96,7 @@ def main():
     llm = LanguageModel(
         args.model,
         device_map="balanced",
-        max_memory={"cuda:0": "76GiB", "cuda:1": "76GiB"},
+        max_memory={0: "76GiB", 1: "76GiB"},
         torch_dtype=torch.bfloat16
     )
     
