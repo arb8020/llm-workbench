@@ -179,6 +179,11 @@ class GPUClient:
         """Query by CUDA version: client.cuda_version.contains('12.0')"""
         return self._query.cuda_version
     
+    @property
+    def manufacturer(self):
+        """Query by GPU manufacturer: client.manufacturer == 'nvidia'"""
+        return self._query.manufacturer
+    
     # Main API methods
     def search(
         self,
@@ -225,6 +230,8 @@ class GPUClient:
         cloud_type: Optional[Union[str, CloudType]] = None,
         provider: Optional[str] = None,
         cuda_version: Optional[str] = None,
+        manufacturer: Optional[str] = None,
+        gpu_count: int = 1,
         sort: Optional[Callable[[Any], Any]] = None,
         reverse: bool = False,
         # Port exposure configuration
@@ -282,6 +289,7 @@ class GPUClient:
             max_price_per_hour=None if query_conditions else max_price_per_hour,
             provider=provider,
             cuda_version=cuda_version,
+            gpu_count=gpu_count,
             sort=sort,
             reverse=reverse,
             exposed_ports=exposed_ports,

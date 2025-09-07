@@ -10,7 +10,7 @@ from pathlib import Path
 from transformers import AutoTokenizer
 
 # Import functions from the other scripts
-from extract_activations import extract_activations
+from extract_activations import extract_activations, extract_activations_optimized
 from analyze_activations import analyze_run_for_outliers
 from dataset_utils import get_text_sequences
 
@@ -81,9 +81,37 @@ def main():
         print(f"❌ Dataset/tokenizer loading failed: {e}")
         sys.exit(1)
     
-    # Step 1: Extract activations in batches
+    # Step 1: Load model once with optimized memory settings
     print("\n" + "="*40)
-    print("STEP 1: EXTRACTING ACTIVATIONS")
+    print("STEP 1: LOADING MODEL (MEMORY OPTIMIZED)")
+    print("="*40)
+    
+    import torch
+    from nnsight import LanguageModel
+    
+    # Load model once with balanced device mapping and memory limits
+    print(f"Loading model: {args.model}")
+    print("Using balanced device mapping with 76GB per GPU limit...")
+    
+    llm = LanguageModel(
+        args.model,
+        device_map="balanced",
+        max_memory={"cuda:0": "76GiB", "cuda:1": "76GiB"},
+        torch_dtype=torch.bfloat16
+    )
+    
+    # Disable KV cache to save memory
+    llm.model.config.use_cache = False
+    
+    # Print device mapping for verification
+    if hasattr(llm.model, 'hf_device_map'):
+        print(f"Device mapping: {llm.model.hf_device_map}")
+    
+    print("✅ Model loaded successfully")
+    
+    # Step 2: Extract activations in batches (reusing model)
+    print("\n" + "="*40)
+    print("STEP 2: EXTRACTING ACTIVATIONS (CHUNKED)")
     print("="*40)
     
     num_batches = args.num_sequences // args.batch_size
@@ -97,13 +125,17 @@ def main():
             
             print(f"\nProcessing batch {batch_idx + 1}/{num_batches} ({len(batch_texts)} sequences)")
             
-            run_dir, metadata = extract_activations(
-                model_name=args.model,
+            run_dir, metadata = extract_activations_optimized(
+                llm=llm,
                 texts=batch_texts,
                 layers=args.layers,
-                save_dir=args.save_dir
+                save_dir=args.save_dir,
+                chunk_size=8  # Process 8 layers at a time
             )
             all_run_dirs.append(run_dir)
+            
+            # Clear GPU cache after each batch
+            torch.cuda.empty_cache()
             print(f"✅ Batch {batch_idx + 1} completed: {run_dir}")
         
         print(f"\n✅ All {num_batches} batches completed!")

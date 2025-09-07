@@ -148,6 +148,7 @@ class GPUQuery:
     cuda_version = QueryField('cuda_version')
     driver_version = QueryField('driver_version')
     cloud_type = QueryField('cloud_type')
+    manufacturer = QueryField('manufacturer')
 
 
 # Type alias for query types

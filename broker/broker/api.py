@@ -121,6 +121,7 @@ def create(
     provider: Optional[str] = None,
     cuda_version: Optional[str] = None,
     manufacturer: Optional[str] = None,
+    gpu_count: int = 1,
     sort: Optional[Callable[[Any], Any]] = None,
     reverse: bool = False,
     # Port exposure configuration
@@ -210,7 +211,7 @@ def create(
             
             request = ProvisionRequest(
                 gpu_type=gpu_type_id,
-                gpu_count=offer.gpu_count,
+                gpu_count=gpu_count,
                 image=image,
                 name=name,
                 provider=offer.provider,

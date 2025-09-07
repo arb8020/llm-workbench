@@ -53,6 +53,7 @@ class GPUOffer:
     cuda_version: Optional[str] = None
     driver_version: Optional[str] = None
     cloud_type: Optional[CloudType] = None
+    manufacturer: Optional[str] = None
 
 
 @dataclass 

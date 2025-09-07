@@ -127,6 +127,7 @@ def search_gpu_offers(cuda_version: Optional[str] = None, manufacturer: Optional
                     availability_zone="secure-cloud",
                     cloud_type=CloudType.SECURE,
                     cuda_version=cuda_version,  # Add CUDA version if filtered
+                    manufacturer=gpu_type.get("manufacturer"),
                     raw_data=gpu_type
                 ))
             
@@ -145,6 +146,7 @@ def search_gpu_offers(cuda_version: Optional[str] = None, manufacturer: Optional
                     availability_zone="community-cloud",
                     cloud_type=CloudType.COMMUNITY,
                     cuda_version=cuda_version,  # Add CUDA version if filtered
+                    manufacturer=gpu_type.get("manufacturer"),
                     raw_data=gpu_type
                 ))
         
