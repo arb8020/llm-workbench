@@ -52,6 +52,9 @@ transformers-test = [
     "transformers @ git+https://github.com/huggingface/transformers.git",  # Bleeding-edge for gpt_oss and glm4_moe support
     "torch>=2.0.0",
     "accelerate>=0.20.0",
+    "datasets>=4.0.0",  # For streaming dataset support - tested compatible with pyarrow >=21.0.0
+    "pyarrow>=21.0.0",  # Required for datasets compatibility
+
 ]
 
 # Interpretability support (nnsight integration)
@@ -63,6 +66,7 @@ interp = [
     "uvicorn>=0.20.0",
     "datasets>=4.0.0",  # For streaming dataset support - tested compatible with pyarrow >=21.0.0
     "pyarrow>=21.0.0",  # Required for datasets compatibility
+    "triton>=3.4.0",  # Required for MXFP4 quantization support
 ]
 
 # All optional dependencies
