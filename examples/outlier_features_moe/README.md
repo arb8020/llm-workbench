@@ -43,11 +43,11 @@ python run_full_analysis.py \
 - `run_full_analysis.py` - Main analysis orchestrator
 - `extract_activations.py` - Memory-optimized activation extraction
 - `analyze_activations.py` - Outlier detection with paper-accurate methodology
-- `dataset_utils.py` - Tokenizer-based sequence generation
-
-### Deployment Infrastructure  
 - `deploy_and_analyze.py` - Automated cloud GPU deployment
-- `estimate_vram.py` - VRAM estimation for MoE models
+
+### Utilities (in scripts/)
+- `scripts/dataset_utils.py` - Tokenizer-based sequence generation
+- `scripts/estimate_vram.py` - VRAM estimation for MoE models
 
 ## 🔬 Methodology
 
@@ -112,13 +112,14 @@ examples/outlier_features_moe/
 ├── deploy_and_analyze.py        # Cloud deployment wrapper
 ├── extract_activations.py       # Activation extraction
 ├── analyze_activations.py       # Outlier detection
-├── dataset_utils.py            # Dataset utilities
-├── estimate_vram.py            # VRAM estimation
 ├── layer_analysis_results.json # Model layer structures
 ├── remote_results/             # Synced analysis results
 ├── handoffs/                   # Development handoff docs
 ├── docs/                       # Research papers & analysis
 └── scripts/                    # Utility scripts
+    ├── dataset_utils.py        # Dataset utilities
+    ├── estimate_vram.py        # VRAM estimation
+    └── ...                     # Other utility scripts
 ```
 
 ## 🔧 Requirements
