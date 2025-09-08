@@ -36,6 +36,14 @@ interp = [
     "engine[interp]"
 ]
 
+# Outlier analysis features - nnsight without vllm conflict
+outlier = [
+    "rollouts",
+    "broker", 
+    "bifrost",
+    "engine[outlier]"
+]
+
 [tool.uv.sources]
 rollouts = { workspace = true }
 broker = { workspace = true }

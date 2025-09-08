@@ -37,6 +37,7 @@ def deploy_outlier_analysis_instance(
     min_cpu_ram: int = 64,  # GB of CPU RAM for large MoE model loading
     max_price: float = 3.50,
     container_disk: int = 150,
+    volume_disk: int = 0,  # Volume disk size in GB (for large model caching)
     num_sequences: int = 4,
     sequence_length: int = 2048,
     batch_size: int = 1,
@@ -58,14 +59,17 @@ def deploy_outlier_analysis_instance(
     # 0. ESTIMATE VRAM REQUIREMENTS
     if min_vram is None:
         print(f"🔍 Estimating VRAM requirements for {model_name}...")
-        from estimate_vram import estimate_vram_requirements
+        from scripts.estimate_vram import estimate_vram_requirements
         vram_estimate = estimate_vram_requirements(model_name, safety_factor=safety_factor, sequence_length=sequence_length, batch_size=batch_size)
         min_vram = vram_estimate['recommended_vram']
         print(f"📊 Estimated VRAM: {min_vram}GB (effective params: {vram_estimate['effective_params_billions']:.1f}B)")
     
     # 1. PROVISION GPU
     gpu_desc = f"{gpu_count}x GPU" if gpu_count > 1 else "GPU"
-    print(f"📡 Creating {gpu_desc} instance (min {min_vram}GB VRAM per GPU, {min_cpu_ram}GB CPU RAM, max ${max_price}/hr, {container_disk}GB disk)...")
+    disk_desc = f"{container_disk}GB container"
+    if volume_disk > 0:
+        disk_desc += f" + {volume_disk}GB volume"
+    print(f"📡 Creating {gpu_desc} instance (min {min_vram}GB VRAM per GPU, {min_cpu_ram}GB CPU RAM, max ${max_price}/hr, {disk_desc})...")
     gpu_client = GPUClient()
     
     # Build query for GPU with minimum VRAM, CPU RAM, max price, and NVIDIA manufacturer
@@ -85,7 +89,8 @@ def deploy_outlier_analysis_instance(
         gpu_count=gpu_count,
         sort=lambda x: x.price_per_hour,  # Sort by price (cheapest first)
         reverse=False,
-        container_disk_gb=container_disk  # Ensure sufficient disk space for large models
+        container_disk_gb=container_disk,  # Container disk for system files
+        volume_disk_gb=volume_disk if volume_disk > 0 else None  # Volume disk for model caching
     )
     
     print(f"✅ GPU ready: {gpu_instance.id}")
@@ -103,23 +108,50 @@ def deploy_outlier_analysis_instance(
     print("📦 Deploying codebase...")
     bifrost_client = BifrostClient(ssh_connection)
     
-    # Deploy the codebase to remote workspace with interpretability dependencies
-    print("📦 Installing dependencies with interpretability features...")
-    workspace_path = bifrost_client.push(uv_extra="interp")
+    # Deploy the codebase to remote workspace with outlier dependencies
+    print("📦 Installing outlier analysis dependencies (nnsight, triton 3.4+, no vllm conflict)...")
+    workspace_path = bifrost_client.push(uv_extra="outlier")  # Use outlier-specific dependencies
     bifrost_client.exec("echo 'Codebase deployed successfully'")
     print(f"✅ Code deployed to: {workspace_path}")
-    print("✅ Dependencies installed with interpretability features")
+    print("✅ Dependencies installed successfully")
     
     # 4. CHECK DISK SPACE
     print("💾 Checking disk space...")
     disk_info = bifrost_client.exec("df -h /")
     print(f"Disk space:\n{disk_info}")
     
+    # Configure HuggingFace cache to use volume disk if available
+    if volume_disk > 0:
+        print("🗂️  Configuring HuggingFace cache to use volume disk...")
+        # Check if volume is mounted and configure HF cache
+        volume_check = bifrost_client.exec("df -h | grep -E '(volume|workspace)' || echo 'NO_VOLUME'")
+        if "NO_VOLUME" not in volume_check:
+            # Set HF cache to volume disk location
+            hf_cache_cmd = '''
+mkdir -p /workspace/hf_cache
+export HF_HOME=/workspace/hf_cache
+export HUGGINGFACE_HUB_CACHE=/workspace/hf_cache
+export TRANSFORMERS_CACHE=/workspace/hf_cache/transformers
+echo "HF cache configured to use volume disk at /workspace/hf_cache"
+'''
+            bifrost_client.exec(hf_cache_cmd)
+            print("✅ HuggingFace cache configured to use volume disk")
+        else:
+            print("⚠️  Volume disk not detected, using container disk for HF cache")
+    
     # 5. RUN OUTLIER ANALYSIS IN TMUX
     print(f"🔬 Starting outlier analysis for {model_name} in tmux session...")
     
     # Create analysis command
+    # Set HF environment variables based on volume disk availability
+    hf_env = ""
+    if volume_disk > 0:
+        hf_env = """export HF_HOME=/workspace/hf_cache 2>/dev/null || export HF_HOME=~/.cache/huggingface && \\
+export HUGGINGFACE_HUB_CACHE=$HF_HOME && \\
+export TRANSFORMERS_CACHE=$HF_HOME/transformers && \\"""
+    
     analysis_cmd = f"""cd ~/.bifrost/workspace && \\
+{hf_env}
 uv run python examples/outlier_features_moe/run_full_analysis.py \\
     --model "{model_name}" \\
     --num-sequences {num_sequences} \\
@@ -251,8 +283,8 @@ def sync_results_from_remote(bifrost_client: BifrostClient, local_output_dir: Pa
             remote_path="~/.bifrost/workspace/examples/outlier_features_moe/outlier_analysis.log",
             local_path=str(local_output_dir / "outlier_analysis.log")
         )
-        if result.files_transferred > 0:
-            print("✅ Synced: outlier_analysis.log")
+        if result and result.success and result.files_copied > 0:
+            print(f"✅ Synced: outlier_analysis.log ({result.files_copied} files, {result.total_bytes} bytes)")
         else:
             print("⚠️ Log file not found or empty")
     except Exception as e:
@@ -294,7 +326,8 @@ def sync_results_from_remote(bifrost_client: BifrostClient, local_output_dir: Pa
                             remote_path=f"~/.bifrost/workspace/examples/outlier_features_moe/full_analysis_results/{run_dir}/metadata.json",
                             local_path=str(local_run_dir / "metadata.json")
                         )
-                        total_files += result.files_transferred
+                        if result and result.success and result.files_copied > 0:
+                            total_files += result.files_copied
                     except Exception as e:
                         print(f"    ⚠️ No metadata.json in {run_dir}: {e}")
             
@@ -314,7 +347,8 @@ def main(
     min_vram: int = None,  # Auto-estimate if None
     min_cpu_ram: int = 64,  # GB of CPU RAM for MoE models
     max_price: float = 3.50,
-    container_disk: int = 200,
+    container_disk: int = 150,
+    volume_disk: int = 0,
     num_sequences: int = 4,
     sequence_length: int = 2048,
     batch_size: int = 1,
@@ -344,6 +378,7 @@ def main(
         min_cpu_ram=min_cpu_ram,
         max_price=max_price,
         container_disk=container_disk,
+        volume_disk=volume_disk,
         num_sequences=num_sequences,
         sequence_length=sequence_length,
         batch_size=batch_size,
@@ -447,8 +482,10 @@ if __name__ == "__main__":
                        help="Minimum CPU RAM in GB (default: 64)")
     parser.add_argument("--max-price", type=float, default=3.50, 
                        help="Maximum price per hour (default: 3.50)")
-    parser.add_argument("--container-disk", type=int, default=200,
-                       help="Container disk size in GB (default: 200)")
+    parser.add_argument("--container-disk", type=int, default=150,
+                       help="Container disk size in GB (default: 150)")
+    parser.add_argument("--volume-disk", type=int, default=0,
+                       help="Volume disk size in GB for large model caching (default: 0)")
     parser.add_argument("--gpu-count", type=int, default=1, choices=range(1, 9),
                        help="Number of GPUs to provision (1-8, default: 1)")
     parser.add_argument("--gpu-filter", type=str, default=None,
@@ -465,6 +502,7 @@ if __name__ == "__main__":
         min_cpu_ram=args.min_cpu_ram,
         max_price=args.max_price,
         container_disk=args.container_disk,
+        volume_disk=args.volume_disk,
         num_sequences=args.num_sequences,
         sequence_length=args.sequence_length,
         batch_size=args.batch_size,
