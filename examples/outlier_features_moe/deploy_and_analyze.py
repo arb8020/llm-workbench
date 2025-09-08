@@ -36,7 +36,7 @@ def deploy_outlier_analysis_instance(
     min_vram: int = None,  # Will be auto-estimated if None
     min_cpu_ram: int = 64,  # GB of CPU RAM for large MoE model loading
     max_price: float = 3.50,
-    container_disk: int = 200,
+    container_disk: int = 150,
     num_sequences: int = 4,
     sequence_length: int = 2048,
     batch_size: int = 1,
