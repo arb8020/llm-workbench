@@ -89,16 +89,29 @@ def main():
     import torch
     from nnsight import LanguageModel
     
-    # Load model once with balanced device mapping and memory limits
+    # Load model with dynamic GPU detection
     print(f"Loading model: {args.model}")
-    print("Using balanced device mapping with 76GB per GPU limit...")
     
-    llm = LanguageModel(
-        args.model,
-        device_map="balanced",
-        max_memory={0: "76GiB", 1: "76GiB"},
-        torch_dtype=torch.bfloat16
-    )
+    # Auto-detect available GPUs
+    gpu_count = torch.cuda.device_count()
+    print(f"Detected {gpu_count} GPU(s)")
+    
+    if gpu_count == 1:
+        print("Using single-GPU configuration with device_map='auto'")
+        llm = LanguageModel(
+            args.model,
+            device_map="auto",
+            torch_dtype=torch.bfloat16
+        )
+    else:
+        print(f"Using multi-GPU balanced configuration with 76GB per GPU limit...")
+        max_memory = {i: "76GiB" for i in range(gpu_count)}
+        llm = LanguageModel(
+            args.model,
+            device_map="balanced",
+            max_memory=max_memory,
+            torch_dtype=torch.bfloat16
+        )
     
     # Disable KV cache to save memory
     llm.model.config.use_cache = False

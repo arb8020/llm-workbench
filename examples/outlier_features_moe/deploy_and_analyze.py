@@ -119,14 +119,14 @@ def deploy_outlier_analysis_instance(
     print(f"🔬 Starting outlier analysis for {model_name} in tmux session...")
     
     # Create analysis command
-    analysis_cmd = f"""cd ~/.bifrost/workspace/examples/outlier_features_moe && \\
-uv run python run_full_analysis.py \\
+    analysis_cmd = f"""cd ~/.bifrost/workspace && \\
+uv run python examples/outlier_features_moe/run_full_analysis.py \\
     --model "{model_name}" \\
     --num-sequences {num_sequences} \\
     --sequence-length {sequence_length} \\
     --batch-size {batch_size} \\
     --threshold {threshold} \\
-    2>&1 | tee outlier_analysis.log"""
+    2>&1 | tee examples/outlier_features_moe/outlier_analysis.log"""
     
     # Create tmux session and start analysis with persistent logging
     tmux_cmd = f"tmux new-session -d -s outlier-analysis '{analysis_cmd}'"
@@ -154,8 +154,8 @@ uv run python run_full_analysis.py \\
             
             # Check log for completion markers
             log_check = bifrost_client.exec(
-                "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
-                "tail -20 outlier_analysis.log | grep -E '(ANALYSIS COMPLETE|❌.*failed:|✅.*complete)' || echo 'STILL_RUNNING'"
+                "cd ~/.bifrost/workspace && "
+                "tail -20 examples/outlier_features_moe/outlier_analysis.log | grep -E '(ANALYSIS COMPLETE|❌.*failed:|✅.*complete)' || echo 'STILL_RUNNING'"
             )
             
             if "ANALYSIS COMPLETE" in log_check or "✅" in log_check:
@@ -175,7 +175,7 @@ uv run python run_full_analysis.py \\
             # Show recent log output
             try:
                 recent_log = bifrost_client.exec(
-                    "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
+                    "cd ~/.bifrost/workspace && "
                     "tail -5 outlier_analysis.log"
                 )
                 print(f"   Recent progress:\n{recent_log}")
@@ -188,7 +188,7 @@ uv run python run_full_analysis.py \\
         elapsed_time = time.time() - start_time
         print(f"⚠️ Analysis timeout after {elapsed_time/60:.1f} minutes")
         print("   Check logs with:")
-        print(f"   bifrost exec '{ssh_connection}' 'cd ~/.bifrost/workspace/examples/outlier_features_moe && cat outlier_analysis.log'")
+        print(f"   bifrost exec '{ssh_connection}' 'cd ~/.bifrost/workspace && cat examples/outlier_features_moe/outlier_analysis.log'")
         print(f"   bifrost exec '{ssh_connection}' 'tmux capture-pane -t outlier-analysis -p'")
         # Don't exit - still try to sync partial results
     
@@ -196,7 +196,7 @@ uv run python run_full_analysis.py \\
     print("\n📋 Final analysis log:")
     try:
         final_log = bifrost_client.exec(
-            "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
+            "cd ~/.bifrost/workspace && "
             "tail -50 outlier_analysis.log"
         )
         print(final_log)
@@ -219,8 +219,8 @@ uv run python run_full_analysis.py \\
     
     print("\n🔧 Management commands:")
     print(f"   # Check tmux session: bifrost exec '{ssh_connection}' 'tmux list-sessions'")
-    print(f"   # View analysis log: bifrost exec '{ssh_connection}' 'cd ~/.bifrost/workspace/examples/outlier_features_moe && cat outlier_analysis.log'")
-    print(f"   # List results: bifrost exec '{ssh_connection}' 'cd ~/.bifrost/workspace/examples/outlier_features_moe && find . -name \"*.json\" -o -name \"*.log\"'")
+    print(f"   # View analysis log: bifrost exec '{ssh_connection}' 'cd ~/.bifrost/workspace && cat examples/outlier_features_moe/outlier_analysis.log'")
+    print(f"   # List results: bifrost exec '{ssh_connection}' 'cd ~/.bifrost/workspace && find examples/outlier_features_moe -name \"*.json\" -o -name \"*.log\"'")
     print(f"   # Terminate GPU: broker terminate {gpu_instance.id}")
     
     return connection_info
@@ -235,8 +235,8 @@ def sync_results_from_remote(bifrost_client: BifrostClient, local_output_dir: Pa
     
     # Check what files exist on remote
     remote_files = bifrost_client.exec(
-        "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
-        "find . -name '*.json' -o -name '*.log' -o -name 'full_analysis_results' -type d | head -20"
+        "cd ~/.bifrost/workspace && "
+        "find examples/outlier_features_moe -name '*.json' -o -name '*.log' -o -name 'full_analysis_results' -type d | head -20"
     )
     
     if not remote_files or remote_files.strip() == "":
@@ -262,8 +262,8 @@ def sync_results_from_remote(bifrost_client: BifrostClient, local_output_dir: Pa
     try:
         # Check if results directory exists
         results_check = bifrost_client.exec(
-            "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
-            "ls -la full_analysis_results/ 2>/dev/null || echo 'NO_RESULTS_DIR'"
+            "cd ~/.bifrost/workspace && "
+            "ls -la examples/outlier_features_moe/full_analysis_results/ 2>/dev/null || echo 'NO_RESULTS_DIR'"
         )
         
         if "NO_RESULTS_DIR" not in results_check:
@@ -358,7 +358,7 @@ def main(
     try:
         # 2. SYNC RESULTS
         print("\n💾 Step 2: Syncing results to local...")
-        output_dir = Path(f"examples/outlier_features_moe/remote_results/{experiment_name}")
+        output_dir = Path(f"remote_results/{experiment_name}")
         sync_results_from_remote(bifrost_client, output_dir)
         
         print(f"\n📁 Results saved to: {output_dir}")
