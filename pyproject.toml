@@ -1,10 +1,16 @@
 [tool.uv.workspace]
-members = ["bifrost", "broker", "engine", "rollouts"]
+members = ["bifrost", "broker", "rollouts"]
 
 [tool.uv]
 required-environments = [
     "sys_platform == 'linux' and platform_machine == 'x86_64'",
     "sys_platform == 'darwin' and platform_machine == 'arm64'"
+]
+conflicts = [
+    [
+        { extra = "interp" },
+        { extra = "outlier" }
+    ]
 ]
 
 [project]
@@ -12,12 +18,11 @@ name = "llm-workbench"
 version = "0.1.0"
 description = "Complete toolkit for GPU-accelerated machine learning workflows"
 requires-python = ">=3.10"
-# Default: Full GPU stack for remote deployment
+# Default: Core tools only (no ML dependencies to avoid conflicts)
 dependencies = [
     "rollouts",
     "broker",
-    "bifrost",
-    "engine"
+    "bifrost"
 ]
 
 [project.optional-dependencies]
@@ -28,27 +33,28 @@ local = [
     "bifrost"
 ]
 
-# Interpretability features - includes engine with nnsight
-interp = [
-    "rollouts",
-    "broker", 
-    "bifrost",
-    "engine[interp]"
-]
-
 # Outlier analysis features - nnsight without vllm conflict
 outlier = [
     "rollouts",
     "broker", 
     "bifrost",
-    "engine[outlier]"
+    "nnsight>=0.4",
+    "transformers @ git+https://github.com/huggingface/transformers.git",
+    "torch>=2.0.0",
+    "accelerate>=0.20.0",
+    "datasets>=4.0.0",
+    "pyarrow>=21.0.0",
+    "triton>=3.4.0; sys_platform == 'linux'",
+    "huggingface-hub>=0.34.4",
+    "numpy<2.0.0",
+    "requests>=2.28.0",
+    "pathlib"
 ]
 
 [tool.uv.sources]
 rollouts = { workspace = true }
 broker = { workspace = true }
 bifrost = { workspace = true }
-engine = { workspace = true }
 
 [build-system]
 requires = ["setuptools>=61.0"]
