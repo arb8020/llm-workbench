@@ -45,7 +45,8 @@ def deploy_outlier_analysis_instance(
     safety_factor: float = 1.3,
     gpu_count: int = 1,
     gpu_filter: str = None,  # Optional GPU name filter (e.g., "A100", "H100", "RTX 4090")
-    chunk_layers: int = None  # Number of layers to process at once
+    chunk_layers: int = None,  # Number of layers to process at once
+    log_level: str = "INFO"  # Logging level
 ) -> dict:
     """Deploy GPU instance and run outlier analysis."""
     
@@ -169,7 +170,7 @@ exec > outlier_analysis.log 2>&1 && \\
     --num-sequences {num_sequences} \\
     --sequence-length {sequence_length} \\
     --batch-size {batch_size} \\
-    --threshold {threshold}{' --chunk-layers ' + str(chunk_layers) if chunk_layers else ''} \\
+    --threshold {threshold}{' --chunk-layers ' + str(chunk_layers) if chunk_layers else ''}{' --log-level ' + log_level if log_level != 'INFO' else ''} \\
 || echo "ANALYSIS FAILED with exit code $?"
 """
     
@@ -408,6 +409,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=1, help="Batch size (default: 1)")
     parser.add_argument("--threshold", type=float, default=6.0, help="Outlier magnitude threshold (default: 6.0)")
     parser.add_argument("--chunk-layers", type=int, default=None, help="Number of layers to process at once (default: process all together)")
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"], help="Logging level (default: INFO)")
     
     # Deployment args
     parser.add_argument("--keep-running", action="store_true", 
@@ -446,5 +448,6 @@ if __name__ == "__main__":
         safety_factor=args.safety_factor,
         gpu_count=args.gpu_count,
         gpu_filter=args.gpu_filter,
-        chunk_layers=args.chunk_layers
+        chunk_layers=args.chunk_layers,
+        log_level=args.log_level
     )

@@ -7,14 +7,21 @@ Combines extract_activations.py and analyze_activations.py into a single workflo
 import sys
 import argparse
 import json
+import logging
 from pathlib import Path
 from datetime import datetime
 from transformers import AutoTokenizer
+
+# Import shared logging setup
+from shared.logging_config import setup_logging
 
 # Import functions from the other scripts
 from extract_activations import extract_activations, extract_activations_optimized
 from analyze_activations import analyze_run_for_outliers
 from dataset_utils import get_text_sequences
+
+# Setup logger for this module
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -37,22 +44,28 @@ def main():
                        help="Magnitude threshold for outlier detection")
     parser.add_argument("--chunk-layers", type=int, default=None,
                        help="Number of layers to process at once (default: process all layers together). Use smaller values if running out of GPU memory.")
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+                       help="Logging level (default: INFO)")
     
     args = parser.parse_args()
     
-    print("="*60)
-    print("FULL OUTLIER ANALYSIS PIPELINE")
-    print("="*60)
-    print(f"Model: {args.model}")
-    print(f"Dataset: {args.dataset}")
-    print(f"Sequences: {args.num_sequences} x {args.sequence_length} tokens")
-    print(f"Batch size: {args.batch_size}")
+    # Setup logging first
+    setup_logging(level=args.log_level)
+    
+    logger.info("="*60)
+    logger.info("FULL OUTLIER ANALYSIS PIPELINE")
+    logger.info("="*60)
+    logger.info(f"Model: {args.model}")
+    logger.info(f"Dataset: {args.dataset}")
+    logger.info(f"Sequences: {args.num_sequences} x {args.sequence_length} tokens")
+    logger.info(f"Batch size: {args.batch_size}")
     if args.layers is None:
-        print("Layers: All layers (will be determined from model)")
+        logger.info("Layers: All layers (will be determined from model)")
     else:
-        print(f"Layers: {args.layers}")
-    print(f"Threshold: {args.threshold}")
-    print(f"Save dir: {args.save_dir}")
+        logger.info(f"Layers: {args.layers}")
+    logger.info(f"Threshold: {args.threshold}")
+    logger.info(f"Save dir: {args.save_dir}")
+    logger.debug(f"Chunk layers: {args.chunk_layers}")
     
     # Validate arguments
     assert args.num_sequences > 0, "num_sequences must be positive"
@@ -61,54 +74,56 @@ def main():
     assert args.num_sequences % args.batch_size == 0, f"num_sequences ({args.num_sequences}) must be divisible by batch_size ({args.batch_size})"
     
     # Step 0: Load tokenizer and dataset sequences
-    print("\n" + "="*40)
-    print("STEP 0: LOADING TOKENIZER AND DATASET")
-    print("="*40)
+    logger.info("\n" + "="*40)
+    logger.info("STEP 0: LOADING TOKENIZER AND DATASET")
+    logger.info("="*40)
     
     try:
         # Load tokenizer
-        print("Loading tokenizer...")
+        logger.info("Loading tokenizer...")
+        logger.debug(f"Tokenizer model: {args.model}")
         tokenizer = AutoTokenizer.from_pretrained(args.model)
-        print(f"✅ Tokenizer loaded: {tokenizer.__class__.__name__}")
+        logger.info(f"✅ Tokenizer loaded: {tokenizer.__class__.__name__}")
         
         # Load dataset sequences using tokenizer
-        print("Loading dataset sequences...")
+        logger.info("Loading dataset sequences...")
+        logger.debug(f"Dataset: {args.dataset}, sequences: {args.num_sequences}, length: {args.sequence_length}")
         text_sequences = get_text_sequences(
             dataset_name=args.dataset,
             num_sequences=args.num_sequences,
             sequence_length=args.sequence_length,
             tokenizer=tokenizer
         )
-        print(f"✅ Loaded {len(text_sequences)} sequences")
+        logger.info(f"✅ Loaded {len(text_sequences)} sequences")
         
     except Exception as e:
-        print(f"❌ Dataset/tokenizer loading failed: {e}")
+        logger.error(f"❌ Dataset/tokenizer loading failed: {e}")
         sys.exit(1)
     
     # Step 1: Load model once with optimized memory settings
-    print("\n" + "="*40)
-    print("STEP 1: LOADING MODEL (MEMORY OPTIMIZED)")
-    print("="*40)
+    logger.info("\n" + "="*40)
+    logger.info("STEP 1: LOADING MODEL (MEMORY OPTIMIZED)")
+    logger.info("="*40)
     
     import torch
     from nnsight import LanguageModel
     
     # Load model with dynamic GPU detection
-    print(f"Loading model: {args.model}")
+    logger.info(f"Loading model: {args.model}")
     
     # Auto-detect available GPUs
     gpu_count = torch.cuda.device_count()
-    print(f"Detected {gpu_count} GPU(s)")
+    logger.info(f"Detected {gpu_count} GPU(s)")
     
     if gpu_count == 1:
-        print("Using single-GPU configuration with device_map='auto'")
+        logger.info("Using single-GPU configuration with device_map='auto'")
         llm = LanguageModel(
             args.model,
             device_map="auto",
             torch_dtype=torch.bfloat16
         )
     else:
-        print(f"Using multi-GPU balanced configuration with 76GB per GPU limit...")
+        logger.info(f"Using multi-GPU balanced configuration with 76GB per GPU limit...")
         max_memory = {i: "76GiB" for i in range(gpu_count)}
         llm = LanguageModel(
             args.model,
@@ -119,12 +134,13 @@ def main():
     
     # Disable KV cache to save memory
     llm.model.config.use_cache = False
+    logger.debug("KV cache disabled to save memory")
     
     # Print device mapping for verification
     if hasattr(llm.model, 'hf_device_map'):
-        print(f"Device mapping: {llm.model.hf_device_map}")
+        logger.debug(f"Device mapping: {llm.model.hf_device_map}")
     
-    print("✅ Model loaded successfully")
+    logger.info("✅ Model loaded successfully")
     
     # Clean up HuggingFace cache to free disk space
     print("\n🧹 Cleaning up HuggingFace cache to free disk space...")
@@ -159,12 +175,14 @@ def main():
             end_idx = start_idx + args.batch_size
             batch_texts = text_sequences[start_idx:end_idx]
             
-            print(f"\n{'='*20} BATCH {batch_idx + 1}/{num_batches} {'='*20}")
-            print(f"Processing {len(batch_texts)} sequences")
+            logger.info(f"\n{'='*20} BATCH {batch_idx + 1}/{num_batches} {'='*20}")
+            logger.info(f"Processing {len(batch_texts)} sequences")
+            logger.debug(f"Batch texts preview: {[t[:50] + '...' for t in batch_texts]}")
             
             # Step 1: Extract activations
             if args.chunk_layers:
-                print(f"Using layer chunking: {args.chunk_layers} layers at a time")
+                logger.info(f"Using layer chunking: {args.chunk_layers} layers at a time")
+                logger.debug(f"Extraction config: layers={args.layers}, save_dir={args.save_dir}")
                 run_dir, metadata = extract_activations_optimized(
                     llm=llm,
                     texts=batch_texts,
@@ -173,7 +191,8 @@ def main():
                     chunk_size=args.chunk_layers
                 )
             else:
-                print("Processing all layers together (no chunking)")
+                logger.info("Processing all layers together (no chunking)")
+                logger.debug(f"Extraction config: layers={args.layers}, save_dir={args.save_dir}")
                 run_dir, metadata = extract_activations_optimized(
                     llm=llm,
                     texts=batch_texts,
@@ -182,10 +201,12 @@ def main():
                     chunk_size=None  # Process all layers at once
                 )
             
-            print(f"✅ Activation extraction completed: {run_dir}")
+            logger.info(f"✅ Activation extraction completed: {run_dir}")
+            logger.debug(f"Extraction metadata: {metadata}")
             
             # Step 2: Immediately analyze this batch for outliers
-            print(f"🔍 Analyzing batch {batch_idx + 1} for outliers...")
+            logger.info(f"🔍 Analyzing batch {batch_idx + 1} for outliers...")
+            logger.debug(f"Using threshold: {args.threshold}")
             systematic_outliers, outlier_info = analyze_run_for_outliers(
                 run_dir=run_dir,
                 magnitude_threshold=args.threshold
@@ -213,12 +234,20 @@ def main():
             with open(batch_result_file, 'w') as f:
                 json.dump(batch_result, f, indent=2)
             
-            print(f"✅ Batch {batch_idx + 1}: Found {len(systematic_outliers)} systematic outlier features")
-            print(f"📁 Results saved: {batch_result_file}")
+            logger.info(f"✅ Batch {batch_idx + 1}: Found {len(systematic_outliers)} systematic outlier features")
+            logger.info(f"📁 Results saved: {batch_result_file}")
+            logger.debug(f"Batch result summary: {len(batch_result['systematic_outliers'])} outliers, {batch_result['sequences_processed']} sequences")
             
-            # Step 5: Clear GPU cache and cleanup
+            # Step 5: Clean up activation files to save disk space
+            import shutil
+            if run_dir.exists():
+                disk_freed_mb = sum(f.stat().st_size for f in run_dir.rglob('*.pt')) / (1024*1024)
+                shutil.rmtree(run_dir)
+                logger.info(f"🗑️  Cleaned up activation files: {run_dir} ({disk_freed_mb:.1f}MB freed)")
+            
+            # Step 6: Clear GPU cache
             torch.cuda.empty_cache()
-            print(f"🧹 GPU cache cleared")
+            logger.debug(f"🧹 GPU cache cleared")
         
         print(f"\n✅ All {num_batches} batches completed!")
         
