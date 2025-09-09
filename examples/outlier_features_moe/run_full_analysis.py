@@ -146,6 +146,7 @@ def main():
     print("\n🧹 Cleaning up HuggingFace cache to free disk space...")
     import shutil
     import os
+    from pathlib import Path
     
     cache_dir = os.path.expanduser("~/.cache/huggingface")
     if os.path.exists(cache_dir):
@@ -239,8 +240,6 @@ def main():
             logger.debug(f"Batch result summary: {len(batch_result['systematic_outliers'])} outliers, {batch_result['sequences_processed']} sequences")
             
             # Step 5: Clean up activation files to save disk space
-            import shutil
-            from pathlib import Path
             run_dir_path = Path(run_dir) if isinstance(run_dir, str) else run_dir
             if run_dir_path.exists():
                 disk_freed_mb = sum(f.stat().st_size for f in run_dir_path.rglob('*.pt')) / (1024*1024)
