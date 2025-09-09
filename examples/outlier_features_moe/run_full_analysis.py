@@ -122,6 +122,22 @@ def main():
     
     print("✅ Model loaded successfully")
     
+    # Clean up HuggingFace cache to free disk space
+    print("\n🧹 Cleaning up HuggingFace cache to free disk space...")
+    import shutil
+    import os
+    
+    cache_dir = os.path.expanduser("~/.cache/huggingface")
+    if os.path.exists(cache_dir):
+        cache_size = sum(os.path.getsize(os.path.join(dirpath, filename))
+                        for dirpath, dirnames, filenames in os.walk(cache_dir)
+                        for filename in filenames) / (1024**3)  # GB
+        print(f"   Cache directory size: {cache_size:.2f} GB")
+        shutil.rmtree(cache_dir)
+        print(f"✅ Deleted HuggingFace cache ({cache_size:.2f} GB freed)")
+    else:
+        print("   No HuggingFace cache found")
+    
     # Step 2: Extract activations in batches (reusing model)
     print("\n" + "="*40)
     print("STEP 2: EXTRACTING ACTIVATIONS (CHUNKED)")
@@ -157,9 +173,9 @@ def main():
         print(f"❌ Extraction failed: {e}")
         sys.exit(1)
     
-    # Step 2: Analyze for outliers across all batches
+    # Step 3: Analyze for outliers across all batches
     print("\n" + "="*40)
-    print("STEP 2: ANALYZING FOR OUTLIERS")
+    print("STEP 3: ANALYZING FOR OUTLIERS")
     print("="*40)
     
     all_systematic_outliers = []

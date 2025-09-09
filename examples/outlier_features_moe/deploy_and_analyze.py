@@ -160,8 +160,19 @@ uv run python examples/outlier_features_moe/run_full_analysis.py \\
     --threshold {threshold} \\
     2>&1 | tee examples/outlier_features_moe/outlier_analysis.log"""
     
-    # Create tmux session and start analysis with persistent logging
-    tmux_cmd = f"tmux new-session -d -s outlier-analysis '{analysis_cmd}'"
+    # Create log file first, then run command with simple error capture
+    simple_cmd = f"""cd ~/.bifrost/workspace/examples/outlier_features_moe && \\
+exec > outlier_analysis.log 2>&1 && \\
+{hf_env}uv run python run_full_analysis.py \\
+    --model "{model_name}" \\
+    --num-sequences {num_sequences} \\
+    --sequence-length {sequence_length} \\
+    --batch-size {batch_size} \\
+    --threshold {threshold} \\
+|| echo "ANALYSIS FAILED with exit code $?"
+"""
+    
+    tmux_cmd = f"tmux new-session -d -s outlier-analysis '{simple_cmd}'"
     bifrost_client.exec(tmux_cmd)
     
     print("✅ Outlier analysis started in tmux session 'outlier-analysis'")
@@ -186,8 +197,8 @@ uv run python examples/outlier_features_moe/run_full_analysis.py \\
             
             # Check log for completion markers
             log_check = bifrost_client.exec(
-                "cd ~/.bifrost/workspace && "
-                "tail -20 examples/outlier_features_moe/outlier_analysis.log | grep -E '(ANALYSIS COMPLETE|❌.*failed:|✅.*complete)' || echo 'STILL_RUNNING'"
+                "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
+                "tail -20 outlier_analysis.log | grep -E '(ANALYSIS COMPLETE|❌.*failed:|✅.*complete)' || echo 'STILL_RUNNING'"
             )
             
             if "ANALYSIS COMPLETE" in log_check or "✅" in log_check:
@@ -207,7 +218,7 @@ uv run python examples/outlier_features_moe/run_full_analysis.py \\
             # Show recent log output
             try:
                 recent_log = bifrost_client.exec(
-                    "cd ~/.bifrost/workspace && "
+                    "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
                     "tail -5 outlier_analysis.log"
                 )
                 print(f"   Recent progress:\n{recent_log}")
@@ -228,7 +239,7 @@ uv run python examples/outlier_features_moe/run_full_analysis.py \\
     print("\n📋 Final analysis log:")
     try:
         final_log = bifrost_client.exec(
-            "cd ~/.bifrost/workspace && "
+            "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
             "tail -50 outlier_analysis.log"
         )
         print(final_log)
@@ -251,7 +262,7 @@ uv run python examples/outlier_features_moe/run_full_analysis.py \\
     
     print("\n🔧 Management commands:")
     print(f"   # Check tmux session: bifrost exec '{ssh_connection}' 'tmux list-sessions'")
-    print(f"   # View analysis log: bifrost exec '{ssh_connection}' 'cd ~/.bifrost/workspace && cat examples/outlier_features_moe/outlier_analysis.log'")
+    print(f"   # View analysis log: bifrost exec '{ssh_connection}' 'cd ~/.bifrost/workspace/examples/outlier_features_moe && cat outlier_analysis.log'")
     print(f"   # List results: bifrost exec '{ssh_connection}' 'cd ~/.bifrost/workspace && find examples/outlier_features_moe -name \"*.json\" -o -name \"*.log\"'")
     print(f"   # Terminate GPU: broker terminate {gpu_instance.id}")
     
