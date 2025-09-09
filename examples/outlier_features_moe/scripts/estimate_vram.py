@@ -8,15 +8,28 @@ from HuggingFace, rather than guessing from model names.
 
 import requests
 import json
+import os
 from typing import Dict, Optional, Tuple
 import re
+from dotenv import load_dotenv
+
+
+def get_hf_headers() -> Dict[str, str]:
+    """Get HuggingFace API headers with authentication token."""
+    load_dotenv()
+    hf_token = os.getenv("HF_TOKEN")
+    headers = {"User-Agent": "llm-workbench/1.0"}
+    if hf_token:
+        headers["Authorization"] = f"Bearer {hf_token}"
+    return headers
 
 
 def fetch_model_config(model_name: str) -> Optional[Dict]:
     """Fetch model configuration from HuggingFace."""
     try:
         config_url = f"https://huggingface.co/{model_name}/resolve/main/config.json"
-        response = requests.get(config_url, timeout=10)
+        headers = get_hf_headers()
+        response = requests.get(config_url, headers=headers, timeout=10)
         response.raise_for_status()
         return response.json()
     except Exception as e:
@@ -27,16 +40,18 @@ def fetch_model_config(model_name: str) -> Optional[Dict]:
 def fetch_safetensors_index(model_name: str) -> Optional[Dict]:
     """Fetch safetensors index to get actual weight information."""
     try:
+        headers = get_hf_headers()
+        
         # Try the sharded index first (for large models)
         index_url = f"https://huggingface.co/{model_name}/resolve/main/model.safetensors.index.json"
-        response = requests.get(index_url, timeout=10)
+        response = requests.get(index_url, headers=headers, timeout=10)
         if response.status_code == 200:
             return response.json()
         
         # Fallback: try single file metadata
         # For single files, we can fetch just the metadata header
         single_url = f"https://huggingface.co/{model_name}/resolve/main/model.safetensors"
-        response = requests.head(single_url, timeout=10)
+        response = requests.head(single_url, headers=headers, timeout=10)
         if response.status_code == 200:
             # Return a marker that single file exists
             return {"single_file": True, "url": single_url}

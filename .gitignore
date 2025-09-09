@@ -39,6 +39,13 @@ output.txt
 *.swp
 *.swo
 
+# Result files
+remote_results/
+examples/outlier_features_moe/handoffs/
+examples/outlier_features_moe/full_analysis_results/
+examples/outlier_features_moe/*.tar.gz
+docs/archive/
+
 # OS
 .DS_Store
 Thumbs.db

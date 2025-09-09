@@ -9,28 +9,29 @@ DEFAULT_SEQUENCES=16
 DEFAULT_LENGTH=2048
 DEFAULT_BATCH_SIZE=1
 DEFAULT_THRESHOLD=6.0
+DEFAULT_CHUNK_LAYERS=""
 
 # Model configurations function
 get_model_config() {
     case "$1" in
         "glm_4_5_air")
-            echo "zai-org/GLM-4.5-Air,1,H100,80,500"
+            echo "zai-org/GLM-4.5-Air,1,H100,80,500,2"
             ;;
         "olmoe_1b_7b")
-            echo "allenai/OLMoE-1B-7B-0924-Instruct,1,,16,150"
+            echo "allenai/OLMoE-1B-7B-0924-Instruct,1,,16,150,"
             ;;
-        # "qwen3_30b_a3b")
-        #     echo "Qwen/Qwen3-30B-A3B,1,A100,80,"
-        #     ;;
+        "qwen3_30b_a3b")
+            echo "Qwen/Qwen3-30B-A3B,1,A100,80,,"
+            ;;
         # "llama_scout")
-        #     echo "meta-llama/Llama-3.2-1B-Scout,1,,16,"
+        #     echo "meta-llama/Llama-3.2-1B-Scout,1,,16,,"
         #     ;;
         # "llama_maverick")
-        #     echo "meta-llama/Llama-3.2-3B-Maverick,1,,24,"
+        #     echo "meta-llama/Llama-3.2-3B-Maverick,1,,24,,"
         #     ;;
-        # "gpt_oss_120b")
-        #     echo "openai/gpt-oss-120b,1,H100,80,"
-        #     ;;
+        "gpt_oss_120b")
+            echo "openai/gpt-oss-120b,1,H100,80,,"
+            ;;
         *)
             echo ""
             ;;
@@ -39,7 +40,7 @@ get_model_config() {
 
 # Get list of available models
 get_available_models() {
-    echo "glm_4_5_air olmoe_1b_7b"
+    echo "glm_4_5_air olmoe_1b_7b gpt_oss_120b qwen3_30b_a3b"
 }
 
 # Parse command line arguments
@@ -48,6 +49,7 @@ NUM_SEQUENCES=$DEFAULT_SEQUENCES
 SEQUENCE_LENGTH=$DEFAULT_LENGTH
 BATCH_SIZE=$DEFAULT_BATCH_SIZE
 THRESHOLD=$DEFAULT_THRESHOLD
+CHUNK_LAYERS=$DEFAULT_CHUNK_LAYERS
 KEEP_RUNNING="--keep-running" # Keep GPU running by default for debugging
 DRY_RUN=false
 
@@ -64,6 +66,7 @@ usage() {
     echo "  --length N             Sequence length (default: $DEFAULT_LENGTH)"
     echo "  --batch-size N         Batch size (default: $DEFAULT_BATCH_SIZE)"
     echo "  --threshold N          Outlier threshold (default: $DEFAULT_THRESHOLD)"
+    echo "  --chunk-layers N       Number of layers to process at once (default: model-specific)"
     echo "  --keep-running         Keep GPU running after analysis (default)"
     echo "  --no-keep-running      Clean up GPU after analysis"
     echo "  --dry-run              Show commands without executing"
@@ -93,6 +96,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --threshold)
             THRESHOLD="$2"
+            shift 2
+            ;;
+        --chunk-layers)
+            CHUNK_LAYERS="$2"
             shift 2
             ;;
         --keep-running)
@@ -147,7 +154,7 @@ launch_model() {
     local config="$(get_model_config "$model_key")"
     
     # Parse config
-    IFS=',' read -r model_name gpu_count gpu_filter min_vram container_disk <<< "$config"
+    IFS=',' read -r model_name gpu_count gpu_filter min_vram container_disk model_chunk_layers <<< "$config"
     
     # Build command
     local cmd="python examples/outlier_features_moe/deploy_and_analyze.py"
@@ -157,6 +164,10 @@ launch_model() {
     cmd+=" --sequence-length $SEQUENCE_LENGTH"
     cmd+=" --batch-size $BATCH_SIZE"
     cmd+=" --threshold $THRESHOLD"
+    
+    # Use command line chunk layers if provided, otherwise use model default
+    local effective_chunk_layers="${CHUNK_LAYERS:-$model_chunk_layers}"
+    [[ -n "$effective_chunk_layers" ]] && cmd+=" --chunk-layers $effective_chunk_layers"
     
     # Add optional parameters
     [[ -n "$gpu_filter" ]] && cmd+=" --gpu-filter \"$gpu_filter\""

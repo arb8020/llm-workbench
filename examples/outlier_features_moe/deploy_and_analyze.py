@@ -60,11 +60,11 @@ def deploy_outlier_analysis_instance(
     
     # 0. ESTIMATE VRAM REQUIREMENTS
     if min_vram is None:
-        print(f"🔍 Estimating VRAM requirements for {model_name}...")
         from scripts.estimate_vram import estimate_vram_requirements
         vram_estimate = estimate_vram_requirements(model_name, safety_factor=safety_factor, sequence_length=sequence_length, batch_size=batch_size)
         min_vram = vram_estimate['recommended_vram']
-        print(f"📊 Estimated VRAM: {min_vram}GB (effective params: {vram_estimate['effective_params_billions']:.1f}B)")
+        effective_params = vram_estimate.get('effective_params_billions', 0.0)
+        print(f"📊 Estimated VRAM: {min_vram}GB (effective params: {effective_params:.1f}B)")
     
     # 1. PROVISION GPU
     gpu_desc = f"{gpu_count}x GPU" if gpu_count > 1 else "GPU"
@@ -80,9 +80,6 @@ def deploy_outlier_analysis_instance(
     # Add GPU type filter if specified
     if gpu_filter:
         query = query & (gpu_client.gpu_type.contains(gpu_filter))
-        print(f"🔍 Searching for {gpu_count}x {gpu_filter} GPU: ≥{min_vram}GB VRAM per GPU, ≥{min_cpu_ram}GB CPU RAM, ≤${max_price}/hr")
-    else:
-        print(f"🔍 Searching for {gpu_count}x NVIDIA GPU: ≥{min_vram}GB VRAM per GPU, ≥{min_cpu_ram}GB CPU RAM, ≤${max_price}/hr")
     
     gpu_instance = gpu_client.create(
         query=query,
@@ -98,7 +95,6 @@ def deploy_outlier_analysis_instance(
     print(f"✅ GPU ready: {gpu_instance.id}")
     
     # Wait for SSH to be ready
-    print("⏳ Waiting for SSH connection to be ready...")
     if not gpu_instance.wait_until_ssh_ready(timeout=300):  # 5 minutes
         print("❌ Failed to get SSH connection ready")
         sys.exit(1)
@@ -107,60 +103,41 @@ def deploy_outlier_analysis_instance(
     print(f"✅ SSH ready: {ssh_connection}")
     
     # 2. DEPLOY CODE
-    print("📦 Deploying codebase...")
     bifrost_client = BifrostClient(ssh_connection)
     
     # Deploy the codebase to remote workspace with outlier dependencies
-    print("📦 Installing outlier analysis dependencies (nnsight, triton 3.4+, no vllm conflict)...")
     workspace_path = bifrost_client.push(uv_extra="outlier")  # Use outlier-specific dependencies
-    bifrost_client.exec("echo 'Codebase deployed successfully'")
-    print(f"✅ Code deployed to: {workspace_path}")
-    print("✅ Dependencies installed successfully")
-    
-    # 4. CHECK DISK SPACE
-    print("💾 Checking disk space...")
-    disk_info = bifrost_client.exec("df -h /")
-    print(f"Disk space:\n{disk_info}")
+    print(f"✅ Code deployed and dependencies installed")
     
     # Configure HuggingFace cache to use volume disk if available
     if volume_disk > 0:
-        print("🗂️  Configuring HuggingFace cache to use volume disk...")
-        # Check if volume is mounted and configure HF cache
-        volume_check = bifrost_client.exec("df -h | grep -E '(volume|workspace)' || echo 'NO_VOLUME'")
-        if "NO_VOLUME" not in volume_check:
-            # Set HF cache to volume disk location
-            hf_cache_cmd = '''
-mkdir -p /workspace/hf_cache
-export HF_HOME=/workspace/hf_cache
-export HUGGINGFACE_HUB_CACHE=/workspace/hf_cache
-export TRANSFORMERS_CACHE=/workspace/hf_cache/transformers
-echo "HF cache configured to use volume disk at /workspace/hf_cache"
+        # Set HF cache to volume disk location (assume volume is mounted if requested)
+        hf_cache_cmd = '''
+mkdir -p /workspace/hf_cache 2>/dev/null || mkdir -p ~/.cache/huggingface
+export HF_HOME=/workspace/hf_cache 2>/dev/null || export HF_HOME=~/.cache/huggingface
+export HUGGINGFACE_HUB_CACHE=$HF_HOME
+export TRANSFORMERS_CACHE=$HF_HOME/transformers
 '''
-            bifrost_client.exec(hf_cache_cmd)
-            print("✅ HuggingFace cache configured to use volume disk")
-        else:
-            print("⚠️  Volume disk not detected, using container disk for HF cache")
+        bifrost_client.exec(hf_cache_cmd)
     
     # 5. RUN OUTLIER ANALYSIS IN TMUX
-    print(f"🔬 Starting outlier analysis for {model_name} in tmux session...")
+    print(f"🔬 Starting outlier analysis...")
     
     # Create analysis command
-    # Set HF environment variables based on volume disk availability
-    hf_env = ""
+    # Set HF environment variables based on volume disk availability and load .env
+    import os
+    from dotenv import load_dotenv
+    
+    # Load .env file to get HF_TOKEN
+    load_dotenv()
+    hf_token = os.getenv("HF_TOKEN", "")
+    
+    hf_env = f"export HF_TOKEN='{hf_token}' && \\\n"
+    hf_env += "export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True && \\\n"
     if volume_disk > 0:
-        hf_env = """export HF_HOME=/workspace/hf_cache 2>/dev/null || export HF_HOME=~/.cache/huggingface && \\
+        hf_env += """export HF_HOME=/workspace/hf_cache 2>/dev/null || export HF_HOME=~/.cache/huggingface && \\
 export HUGGINGFACE_HUB_CACHE=$HF_HOME && \\
 export TRANSFORMERS_CACHE=$HF_HOME/transformers && \\"""
-    
-    analysis_cmd = f"""cd ~/.bifrost/workspace && \\
-{hf_env}
-uv run python examples/outlier_features_moe/run_full_analysis.py \\
-    --model "{model_name}" \\
-    --num-sequences {num_sequences} \\
-    --sequence-length {sequence_length} \\
-    --batch-size {batch_size} \\
-    --threshold {threshold} \\
-    2>&1 | tee examples/outlier_features_moe/outlier_analysis.log"""
     
     # Create log file first, then run command with simple error capture
     simple_cmd = f"""cd ~/.bifrost/workspace/examples/outlier_features_moe && \\
@@ -177,23 +154,8 @@ exec > outlier_analysis.log 2>&1 && \\
     tmux_cmd = f"tmux new-session -d -s outlier-analysis '{simple_cmd}'"
     bifrost_client.exec(tmux_cmd)
     
-    print("✅ Outlier analysis started in tmux session 'outlier-analysis'")
-    
-    # 6. ANALYSIS STARTED - NO POLLING
-    print("✅ Analysis started successfully!")
-    print("📋 To monitor progress in real-time:")
-    print(f"   ssh {ssh_connection.replace(':', ' -p ')}")
-    print(f"   cd ~/.bifrost/workspace/examples/outlier_features_moe")
-    print(f"   tail -f outlier_analysis.log")
-    print("")
-    print("📋 Or check recent progress with:")
-    print(f"   bifrost exec '{ssh_connection}' 'cd ~/.bifrost/workspace/examples/outlier_features_moe && tail -20 outlier_analysis.log'")
-    print("")
-    print("📋 To check/attach to tmux session:")
-    print(f"   bifrost exec '{ssh_connection}' 'tmux list-sessions'")
-    print(f"   ssh {ssh_connection.replace(':', ' -p ')} -t 'tmux attach-session -t outlier-analysis'")
-    print("")
-    print("⏳ Analysis will take 10-30 minutes depending on model size...")
+    print("✅ Analysis started - will take 10-30 minutes")
+    print(f"📊 Monitor: bifrost exec '{ssh_connection}' 'cd ~/.bifrost/workspace/examples/outlier_features_moe && tail -20 outlier_analysis.log'")
     
     # 7. RETURN CONNECTION INFO
     connection_info = {
@@ -204,16 +166,9 @@ exec > outlier_analysis.log 2>&1 && \\
         "status": "running"
     }
     
-    print(f"\n🎉 Outlier analysis deployment complete!")
-    print(f"   Instance ID: {gpu_instance.id}")
-    print(f"   SSH: {ssh_connection}")
-    print(f"   Status: {connection_info['status']}")
-    
-    print("\n🔧 Management commands:")
-    print(f"   # Check tmux session: bifrost exec '{ssh_connection}' 'tmux list-sessions'")
-    print(f"   # View analysis log: bifrost exec '{ssh_connection}' 'cd ~/.bifrost/workspace/examples/outlier_features_moe && cat outlier_analysis.log'")
-    print(f"   # List results: bifrost exec '{ssh_connection}' 'cd ~/.bifrost/workspace && find examples/outlier_features_moe -name \"*.json\" -o -name \"*.log\"'")
-    print(f"   # Terminate GPU: broker terminate {gpu_instance.id}")
+    print(f"🎉 Deployment complete!")
+    print(f"   Instance: {gpu_instance.id} | SSH: {ssh_connection}")
+    print(f"   Terminate: broker terminate {gpu_instance.id}")
     
     return connection_info
 
@@ -225,144 +180,33 @@ def sync_results_from_remote(bifrost_client: BifrostClient, local_output_dir: Pa
     # Create local results directory
     local_output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Check what files exist on remote
-    remote_files = bifrost_client.exec(
-        "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
-        "find . -name '*.json' -o -name '*.log' | head -30"
-    )
-    
-    if not remote_files or remote_files.strip() == "":
-        print("⚠️ No result files found on remote")
-        return
-    
-    print(f"📁 Found result files:\n{remote_files}")
-    
     # Sync main analysis log file
     try:
-        print("📄 Syncing analysis log...")
         result = bifrost_client.download_files(
             remote_path="~/.bifrost/workspace/examples/outlier_features_moe/outlier_analysis.log",
             local_path=str(local_output_dir / "outlier_analysis.log")
         )
         if result and result.success and result.files_copied > 0:
-            print(f"✅ Synced: outlier_analysis.log ({result.files_copied} files, {result.total_bytes} bytes)")
+            print(f"✅ Synced: outlier_analysis.log")
         else:
-            print(f"⚠️ Analysis log sync failed - result: {result}")
-            print("🔍 Attempting to read remote log content directly...")
-            try:
-                log_content = bifrost_client.exec(
-                    "cd ~/.bifrost/workspace/examples/outlier_features_moe && tail -20 outlier_analysis.log"
-                )
-                print(f"📋 Remote log content:\n{log_content}")
-            except Exception as log_e:
-                print(f"⚠️ Could not read remote log: {log_e}")
+            print(f"⚠️ Analysis log not ready yet")
     except Exception as e:
         print(f"⚠️ Could not sync analysis log: {e}")
     
-    # Sync final aggregated results file (NEW - contains all outlier summaries)
+    # Sync final aggregated results file
     try:
-        print("📊 Syncing final analysis results...")
         result = bifrost_client.download_files(
-            remote_path="~/.bifrost/workspace/examples/outlier_features_moe/final_analysis_results.json",
+            remote_path="~/.bifrost/workspace/examples/outlier_features_moe/full_analysis_results/final_analysis_results.json",
             local_path=str(local_output_dir / "final_analysis_results.json")
         )
         if result and result.success and result.files_copied > 0:
-            print(f"✅ Synced: final_analysis_results.json ({result.files_copied} files, {result.total_bytes} bytes)")
+            print(f"✅ Synced: final_analysis_results.json")
         else:
-            print("⚠️ Final results file not found")
+            print("ℹ️ Final results not ready yet")
     except Exception as e:
-        print(f"⚠️ Could not sync final results: {e}")
+        print(f"ℹ️ Final results not ready yet")
     
-    # Sync batch result files (NEW - individual batch summaries)  
-    try:
-        print("📦 Syncing batch result files...")
-        batch_files = bifrost_client.exec(
-            "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
-            "find . -name 'batch_*_results.json' | sort"
-        ).strip().split('\n')
-        
-        batch_count = 0
-        for batch_file in batch_files:
-            if batch_file and batch_file.startswith('./batch_'):
-                batch_name = batch_file.replace('./', '')
-                print(f"  Syncing {batch_name}...")
-                try:
-                    result = bifrost_client.download_files(
-                        remote_path=f"~/.bifrost/workspace/examples/outlier_features_moe/{batch_name}",
-                        local_path=str(local_output_dir / batch_name)
-                    )
-                    if result and result.success and result.files_copied > 0:
-                        batch_count += result.files_copied
-                except Exception as e:
-                    print(f"    ⚠️ Could not sync {batch_name}: {e}")
-        
-        if batch_count > 0:
-            print(f"✅ Synced {batch_count} batch result files")
-        else:
-            print("⚠️ No batch result files found")
-    except Exception as e:
-        print(f"⚠️ Could not sync batch files: {e}")
-    
-    # Sync activation metadata from full_analysis_results (if cleanup didn't remove them)
-    try:
-        # Check if results directory exists
-        results_check = bifrost_client.exec(
-            "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
-            "ls -la full_analysis_results/ 2>/dev/null || echo 'NO_RESULTS_DIR'"
-        )
-        
-        if "NO_RESULTS_DIR" not in results_check:
-            print("📋 Syncing activation run metadata...")
-            
-            # Create local results directory
-            local_results_dir = local_output_dir / "full_analysis_results"
-            local_results_dir.mkdir(exist_ok=True)
-            
-            # Get list of run directories
-            run_dirs = bifrost_client.exec(
-                "cd ~/.bifrost/workspace/examples/outlier_features_moe/full_analysis_results && "
-                "ls -1 | grep '^run_' | head -20"
-            ).strip().split('\n')
-            
-            metadata_files = 0
-            for run_dir in run_dirs:
-                if run_dir and run_dir.startswith('run_'):
-                    print(f"  Syncing metadata from {run_dir}...")
-                    
-                    # Create local run directory
-                    local_run_dir = local_results_dir / run_dir
-                    local_run_dir.mkdir(exist_ok=True)
-                    
-                    # Only sync metadata.json files (activation .pt files are cleaned up)
-                    try:
-                        result = bifrost_client.download_files(
-                            remote_path=f"~/.bifrost/workspace/examples/outlier_features_moe/full_analysis_results/{run_dir}/metadata.json",
-                            local_path=str(local_run_dir / "metadata.json")
-                        )
-                        if result and result.success and result.files_copied > 0:
-                            metadata_files += result.files_copied
-                    except Exception as e:
-                        print(f"    ⚠️ No metadata.json in {run_dir}: {e}")
-            
-            if metadata_files > 0:
-                print(f"✅ Synced {metadata_files} metadata files")
-            else:
-                print("ℹ️  No activation metadata found (files may have been cleaned up)")
-        else:
-            print("ℹ️  No full_analysis_results directory (activation files cleaned up)")
-    
-    except Exception as e:
-        print(f"⚠️ Could not sync metadata files: {e}")
-    
-    print(f"\n✅ Results synced to local: {local_output_dir}")
-    
-    # Summary of what should be available locally
-    expected_files = [
-        "outlier_analysis.log",
-        "final_analysis_results.json", 
-        "batch_*_results.json files"
-    ]
-    print(f"📋 Expected local files: {', '.join(expected_files)}")
+    print(f"✅ Results synced to local: {local_output_dir}")
 
 
 def main(
@@ -456,10 +300,8 @@ def main(
                 print(f"⚠️ Cleanup error (instance may still be running): {e}")
                 print(f"   Manual cleanup: broker instances terminate {connection_info['instance_id']}")
         else:
-            print(f"\n🎯 Step 3: Keeping GPU instance running (--keep-running flag)")
-            print(f"   Instance ID: {connection_info['instance_id']}")
-            print(f"   SSH: {connection_info['ssh']}")
-            print(f"   Manual cleanup: broker instances terminate {connection_info['instance_id']}")
+            print(f"\n🎯 Keeping GPU running")
+            print(f"   Cleanup: broker instances terminate {connection_info['instance_id']}")
 
 
 if __name__ == "__main__":
