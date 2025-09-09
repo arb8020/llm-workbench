@@ -227,8 +227,8 @@ def sync_results_from_remote(bifrost_client: BifrostClient, local_output_dir: Pa
     
     # Check what files exist on remote
     remote_files = bifrost_client.exec(
-        "cd ~/.bifrost/workspace && "
-        "find examples/outlier_features_moe -name '*.json' -o -name '*.log' -o -name 'full_analysis_results' -type d | head -20"
+        "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
+        "find . -name '*.json' -o -name '*.log' | head -30"
     )
     
     if not remote_files or remote_files.strip() == "":
@@ -237,8 +237,9 @@ def sync_results_from_remote(bifrost_client: BifrostClient, local_output_dir: Pa
     
     print(f"📁 Found result files:\n{remote_files}")
     
-    # Sync main log file using SFTP
+    # Sync main analysis log file
     try:
+        print("📄 Syncing analysis log...")
         result = bifrost_client.download_files(
             remote_path="~/.bifrost/workspace/examples/outlier_features_moe/outlier_analysis.log",
             local_path=str(local_output_dir / "outlier_analysis.log")
@@ -246,20 +247,72 @@ def sync_results_from_remote(bifrost_client: BifrostClient, local_output_dir: Pa
         if result and result.success and result.files_copied > 0:
             print(f"✅ Synced: outlier_analysis.log ({result.files_copied} files, {result.total_bytes} bytes)")
         else:
-            print("⚠️ Log file not found or empty")
+            print(f"⚠️ Analysis log sync failed - result: {result}")
+            print("🔍 Attempting to read remote log content directly...")
+            try:
+                log_content = bifrost_client.exec(
+                    "cd ~/.bifrost/workspace/examples/outlier_features_moe && tail -20 outlier_analysis.log"
+                )
+                print(f"📋 Remote log content:\n{log_content}")
+            except Exception as log_e:
+                print(f"⚠️ Could not read remote log: {log_e}")
     except Exception as e:
-        print(f"⚠️ Could not sync log file: {e}")
+        print(f"⚠️ Could not sync analysis log: {e}")
     
-    # Sync outlier analysis results (metadata and summary only, skip large activation files)
+    # Sync final aggregated results file (NEW - contains all outlier summaries)
+    try:
+        print("📊 Syncing final analysis results...")
+        result = bifrost_client.download_files(
+            remote_path="~/.bifrost/workspace/examples/outlier_features_moe/final_analysis_results.json",
+            local_path=str(local_output_dir / "final_analysis_results.json")
+        )
+        if result and result.success and result.files_copied > 0:
+            print(f"✅ Synced: final_analysis_results.json ({result.files_copied} files, {result.total_bytes} bytes)")
+        else:
+            print("⚠️ Final results file not found")
+    except Exception as e:
+        print(f"⚠️ Could not sync final results: {e}")
+    
+    # Sync batch result files (NEW - individual batch summaries)  
+    try:
+        print("📦 Syncing batch result files...")
+        batch_files = bifrost_client.exec(
+            "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
+            "find . -name 'batch_*_results.json' | sort"
+        ).strip().split('\n')
+        
+        batch_count = 0
+        for batch_file in batch_files:
+            if batch_file and batch_file.startswith('./batch_'):
+                batch_name = batch_file.replace('./', '')
+                print(f"  Syncing {batch_name}...")
+                try:
+                    result = bifrost_client.download_files(
+                        remote_path=f"~/.bifrost/workspace/examples/outlier_features_moe/{batch_name}",
+                        local_path=str(local_output_dir / batch_name)
+                    )
+                    if result and result.success and result.files_copied > 0:
+                        batch_count += result.files_copied
+                except Exception as e:
+                    print(f"    ⚠️ Could not sync {batch_name}: {e}")
+        
+        if batch_count > 0:
+            print(f"✅ Synced {batch_count} batch result files")
+        else:
+            print("⚠️ No batch result files found")
+    except Exception as e:
+        print(f"⚠️ Could not sync batch files: {e}")
+    
+    # Sync activation metadata from full_analysis_results (if cleanup didn't remove them)
     try:
         # Check if results directory exists
         results_check = bifrost_client.exec(
-            "cd ~/.bifrost/workspace && "
-            "ls -la examples/outlier_features_moe/full_analysis_results/ 2>/dev/null || echo 'NO_RESULTS_DIR'"
+            "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
+            "ls -la full_analysis_results/ 2>/dev/null || echo 'NO_RESULTS_DIR'"
         )
         
         if "NO_RESULTS_DIR" not in results_check:
-            print("📦 Downloading outlier analysis metadata (skipping large activation files)...")
+            print("📋 Syncing activation run metadata...")
             
             # Create local results directory
             local_results_dir = local_output_dir / "full_analysis_results"
@@ -268,10 +321,10 @@ def sync_results_from_remote(bifrost_client: BifrostClient, local_output_dir: Pa
             # Get list of run directories
             run_dirs = bifrost_client.exec(
                 "cd ~/.bifrost/workspace/examples/outlier_features_moe/full_analysis_results && "
-                "ls -1 | grep '^run_'"
+                "ls -1 | grep '^run_' | head -20"
             ).strip().split('\n')
             
-            total_files = 0
+            metadata_files = 0
             for run_dir in run_dirs:
                 if run_dir and run_dir.startswith('run_'):
                     print(f"  Syncing metadata from {run_dir}...")
@@ -280,25 +333,36 @@ def sync_results_from_remote(bifrost_client: BifrostClient, local_output_dir: Pa
                     local_run_dir = local_results_dir / run_dir
                     local_run_dir.mkdir(exist_ok=True)
                     
-                    # Only sync metadata.json files (skip .pt activation files)
+                    # Only sync metadata.json files (activation .pt files are cleaned up)
                     try:
                         result = bifrost_client.download_files(
                             remote_path=f"~/.bifrost/workspace/examples/outlier_features_moe/full_analysis_results/{run_dir}/metadata.json",
                             local_path=str(local_run_dir / "metadata.json")
                         )
                         if result and result.success and result.files_copied > 0:
-                            total_files += result.files_copied
+                            metadata_files += result.files_copied
                     except Exception as e:
                         print(f"    ⚠️ No metadata.json in {run_dir}: {e}")
             
-            print(f"✅ Synced {total_files} metadata files (activation files skipped to save bandwidth)")
+            if metadata_files > 0:
+                print(f"✅ Synced {metadata_files} metadata files")
+            else:
+                print("ℹ️  No activation metadata found (files may have been cleaned up)")
         else:
-            print("⚠️ No full_analysis_results directory found on remote")
+            print("ℹ️  No full_analysis_results directory (activation files cleaned up)")
     
     except Exception as e:
-        print(f"⚠️ Could not sync results directory: {e}")
+        print(f"⚠️ Could not sync metadata files: {e}")
     
-    print(f"✅ Results synced to local: {local_output_dir}")
+    print(f"\n✅ Results synced to local: {local_output_dir}")
+    
+    # Summary of what should be available locally
+    expected_files = [
+        "outlier_analysis.log",
+        "final_analysis_results.json", 
+        "batch_*_results.json files"
+    ]
+    print(f"📋 Expected local files: {', '.join(expected_files)}")
 
 
 def main(
@@ -315,7 +379,9 @@ def main(
     threshold: float = 6.0,
     safety_factor: float = 1.3,
     gpu_count: int = 1,
-    gpu_filter: str = None
+    gpu_filter: str = None,
+    chunk_layers: int = None,
+    log_level: str = "INFO"
 ):
     """Run outlier analysis using automated GPU deployment."""
     from datetime import datetime
@@ -345,20 +411,19 @@ def main(
         threshold=threshold,
         safety_factor=safety_factor,
         gpu_count=gpu_count,
-        gpu_filter=gpu_filter
+        gpu_filter=gpu_filter,
+        chunk_layers=chunk_layers,
+        log_level=log_level
     )
     
     bifrost_client = BifrostClient(connection_info["ssh"])
-    
-    print(f"\n📁 When analysis completes, sync results with:")
     output_dir = Path(f"remote_results/{experiment_name}")
-    print(f"   # Create local results directory")
-    print(f"   mkdir -p {output_dir}")
-    print(f"   # Download analysis log")
-    print(f"   bifrost copy '{connection_info['ssh']}:~/.bifrost/workspace/examples/outlier_features_moe/outlier_analysis.log' {output_dir}/")
-    print(f"   # Download any result files")
-    print(f"   bifrost exec '{connection_info['ssh']}' 'cd ~/.bifrost/workspace && find examples/outlier_features_moe -name \"*.json\" -o -name \"full_analysis_results\" -type d'")
     
+    try:
+        # 2. SYNC RESULTS FROM REMOTE
+        print("\n💾 Step 2: Syncing results to local...")
+        sync_results_from_remote(bifrost_client, output_dir)
+        
     finally:
         # 4. CLEANUP (CONDITIONAL)
         if not keep_running:
