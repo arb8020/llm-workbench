@@ -240,10 +240,12 @@ def main():
             
             # Step 5: Clean up activation files to save disk space
             import shutil
-            if run_dir.exists():
-                disk_freed_mb = sum(f.stat().st_size for f in run_dir.rglob('*.pt')) / (1024*1024)
-                shutil.rmtree(run_dir)
-                logger.info(f"🗑️  Cleaned up activation files: {run_dir} ({disk_freed_mb:.1f}MB freed)")
+            from pathlib import Path
+            run_dir_path = Path(run_dir) if isinstance(run_dir, str) else run_dir
+            if run_dir_path.exists():
+                disk_freed_mb = sum(f.stat().st_size for f in run_dir_path.rglob('*.pt')) / (1024*1024)
+                shutil.rmtree(run_dir_path)
+                logger.info(f"🗑️  Cleaned up activation files: {run_dir_path} ({disk_freed_mb:.1f}MB freed)")
             
             # Step 6: Clear GPU cache
             torch.cuda.empty_cache()
