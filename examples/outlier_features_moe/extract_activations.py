@@ -47,15 +47,21 @@ def extract_activations_optimized(
     run_dir = Path(save_dir) / f"run_{timestamp}"
     run_dir.mkdir(parents=True, exist_ok=True)
     
-    # Process layers in chunks to reduce peak memory
-    def chunk_list(lst, chunk_size):
-        for i in range(0, len(lst), chunk_size):
-            yield lst[i:i + chunk_size]
+    # Process layers in chunks to reduce peak memory (if chunk_size specified)
+    if chunk_size is None:
+        # Process all layers at once
+        layer_chunks = [layers]
+        print(f"Processing all {len(layers)} layers together (no chunking)")
+    else:
+        # Process in chunks
+        def chunk_list(lst, chunk_size):
+            for i in range(0, len(lst), chunk_size):
+                yield lst[i:i + chunk_size]
+        
+        layer_chunks = list(chunk_list(layers, chunk_size))
+        print(f"Processing {len(layers)} layers in {len(layer_chunks)} chunks of {chunk_size}")
     
     saved_files = []
-    layer_chunks = list(chunk_list(layers, chunk_size))
-    
-    print(f"Processing {len(layers)} layers in {len(layer_chunks)} chunks of {chunk_size}")
     
     for chunk_idx, layers_chunk in enumerate(layer_chunks):
         print(f"  Chunk {chunk_idx + 1}/{len(layer_chunks)}: layers {layers_chunk[0]}-{layers_chunk[-1]}")

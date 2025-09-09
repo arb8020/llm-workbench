@@ -44,7 +44,8 @@ def deploy_outlier_analysis_instance(
     threshold: float = 6.0,
     safety_factor: float = 1.3,
     gpu_count: int = 1,
-    gpu_filter: str = None  # Optional GPU name filter (e.g., "A100", "H100", "RTX 4090")
+    gpu_filter: str = None,  # Optional GPU name filter (e.g., "A100", "H100", "RTX 4090")
+    chunk_layers: int = None  # Number of layers to process at once
 ) -> dict:
     """Deploy GPU instance and run outlier analysis."""
     
@@ -168,7 +169,7 @@ exec > outlier_analysis.log 2>&1 && \\
     --num-sequences {num_sequences} \\
     --sequence-length {sequence_length} \\
     --batch-size {batch_size} \\
-    --threshold {threshold} \\
+    --threshold {threshold}{' --chunk-layers ' + str(chunk_layers) if chunk_layers else ''} \\
 || echo "ANALYSIS FAILED with exit code $?"
 """
     
@@ -177,82 +178,29 @@ exec > outlier_analysis.log 2>&1 && \\
     
     print("✅ Outlier analysis started in tmux session 'outlier-analysis'")
     
-    # 6. POLL UNTIL COMPLETE
-    print("⏳ Waiting for analysis to complete...")
-    print("   This may take 10-30 minutes depending on model size...")
+    # 6. ANALYSIS STARTED - NO POLLING
+    print("✅ Analysis started successfully!")
+    print("📋 To monitor progress in real-time:")
+    print(f"   ssh {ssh_connection.replace(':', ' -p ')}")
+    print(f"   cd ~/.bifrost/workspace/examples/outlier_features_moe")
+    print(f"   tail -f outlier_analysis.log")
+    print("")
+    print("📋 Or check recent progress with:")
+    print(f"   bifrost exec '{ssh_connection}' 'cd ~/.bifrost/workspace/examples/outlier_features_moe && tail -20 outlier_analysis.log'")
+    print("")
+    print("📋 To check/attach to tmux session:")
+    print(f"   bifrost exec '{ssh_connection}' 'tmux list-sessions'")
+    print(f"   ssh {ssh_connection.replace(':', ' -p ')} -t 'tmux attach-session -t outlier-analysis'")
+    print("")
+    print("⏳ Analysis will take 10-30 minutes depending on model size...")
     
-    max_wait_time = 3600  # 1 hour max
-    start_time = time.time()
-    analysis_complete = False
-    
-    while not analysis_complete and (time.time() - start_time) < max_wait_time:
-        try:
-            # Check if tmux session is still running
-            tmux_check = bifrost_client.exec("tmux list-sessions | grep outlier-analysis || echo 'NO_SESSION'")
-            
-            if "NO_SESSION" in tmux_check:
-                print("✅ Analysis session completed")
-                analysis_complete = True
-                break
-            
-            # Check log for completion markers
-            log_check = bifrost_client.exec(
-                "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
-                "tail -20 outlier_analysis.log | grep -E '(ANALYSIS COMPLETE|❌.*failed:|✅.*complete)' || echo 'STILL_RUNNING'"
-            )
-            
-            if "ANALYSIS COMPLETE" in log_check or "✅" in log_check:
-                analysis_complete = True
-                break
-            elif "❌" in log_check and "failed" in log_check:
-                print(f"❌ Analysis failed. Log tail:\n{log_check}")
-                break
-                
-        except Exception as e:
-            # Continue waiting
-            pass
-        
-        elapsed = int(time.time() - start_time)
-        if elapsed % 300 == 0:  # Print update every 5 minutes
-            print(f"   Analysis still running... ({elapsed//60}min elapsed)")
-            # Show recent log output
-            try:
-                recent_log = bifrost_client.exec(
-                    "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
-                    "tail -5 outlier_analysis.log"
-                )
-                print(f"   Recent progress:\n{recent_log}")
-            except:
-                pass
-        
-        time.sleep(30)  # Check every 30 seconds
-    
-    if not analysis_complete:
-        elapsed_time = time.time() - start_time
-        print(f"⚠️ Analysis timeout after {elapsed_time/60:.1f} minutes")
-        print("   Check logs with:")
-        print(f"   bifrost exec '{ssh_connection}' 'cd ~/.bifrost/workspace && cat examples/outlier_features_moe/outlier_analysis.log'")
-        print(f"   bifrost exec '{ssh_connection}' 'tmux capture-pane -t outlier-analysis -p'")
-        # Don't exit - still try to sync partial results
-    
-    # 7. SHOW FINAL LOG
-    print("\n📋 Final analysis log:")
-    try:
-        final_log = bifrost_client.exec(
-            "cd ~/.bifrost/workspace/examples/outlier_features_moe && "
-            "tail -50 outlier_analysis.log"
-        )
-        print(final_log)
-    except Exception as e:
-        print(f"Could not retrieve final log: {e}")
-    
-    # 8. RETURN CONNECTION INFO
+    # 7. RETURN CONNECTION INFO
     connection_info = {
         "instance_id": gpu_instance.id,
         "ssh": ssh_connection,
         "provider": gpu_instance.provider,
         "model": model_name,
-        "status": "complete" if analysis_complete else "partial"
+        "status": "running"
     }
     
     print(f"\n🎉 Outlier analysis deployment complete!")
@@ -401,38 +349,14 @@ def main(
     
     bifrost_client = BifrostClient(connection_info["ssh"])
     
-    try:
-        # 2. SYNC RESULTS
-        print("\n💾 Step 2: Syncing results to local...")
-        output_dir = Path(f"remote_results/{experiment_name}")
-        sync_results_from_remote(bifrost_client, output_dir)
-        
-        print(f"\n📁 Results saved to: {output_dir}")
-        
-        # 3. SHOW SUMMARY IF AVAILABLE
-        summary_file = output_dir / "outlier_analysis.log"
-        if summary_file.exists():
-            print(f"\n📊 Analysis Summary:")
-            log_content = summary_file.read_text()
-            
-            # Extract key findings from log
-            lines = log_content.split('\n')
-            for i, line in enumerate(lines):
-                if "SYSTEMATIC OUTLIER SUMMARY" in line:
-                    # Show summary section
-                    for j in range(i, min(i+30, len(lines))):
-                        if lines[j].strip():
-                            print(f"   {lines[j]}")
-                    break
-            else:
-                # Show last 20 lines if no summary found
-                print("   Recent log output:")
-                for line in lines[-20:]:
-                    if line.strip():
-                        print(f"   {line}")
-    
-    except Exception as e:
-        print(f"⚠️ Error syncing results: {e}")
+    print(f"\n📁 When analysis completes, sync results with:")
+    output_dir = Path(f"remote_results/{experiment_name}")
+    print(f"   # Create local results directory")
+    print(f"   mkdir -p {output_dir}")
+    print(f"   # Download analysis log")
+    print(f"   bifrost copy '{connection_info['ssh']}:~/.bifrost/workspace/examples/outlier_features_moe/outlier_analysis.log' {output_dir}/")
+    print(f"   # Download any result files")
+    print(f"   bifrost exec '{connection_info['ssh']}' 'cd ~/.bifrost/workspace && find examples/outlier_features_moe -name \"*.json\" -o -name \"full_analysis_results\" -type d'")
     
     finally:
         # 4. CLEANUP (CONDITIONAL)
@@ -483,6 +407,7 @@ if __name__ == "__main__":
     parser.add_argument("--sequence-length", type=int, default=2048, help="Sequence length in tokens (default: 2048)")
     parser.add_argument("--batch-size", type=int, default=1, help="Batch size (default: 1)")
     parser.add_argument("--threshold", type=float, default=6.0, help="Outlier magnitude threshold (default: 6.0)")
+    parser.add_argument("--chunk-layers", type=int, default=None, help="Number of layers to process at once (default: process all together)")
     
     # Deployment args
     parser.add_argument("--keep-running", action="store_true", 
@@ -520,5 +445,6 @@ if __name__ == "__main__":
         threshold=args.threshold,
         safety_factor=args.safety_factor,
         gpu_count=args.gpu_count,
-        gpu_filter=args.gpu_filter
+        gpu_filter=args.gpu_filter,
+        chunk_layers=args.chunk_layers
     )

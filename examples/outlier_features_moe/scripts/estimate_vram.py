@@ -313,24 +313,39 @@ def estimate_vram_requirements(model_name: str, safety_factor: float = 2.5, sequ
     params_billions = estimated_params / 1e9
     effective_params_billions = effective_params / 1e9
     
-    # Estimate VRAM requirements using effective parameters
-    # Base model size in GB (assuming float16 = 2 bytes per parameter)
-    model_size_gb = (estimated_params * 2) / (1024**3)  # Show full model size
-    effective_size_gb = (effective_params * 2) / (1024**3)  # Use for VRAM calculation
+    # Determine native precision from model config
+    torch_dtype = config.get('torch_dtype', 'float16')  # Default to float16 if not specified
+    
+    # Map dtype to bytes per parameter
+    dtype_to_bytes = {
+        'float32': 4,
+        'float16': 2, 
+        'bfloat16': 2,
+        'int8': 1,
+        'int4': 0.5
+    }
+    
+    bytes_per_param = dtype_to_bytes.get(torch_dtype, 2)  # Default to 2 bytes if unknown
+    
+    print(f"📊 Model native precision: {torch_dtype} ({bytes_per_param} bytes per parameter)")
+    
+    # Estimate VRAM requirements using effective parameters and native precision
+    model_size_gb = (estimated_params * bytes_per_param) / (1024**3)  # Show full model size
+    effective_size_gb = (effective_params * bytes_per_param) / (1024**3)  # Use for VRAM calculation
     
     # Calculate KV cache size for attention
     hidden_size = config.get('hidden_size', config.get('d_model', 2048))
     num_layers = config.get('num_hidden_layers', config.get('n_layer', 48))
     num_heads = config.get('num_attention_heads', config.get('n_head', 32))
     
-    # KV cache: 2 (K+V) * batch_size * num_heads * sequence_length * head_dim * num_layers * 2 bytes (float16)
+    # KV cache: 2 (K+V) * batch_size * num_heads * sequence_length * head_dim * num_layers * bytes_per_param
     head_dim = hidden_size // num_heads
-    kv_cache_bytes = 2 * batch_size * num_heads * sequence_length * head_dim * num_layers * 2
+    kv_cache_bytes = 2 * batch_size * num_heads * sequence_length * head_dim * num_layers * bytes_per_param
     kv_cache_gb = kv_cache_bytes / (1024**3)
     
     # Activation memory (rough estimate for intermediate computations)
     # Attention + MLP activations for batch_size * sequence_length
-    activation_bytes = batch_size * sequence_length * hidden_size * num_layers * 4 * 2  # 4x hidden size for activations, float16
+    activation_bytes = batch_size * sequence_length * hidden_size * num_layers * 4 * bytes_per_param  # 4x hidden size for activations
     activation_gb = activation_bytes / (1024**3)
     
     # Total VRAM: model + KV cache + activations + overhead
@@ -354,6 +369,8 @@ def estimate_vram_requirements(model_name: str, safety_factor: float = 2.5, sequ
         'sequence_length': sequence_length,
         'batch_size': batch_size,
         'estimation_method': method,
+        'torch_dtype': torch_dtype,
+        'bytes_per_param': bytes_per_param,
         'breakdown': breakdown,
         'config_summary': {
             'hidden_size': config.get('hidden_size', config.get('d_model', 'unknown')),
@@ -381,6 +398,7 @@ def print_vram_estimate(estimate: Dict):
         print(f"Effective Parameters: {estimate['effective_params_billions']:.1f}B ({estimate['effective_params']:,})")
         print(f"Effective Model Size: {estimate['effective_size_gb']:.1f}GB")
     print(f"Model Size: {estimate['model_size_gb']:.1f}GB")
+    print(f"Native Precision: {estimate['torch_dtype']} ({estimate['bytes_per_param']} bytes/param)")
     print(f"Estimation Method: {estimate['estimation_method']}")
     print(f"Parameter Breakdown: {estimate['breakdown']}")
     

@@ -6,7 +6,9 @@ Combines extract_activations.py and analyze_activations.py into a single workflo
 
 import sys
 import argparse
+import json
 from pathlib import Path
+from datetime import datetime
 from transformers import AutoTokenizer
 
 # Import functions from the other scripts
@@ -33,6 +35,8 @@ def main():
                        help="Directory to save results")
     parser.add_argument("--threshold", type=float, default=6.0,
                        help="Magnitude threshold for outlier detection")
+    parser.add_argument("--chunk-layers", type=int, default=None,
+                       help="Number of layers to process at once (default: process all layers together). Use smaller values if running out of GPU memory.")
     
     args = parser.parse_args()
     
@@ -146,97 +150,158 @@ def main():
     num_batches = args.num_sequences // args.batch_size
     all_run_dirs = []
     
+    # Process each batch: extract → analyze → sync → cleanup
+    all_batch_results = []
+    
     try:
         for batch_idx in range(num_batches):
             start_idx = batch_idx * args.batch_size
             end_idx = start_idx + args.batch_size
             batch_texts = text_sequences[start_idx:end_idx]
             
-            print(f"\nProcessing batch {batch_idx + 1}/{num_batches} ({len(batch_texts)} sequences)")
+            print(f"\n{'='*20} BATCH {batch_idx + 1}/{num_batches} {'='*20}")
+            print(f"Processing {len(batch_texts)} sequences")
             
-            run_dir, metadata = extract_activations_optimized(
-                llm=llm,
-                texts=batch_texts,
-                layers=args.layers,
-                save_dir=args.save_dir,
-                chunk_size=8  # Process 8 layers at a time
-            )
-            all_run_dirs.append(run_dir)
+            # Step 1: Extract activations
+            if args.chunk_layers:
+                print(f"Using layer chunking: {args.chunk_layers} layers at a time")
+                run_dir, metadata = extract_activations_optimized(
+                    llm=llm,
+                    texts=batch_texts,
+                    layers=args.layers,
+                    save_dir=args.save_dir,
+                    chunk_size=args.chunk_layers
+                )
+            else:
+                print("Processing all layers together (no chunking)")
+                run_dir, metadata = extract_activations_optimized(
+                    llm=llm,
+                    texts=batch_texts,
+                    layers=args.layers,
+                    save_dir=args.save_dir,
+                    chunk_size=None  # Process all layers at once
+                )
             
-            # Clear GPU cache after each batch
-            torch.cuda.empty_cache()
-            print(f"✅ Batch {batch_idx + 1} completed: {run_dir}")
-        
-        print(f"\n✅ All {num_batches} batches completed!")
-        
-    except Exception as e:
-        print(f"❌ Extraction failed: {e}")
-        sys.exit(1)
-    
-    # Step 3: Analyze for outliers across all batches
-    print("\n" + "="*40)
-    print("STEP 3: ANALYZING FOR OUTLIERS")
-    print("="*40)
-    
-    all_systematic_outliers = []
-    all_outlier_info = []
-    
-    try:
-        for i, run_dir in enumerate(all_run_dirs, 1):
-            print(f"\nAnalyzing batch {i}/{len(all_run_dirs)}: {run_dir}")
+            print(f"✅ Activation extraction completed: {run_dir}")
             
+            # Step 2: Immediately analyze this batch for outliers
+            print(f"🔍 Analyzing batch {batch_idx + 1} for outliers...")
             systematic_outliers, outlier_info = analyze_run_for_outliers(
                 run_dir=run_dir,
                 magnitude_threshold=args.threshold
             )
             
-            all_systematic_outliers.extend(systematic_outliers)
-            all_outlier_info.append(outlier_info)
+            # Step 3: Create batch result summary
+            batch_result = {
+                "batch_id": batch_idx + 1,
+                "run_dir": str(run_dir),
+                "sequences_processed": len(batch_texts),
+                "systematic_outliers": systematic_outliers,
+                "outlier_info": outlier_info,
+                "timestamp": datetime.now().isoformat(),
+                "analysis_params": {
+                    "threshold": args.threshold,
+                    "model": args.model,
+                    "sequence_length": args.sequence_length,
+                    "layers": args.layers
+                }
+            }
+            all_batch_results.append(batch_result)
             
-            print(f"Batch {i}: Found {len(systematic_outliers)} systematic outlier features")
-        
-        print(f"\n✅ Analysis completed across all {len(all_run_dirs)} batches!")
-        print(f"Total systematic outlier features found: {len(all_systematic_outliers)}")
-        
-        # Aggregate summary across all batches
-        if all_systematic_outliers:
-            # Group by feature dimension and aggregate
-            feature_aggregates = {}
-            for feature in all_systematic_outliers:
-                dim = feature['feature_dim']
-                if dim not in feature_aggregates:
-                    feature_aggregates[dim] = {
-                        'feature_dim': dim,
-                        'max_magnitude': feature['max_magnitude'],
-                        'occurrences': 1
-                    }
-                else:
-                    feature_aggregates[dim]['max_magnitude'] = max(
-                        feature_aggregates[dim]['max_magnitude'],
-                        feature['max_magnitude']
-                    )
-                    feature_aggregates[dim]['occurrences'] += 1
+            # Step 4: Save batch result to disk immediately
+            batch_result_file = Path(args.save_dir) / f"batch_{batch_idx + 1:03d}_results.json"
+            with open(batch_result_file, 'w') as f:
+                json.dump(batch_result, f, indent=2)
             
-            # Sort by max magnitude
-            top_features = sorted(feature_aggregates.values(), 
-                                key=lambda x: x['max_magnitude'], reverse=True)
+            print(f"✅ Batch {batch_idx + 1}: Found {len(systematic_outliers)} systematic outlier features")
+            print(f"📁 Results saved: {batch_result_file}")
             
-            print(f"\nTop outlier features across all batches:")
-            for i, feature in enumerate(top_features[:5], 1):
-                print(f"  {i}. Feature {feature['feature_dim']}: max_mag={feature['max_magnitude']:.2f}, "
-                      f"appeared in {feature['occurrences']}/{len(all_run_dirs)} batches")
-        else:
-            print("\nNo systematic outlier features found across any batch.")
-            print("Consider:")
-            print("- Using longer sequences or more complex text")
-            print("- Trying different layers")
-            print("- Lowering the magnitude threshold")
+            # Step 5: Clear GPU cache and cleanup
+            torch.cuda.empty_cache()
+            print(f"🧹 GPU cache cleared")
         
-        return all_run_dirs, all_systematic_outliers, all_outlier_info
+        print(f"\n✅ All {num_batches} batches completed!")
         
     except Exception as e:
-        print(f"❌ Analysis failed: {e}")
+        print(f"❌ Batch processing failed: {e}")
+        print(f"💾 Partial results saved: {len(all_batch_results)} batches completed")
         sys.exit(1)
+    
+    # Step 3: Aggregate results across all batches
+    print("\n" + "="*40)
+    print("STEP 3: AGGREGATING RESULTS")
+    print("="*40)
+    
+    all_systematic_outliers = []
+    all_outlier_info = []
+    
+    print(f"Aggregating results from {len(all_batch_results)} completed batches...")
+    
+    for batch_result in all_batch_results:
+        all_systematic_outliers.extend(batch_result['systematic_outliers'])
+        all_outlier_info.append(batch_result['outlier_info'])
+        print(f"Batch {batch_result['batch_id']}: {len(batch_result['systematic_outliers'])} systematic outlier features")
+        
+    
+    print(f"✅ Analysis completed across all {len(all_batch_results)} batches!")
+    print(f"Total systematic outlier features found: {len(all_systematic_outliers)}")
+    
+    # Aggregate summary across all batches
+    if all_systematic_outliers:
+        # Group by feature dimension and aggregate
+        feature_aggregates = {}
+        for feature in all_systematic_outliers:
+            dim = feature['feature_dim']
+            if dim not in feature_aggregates:
+                feature_aggregates[dim] = {
+                    'feature_dim': dim,
+                    'max_magnitude': feature['max_magnitude'],
+                    'occurrences': 1
+                }
+            else:
+                feature_aggregates[dim]['max_magnitude'] = max(
+                    feature_aggregates[dim]['max_magnitude'],
+                    feature['max_magnitude']
+                )
+                feature_aggregates[dim]['occurrences'] += 1
+        
+        # Sort by max magnitude
+        top_features = sorted(feature_aggregates.values(), 
+                            key=lambda x: x['max_magnitude'], reverse=True)
+        
+        print(f"\nTop outlier features across all batches:")
+        for i, feature in enumerate(top_features[:5], 1):
+            print(f"  {i}. Feature {feature['feature_dim']}: max_mag={feature['max_magnitude']:.2f}, "
+                  f"appeared in {feature['occurrences']}/{len(all_batch_results)} batches")
+    else:
+        print("\nNo systematic outlier features found across any batch.")
+        print("Consider:")
+        print("- Using longer sequences or more complex text")
+        print("- Trying different layers")
+        print("- Lowering the magnitude threshold")
+    
+    # Save final aggregated results
+    final_results = {
+        "analysis_summary": {
+            "total_batches": len(all_batch_results),
+            "total_sequences": sum(br['sequences_processed'] for br in all_batch_results),
+            "total_systematic_outliers": len(all_systematic_outliers),
+            "analysis_params": all_batch_results[0]['analysis_params'] if all_batch_results else {},
+            "completion_time": datetime.now().isoformat()
+        },
+        "top_features": top_features if all_systematic_outliers else [],
+        "all_systematic_outliers": all_systematic_outliers,
+        "batch_results": all_batch_results
+    }
+    
+    final_results_file = Path(args.save_dir) / "final_analysis_results.json"
+    with open(final_results_file, 'w') as f:
+        json.dump(final_results, f, indent=2)
+    
+    print(f"\n📁 Final results saved: {final_results_file}")
+    print("🎉 ANALYSIS COMPLETE")
+    
+    return all_batch_results, all_systematic_outliers, all_outlier_info
 
 
 if __name__ == "__main__":

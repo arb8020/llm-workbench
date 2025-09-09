@@ -189,12 +189,17 @@ launch_model() {
         eval "$tmux_cmd"
         sleep 2  # Brief pause between launches
     fi
+    
+    # Return log file path for monitoring
+    echo "$log_file"
 }
 
 # Create logs directory if it doesn't exist
 mkdir -p examples/outlier_features_moe/logs
 
 # Launch models
+LAUNCHED_LOG_FILES=()
+
 if [[ "$SELECTED_MODEL" == "all" ]]; then
     echo "🎯 Launching all MoE models with:"
     echo "   Sequences: $NUM_SEQUENCES x $SEQUENCE_LENGTH tokens"
@@ -203,7 +208,8 @@ if [[ "$SELECTED_MODEL" == "all" ]]; then
     echo ""
     
     for model in $(get_available_models); do
-        launch_model "$model"
+        log_file=$(launch_model "$model")
+        LAUNCHED_LOG_FILES+=("$log_file")
     done
 else
     echo "🎯 Launching $SELECTED_MODEL with:"
@@ -212,7 +218,8 @@ else
     echo "   Threshold: $THRESHOLD"
     echo ""
     
-    launch_model "$SELECTED_MODEL"
+    log_file=$(launch_model "$SELECTED_MODEL")
+    LAUNCHED_LOG_FILES+=("$log_file")
 fi
 
 if [[ "$DRY_RUN" != "true" ]]; then
@@ -221,7 +228,11 @@ if [[ "$DRY_RUN" != "true" ]]; then
     echo "Monitor progress:"
     echo "  tmux list-sessions"
     echo "  tmux capture-pane -t <session_name> -p"
-    echo "  tail -f examples/outlier_features_moe/logs/*.log"
+    echo ""
+    echo "Tail specific log files:"
+    for log_file in "${LAUNCHED_LOG_FILES[@]}"; do
+        echo "  tail -f $log_file"
+    done
     echo ""
     echo "Active sessions:"
     tmux list-sessions 2>/dev/null | grep "_analysis" || echo "  (none yet)"
