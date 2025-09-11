@@ -398,11 +398,11 @@ if __name__ == "__main__":
     import logging.config
     import os
     
-    # Expand the log file path
+    # Expand the log file path and ensure directory exists
     log_file_path = os.path.expanduser(log_file_path)
     os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
     
-    # Configure logging to file
+    # Configure logging to file FIRST (so any errors get logged)
     logging_config = {
         "version": 1,
         "disable_existing_loggers": False,
@@ -428,5 +428,15 @@ if __name__ == "__main__":
     
     logging.config.dictConfig(logging_config)
     
-    # Run the worker
-    asyncio.run(run_worker(config_path, worker_id))
+    # Create a logger and log startup immediately
+    startup_logger = logging.getLogger("worker_startup")
+    startup_logger.info(f"Worker {worker_id} starting...")
+    startup_logger.info(f"Config path: {config_path}")
+    startup_logger.info(f"Log file: {log_file_path}")
+    
+    try:
+        # Run the worker
+        asyncio.run(run_worker(config_path, worker_id))
+    except Exception as e:
+        startup_logger.error(f"Worker {worker_id} failed: {e}")
+        raise

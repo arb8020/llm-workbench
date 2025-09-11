@@ -152,6 +152,36 @@ async def monitor_experiment(experiment_dir: Path, follow_only: Optional[str] = 
     print(f"📊 Monitoring {len(workers_info)} worker(s): {[w['worker_id'] for w in workers_info]}")
     print(f"🔧 Variants: {config['variants']}")
     print(f"📋 Samples: {config['samples']}")
+    
+    # Check which log files exist
+    print("\n📋 Log file status:")
+    for worker_info in workers_info:
+        worker_id = worker_info["worker_id"]
+        ssh_connection = worker_info["ssh_connection"]
+        
+        try:
+            client = BifrostClient(ssh_connection)
+            
+            # Check worker log
+            worker_log = f"~/experiment_logs/{experiment_name}_{worker_id}.log"
+            worker_exists = client.exec(f"test -f {worker_log} && echo 'exists' || echo 'missing'")
+            
+            # Check vLLM log  
+            vllm_log = f"~/vllm_{experiment_name}_{worker_id}.log"
+            vllm_exists = client.exec(f"test -f {vllm_log} && echo 'exists' || echo 'missing'")
+            
+            worker_status = "✅" if "exists" in worker_exists else "❌" 
+            vllm_status = "✅" if "exists" in vllm_exists else "❌"
+            
+            print(f"   {worker_id}: Worker log {worker_status} | vLLM log {vllm_status}")
+            
+            # If worker log is missing but vLLM log exists, suggest checking vLLM log
+            if "missing" in worker_exists and "exists" in vllm_exists:
+                print(f"      💡 Worker log missing - check vLLM startup: bifrost exec '{ssh_connection}' 'tail -20 {vllm_log}'")
+                
+        except Exception as e:
+            print(f"   {worker_id}: ❌ Connection error: {e}")
+    
     print("=" * 80)
     
     # Create output queue for all streamers
