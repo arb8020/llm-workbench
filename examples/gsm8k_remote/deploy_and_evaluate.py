@@ -105,14 +105,13 @@ def deploy_qwen_vllm_server(min_vram: int = 12, max_price: float = 0.40,
     ssh_connection = gpu_instance.ssh_connection_string()
     print(f"✅ SSH ready: {ssh_connection}")
     
-    # 2. DEPLOY CODE
-    print("📦 Deploying codebase...")
+    # 2. DEPLOY CODE WITH DEPENDENCIES
+    print("📦 Deploying codebase with GSM8K dependencies...")
     bifrost_client = BifrostClient(ssh_connection)
     
-    # Deploy the codebase to remote workspace
-    workspace_path = bifrost_client.push()
-    bifrost_client.exec("echo 'Codebase deployed successfully'")
-    print(f"✅ Code deployed to: {workspace_path}")
+    # Deploy the codebase to remote workspace with GSM8K remote dependencies
+    workspace_path = bifrost_client.push(uv_extra="examples_gsm8k_remote")
+    print(f"✅ Code deployed and dependencies installed: {workspace_path}")
     
     # 3. START QWEN VLLM SERVER IN TMUX
     print("🌟 Starting Qwen3-0.6B vLLM server in tmux session...")
@@ -131,59 +130,18 @@ def deploy_qwen_vllm_server(min_vram: int = 12, max_price: float = 0.40,
     bifrost_client.exec(tmux_cmd)
     
     print("✅ Qwen3-0.6B vLLM server starting in tmux session 'qwen-vllm'")
+    print("📋 Server will be ready in 2-3 minutes for model loading")
+    print("   Check server status: bifrost exec {ssh_connection} 'curl -s http://localhost:8000/v1/models'")
+    print("   View logs: bifrost exec {ssh_connection} 'cat ~/qwen_vllm_server.log'")
     
-    # 4. POLL UNTIL READY
-    print("⏳ Waiting for server to be ready (this may take 2-3 minutes for model loading)...")
-    
-    max_wait_time = 600  # 10 minutes max
-    start_time = time.time()
-    server_ready = False
-    
-    while not server_ready and (time.time() - start_time) < max_wait_time:
-        try:
-            # Check if OpenAI-compatible server is responding
-            models_check = bifrost_client.exec("curl -s --connect-timeout 5 http://localhost:8000/v1/models")
-            if models_check and "qwen3" in models_check.lower():
-                server_ready = True
-                break
-                
-            # Fallback: try a simple completions request
-            test_completion = bifrost_client.exec(
-                'curl -s --connect-timeout 5 -X POST http://localhost:8000/v1/completions '
-                '-H "Content-Type: application/json" '
-                '-d \'{"model":"willcb/Qwen3-0.6B","prompt":"test","max_tokens":1}\''
-            )
-            if test_completion and ("choices" in test_completion.lower() or "text" in test_completion.lower()):
-                server_ready = True
-                break
-                
-        except Exception as e:
-            # Server not ready yet, continue waiting
-            pass
-        
-        elapsed = int(time.time() - start_time)
-        if elapsed % 30 == 0:  # Print update every 30 seconds
-            print(f"   Still loading Qwen3-0.6B model... ({elapsed}s elapsed)")
-            
-        time.sleep(10)
-    
-    if not server_ready:
-        print(f"❌ Server failed to start within timeout: {time.time() - start_time}s elapsed")
-        print("   Check logs with:")
-        print(f"   # Persistent log file: bifrost exec {ssh_connection} 'cat ~/qwen_vllm_server.log'")
-        print(f"   # tmux session logs: bifrost exec {ssh_connection} 'tmux capture-pane -t qwen-vllm -p'")
-        sys.exit(1)
-    
-    print("✅ Qwen3-0.6B vLLM server is ready and responding!")
-    
-    # 5. CONSTRUCT PROXY URL  
+    # 4. CONSTRUCT PROXY URL  
     proxy_url = gpu_instance.get_proxy_url(8000)
     
     if not proxy_url:
         print("⚠️  No proxy URL available - instance may not be RunPod")
         proxy_url = f"http://{gpu_instance.public_ip}:8000"
     
-    # 6. RETURN CONNECTION INFO
+    # 5. RETURN CONNECTION INFO
     connection_info = {
         "url": proxy_url,
         "instance_id": gpu_instance.id,
