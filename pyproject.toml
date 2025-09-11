@@ -56,6 +56,13 @@ examples_gsm8k_remote = [
     "rollouts",
     "broker", 
     "bifrost",
+    # Rollouts dependencies (to ensure proper installation on remote)
+    "anthropic>=0.25.0",
+    "openai>=1.0.0",
+    "aiohttp>=3.9.0",
+    "dacite>=1.8.0",
+    "pandas>=2.0.0",
+    # vLLM and ML dependencies
     "vllm>=0.6.0",
     "torch>=2.4.0,<=2.7.1",  # Explicit constraint matching vLLM requirements
     "triton>=3.0.0,<=3.3.1; sys_platform == 'linux'",  # Explicit triton constraint
