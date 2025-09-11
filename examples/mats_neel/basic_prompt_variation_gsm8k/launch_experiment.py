@@ -121,34 +121,33 @@ def deploy_qwen_vllm_server(min_vram: int = 12, max_price: float = 0.40,
     workspace_path = bifrost_client.push(uv_extra="examples_gsm8k_remote")
     print(f"✅ Code deployed and dependencies installed: {workspace_path}")
     
-    # 3. CREATE UNIFIED LOG FILE FOR vLLM AND WORKER
-    log_dir = f"~/experiment_logs"
+    # 3. CREATE UNIFIED LOG FILE FOR vLLM AND WORKER  
+    log_dir = "$HOME/experiment_logs"  # Use $HOME instead of ~
     unified_log_file = f"{log_dir}/{experiment_name}_{worker_id}.log"
     
-    # Ensure log directory exists
+    # Ensure log directory exists and create initial log file
     bifrost_client.exec(f"mkdir -p {log_dir}")
+    bifrost_client.exec(f"touch {unified_log_file}")
     
-    # 4. START QWEN VLLM SERVER IN TMUX WITH UNIFIED LOGGING
+    # 4. START QWEN VLLM SERVER IN TMUX WITH SIMPLIFIED LOGGING
     print("🌟 Starting Qwen3-0.6B vLLM server in tmux session...")
     
-    # Create custom vLLM command with unified logging and prefixing
-    vllm_startup_cmd = f"""{{
-        echo "🚀 [vLLM] Starting Qwen3-0.6B vLLM server..."
-        echo "🚀 [vLLM] Experiment: {experiment_name}, Worker: {worker_id}"
-        echo "🚀 [vLLM] Model: willcb/Qwen3-0.6B, Port: 8000"
-        cd ~/.bifrost/workspace
-        uv run python -m vllm.entrypoints.openai.api_server \\
-            --model willcb/Qwen3-0.6B \\
-            --host 0.0.0.0 \\
-            --port 8000 \\
-            --gpu-memory-utilization {gpu_memory_utilization} \\
-            --max-model-len {max_model_len} \\
-            --disable-log-stats 2>&1 | sed 's/^/[vLLM] /' || echo "❌ [vLLM] Server startup failed"
-        echo "✅ [vLLM] Server startup completed"
-    }} >> {unified_log_file} 2>&1"""
+    # Create startup log entries first
+    bifrost_client.exec(f"""echo "🚀 [vLLM] Starting Qwen3-0.6B vLLM server..." >> {unified_log_file}""")
+    bifrost_client.exec(f"""echo "🚀 [vLLM] Experiment: {experiment_name}, Worker: {worker_id}" >> {unified_log_file}""")
+    bifrost_client.exec(f"""echo "🚀 [vLLM] Model: willcb/Qwen3-0.6B, Port: 8000" >> {unified_log_file}""")
     
-    # Create tmux session with unified logging
-    tmux_cmd = f"tmux new-session -d -s qwen-vllm '{vllm_startup_cmd}'"
+    # Simplified vLLM command that properly logs to unified file
+    vllm_cmd = f"""cd ~/.bifrost/workspace && exec >> {unified_log_file} 2>&1 && uv run python -m vllm.entrypoints.openai.api_server \\
+        --model willcb/Qwen3-0.6B \\
+        --host 0.0.0.0 \\
+        --port 8000 \\
+        --gpu-memory-utilization {gpu_memory_utilization} \\
+        --max-model-len {max_model_len} \\
+        --disable-log-stats | sed 's/^/[vLLM] /'"""
+    
+    # Create tmux session with simplified logging
+    tmux_cmd = f"tmux new-session -d -s qwen-vllm 'bash -c \"{vllm_cmd}\"'"
     bifrost_client.exec(tmux_cmd)
     
     print("✅ Qwen3-0.6B vLLM server starting in tmux session 'qwen-vllm'")
@@ -294,7 +293,7 @@ def start_worker_experiment(worker: WorkerInfo, experiment_config: ExperimentCon
     bifrost_client = BifrostClient(worker.ssh_connection)
     
     # Use the same unified log file that vLLM writes to (created during deployment)
-    log_dir = f"~/experiment_logs"
+    log_dir = "$HOME/experiment_logs"
     unified_log_file = f"{log_dir}/{experiment_config.experiment_name}_{worker.worker_id}.log"
     
     # Write experiment config to remote machine
@@ -302,19 +301,17 @@ def start_worker_experiment(worker: WorkerInfo, experiment_config: ExperimentCon
     config_path = f"~/experiment_config_{experiment_config.experiment_name}.json"
     bifrost_client.exec(f"cat > {config_path} << 'EOF'\n{config_json}\nEOF")
     
-    # Add separator and start worker script with unified logging
-    worker_startup_cmd = f"""{{
-        echo ""
-        echo "🔄 [Worker] Starting experiment worker: {worker.worker_id}"
-        echo "🔄 [Worker] Experiment: {experiment_config.experiment_name}"
-        echo "🔄 [Worker] Timestamp: $(date)"
-        cd ~/.bifrost/workspace
-        python examples/mats_neel/basic_prompt_variation_gsm8k/worker_experiment.py {config_path} {worker.worker_id} 2>&1 | sed 's/^/[Worker] /' || echo "❌ [Worker] Experiment failed"
-        echo "✅ [Worker] Experiment completed"
-    }} >> {unified_log_file} 2>&1"""
+    # Add worker startup entries to the log
+    bifrost_client.exec(f"""echo "" >> {unified_log_file}""")
+    bifrost_client.exec(f"""echo "🔄 [Worker] Starting experiment worker: {worker.worker_id}" >> {unified_log_file}""")
+    bifrost_client.exec(f"""echo "🔄 [Worker] Experiment: {experiment_config.experiment_name}" >> {unified_log_file}""")
+    bifrost_client.exec(f"""echo "🔄 [Worker] Timestamp: $(date)" >> {unified_log_file}""")
+    
+    # Simplified worker command that properly logs to unified file
+    worker_cmd = f"""cd ~/.bifrost/workspace && exec >> {unified_log_file} 2>&1 && python examples/mats_neel/basic_prompt_variation_gsm8k/worker_experiment.py {config_path} {worker.worker_id} | sed 's/^/[Worker] /'"""
     
     tmux_session = f"{experiment_config.experiment_name}_{worker.worker_id}"
-    tmux_cmd = f"tmux new-session -d -s {tmux_session} '{worker_startup_cmd}'"
+    tmux_cmd = f"tmux new-session -d -s {tmux_session} 'bash -c \"{worker_cmd}\"'"
     
     bifrost_client.exec(tmux_cmd)
     logger.info(f"Started experiment on {worker.worker_id} in tmux session '{tmux_session}'")
