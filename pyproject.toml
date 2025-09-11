@@ -33,18 +33,18 @@ local = [
     "bifrost"
 ]
 
-# Outlier analysis features - nnsight without vllm conflict
+# Outlier analysis features - compatible with vLLM constraints
 outlier = [
     "rollouts",
     "broker", 
     "bifrost",
     "nnsight>=0.4",
     "transformers @ git+https://github.com/huggingface/transformers.git",
-    "torch>=2.0.0",
+    "torch>=2.4.0,<=2.7.1",  # Align with vLLM's torch requirements
     "accelerate>=0.20.0",
     "datasets>=4.0.0",
     "pyarrow>=21.0.0",
-    "triton>=3.4.0; sys_platform == 'linux'",
+    "triton>=3.0.0,<=3.3.1; sys_platform == 'linux'",  # Compatible with vLLM's torch versions
     "huggingface-hub>=0.34.4",
     "numpy<2.0.0",
     "requests>=2.28.0",
@@ -57,7 +57,8 @@ examples_gsm8k_remote = [
     "broker", 
     "bifrost",
     "vllm>=0.6.0",
-    "torch>=2.0.0",
+    "torch>=2.4.0,<=2.7.1",  # Explicit constraint matching vLLM requirements
+    "triton>=3.0.0,<=3.3.1; sys_platform == 'linux'",  # Explicit triton constraint
     "transformers>=4.40.0",
     "datasets>=4.0.0",
     "requests>=2.28.0"
