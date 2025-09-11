@@ -50,7 +50,7 @@ class LogStreamer:
     
     def _stream_logs(self):
         """Stream logs from remote worker."""
-        log_file = f"$HOME/experiment_logs/{self.experiment_name}_{self.worker_id}.log"
+        log_file = f"~/experiment_logs/{self.experiment_name}_{self.worker_id}.log"
         
         try:
             # Check if log file exists

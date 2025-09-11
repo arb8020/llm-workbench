@@ -121,39 +121,27 @@ def deploy_qwen_vllm_server(min_vram: int = 12, max_price: float = 0.40,
     workspace_path = bifrost_client.push(uv_extra="examples_gsm8k_remote")
     print(f"✅ Code deployed and dependencies installed: {workspace_path}")
     
-    # 3. CREATE UNIFIED LOG FILE FOR vLLM AND WORKER  
-    log_dir = "$HOME/experiment_logs"  # Use $HOME instead of ~
-    unified_log_file = f"{log_dir}/{experiment_name}_{worker_id}.log"
-    
-    # Ensure log directory exists and create initial log file
-    bifrost_client.exec(f"mkdir -p {log_dir}")
-    bifrost_client.exec(f"touch {unified_log_file}")
-    
-    # 4. START QWEN VLLM SERVER IN TMUX WITH SIMPLIFIED LOGGING
+    # 3. START QWEN VLLM SERVER IN TMUX (SIMPLE LOGGING)
     print("🌟 Starting Qwen3-0.6B vLLM server in tmux session...")
     
-    # Create startup log entries first
-    bifrost_client.exec(f"""echo "🚀 [vLLM] Starting Qwen3-0.6B vLLM server..." >> {unified_log_file}""")
-    bifrost_client.exec(f"""echo "🚀 [vLLM] Experiment: {experiment_name}, Worker: {worker_id}" >> {unified_log_file}""")
-    bifrost_client.exec(f"""echo "🚀 [vLLM] Model: willcb/Qwen3-0.6B, Port: 8000" >> {unified_log_file}""")
-    
-    # Simplified vLLM command that properly logs to unified file
-    vllm_cmd = f"""cd ~/.bifrost/workspace && exec >> {unified_log_file} 2>&1 && uv run python -m vllm.entrypoints.openai.api_server \\
+    # Simple vLLM server with clear log path
+    vllm_log_path = f"~/vllm_{experiment_name}_{worker_id}.log"
+    vllm_cmd = f"""cd ~/.bifrost/workspace && uv run python -m vllm.entrypoints.openai.api_server \\
         --model willcb/Qwen3-0.6B \\
         --host 0.0.0.0 \\
         --port 8000 \\
         --gpu-memory-utilization {gpu_memory_utilization} \\
         --max-model-len {max_model_len} \\
-        --disable-log-stats | sed 's/^/[vLLM] /'"""
+        --disable-log-stats"""
     
-    # Create tmux session with simplified logging
-    tmux_cmd = f"tmux new-session -d -s qwen-vllm 'bash -c \"{vllm_cmd}\"'"
+    # Create tmux session with simple file logging
+    tmux_cmd = f"tmux new-session -d -s qwen-vllm 'cd ~/.bifrost/workspace && {vllm_cmd} 2>&1 | tee {vllm_log_path}'"
     bifrost_client.exec(tmux_cmd)
     
     print("✅ Qwen3-0.6B vLLM server starting in tmux session 'qwen-vllm'")
     print("📋 Server will be ready in 2-3 minutes for model loading")  
     print(f"   Check server status: bifrost exec '{ssh_connection}' 'curl -s http://localhost:8000/v1/models'")
-    print(f"   View unified logs: bifrost exec '{ssh_connection}' 'tail -f {unified_log_file}'")
+    print(f"   View vLLM logs: bifrost exec '{ssh_connection}' 'tail -f {vllm_log_path}'")
     
     # 5. CONSTRUCT PROXY URL  
     proxy_url = gpu_instance.get_proxy_url(8000)
@@ -292,26 +280,23 @@ def start_worker_experiment(worker: WorkerInfo, experiment_config: ExperimentCon
     
     bifrost_client = BifrostClient(worker.ssh_connection)
     
-    # Use the same unified log file that vLLM writes to (created during deployment)
-    log_dir = "$HOME/experiment_logs"
-    unified_log_file = f"{log_dir}/{experiment_config.experiment_name}_{worker.worker_id}.log"
+    # Create log directory and define worker log path
+    log_dir = f"~/experiment_logs"
+    worker_log_file = f"{log_dir}/{experiment_config.experiment_name}_{worker.worker_id}.log"
+    
+    # Ensure log directory exists  
+    bifrost_client.exec(f"mkdir -p {log_dir}")
     
     # Write experiment config to remote machine
     config_json = json.dumps(asdict(experiment_config), indent=2)
     config_path = f"~/experiment_config_{experiment_config.experiment_name}.json"
     bifrost_client.exec(f"cat > {config_path} << 'EOF'\n{config_json}\nEOF")
     
-    # Add worker startup entries to the log
-    bifrost_client.exec(f"""echo "" >> {unified_log_file}""")
-    bifrost_client.exec(f"""echo "🔄 [Worker] Starting experiment worker: {worker.worker_id}" >> {unified_log_file}""")
-    bifrost_client.exec(f"""echo "🔄 [Worker] Experiment: {experiment_config.experiment_name}" >> {unified_log_file}""")
-    bifrost_client.exec(f"""echo "🔄 [Worker] Timestamp: $(date)" >> {unified_log_file}""")
-    
-    # Simplified worker command that properly logs to unified file
-    worker_cmd = f"""cd ~/.bifrost/workspace && exec >> {unified_log_file} 2>&1 && python examples/mats_neel/basic_prompt_variation_gsm8k/worker_experiment.py {config_path} {worker.worker_id} | sed 's/^/[Worker] /'"""
+    # Simple worker command - let Python logging handle the file output
+    worker_cmd = f"cd ~/.bifrost/workspace && python examples/mats_neel/basic_prompt_variation_gsm8k/worker_experiment.py {config_path} {worker.worker_id} {worker_log_file}"
     
     tmux_session = f"{experiment_config.experiment_name}_{worker.worker_id}"
-    tmux_cmd = f"tmux new-session -d -s {tmux_session} 'bash -c \"{worker_cmd}\"'"
+    tmux_cmd = f"tmux new-session -d -s {tmux_session} '{worker_cmd}'"
     
     bifrost_client.exec(tmux_cmd)
     logger.info(f"Started experiment on {worker.worker_id} in tmux session '{tmux_session}'")

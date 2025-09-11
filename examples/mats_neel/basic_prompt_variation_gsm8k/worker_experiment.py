@@ -34,8 +34,7 @@ from examples.gsm8k_remote.deploy_and_evaluate import (
     efficiency_reward
 )
 
-# Setup logging for worker
-setup_logging()
+# Logger will be configured in main()
 logger = logging.getLogger(__name__)
 
 # =============================================================================
@@ -387,11 +386,47 @@ async def run_worker(config_path: str, worker_id: str):
     logger.info(f"[{worker_id}] 📁 Results saved to: {output_dir}")
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python worker_experiment.py <config_path> <worker_id>")
+    if len(sys.argv) != 4:
+        print("Usage: python worker_experiment.py <config_path> <worker_id> <log_file_path>")
         sys.exit(1)
     
     config_path = sys.argv[1]
     worker_id = sys.argv[2]
+    log_file_path = sys.argv[3]
     
+    # Configure logging to write to the specified file
+    import logging.config
+    import os
+    
+    # Expand the log file path
+    log_file_path = os.path.expanduser(log_file_path)
+    os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
+    
+    # Configure logging to file
+    logging_config = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "standard": {
+                "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            }
+        },
+        "handlers": {
+            "file": {
+                "class": "logging.FileHandler",
+                "level": "DEBUG",
+                "formatter": "standard",
+                "filename": log_file_path,
+                "mode": "w"  # Overwrite existing file
+            }
+        },
+        "root": {
+            "level": "INFO",
+            "handlers": ["file"]
+        }
+    }
+    
+    logging.config.dictConfig(logging_config)
+    
+    # Run the worker
     asyncio.run(run_worker(config_path, worker_id))
