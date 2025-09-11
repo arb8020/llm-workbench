@@ -232,3 +232,44 @@ if instance.wait_until_ssh_ready():
 3. `broker/broker/colab.py` - New file with colab-specific functions  
 4. `broker/broker/cli.py` - Add colab command
 5. `broker/test_colab_integration.py` - Integration test script
+
+---
+
+## 🔲 TODO: Add Stripe-Style Key/Value Metadata Support
+
+### Context
+Currently GPU instances only support basic naming (`name="experiment-worker-1"`). For better organization and filtering of instances across multiple experiments and projects, we need Stripe-style metadata support.
+
+### Requirements
+- **Key/Value Metadata**: `metadata={"experiment": "gsm8k_pilot", "project": "mats_neel", "worker_id": "worker_1"}`
+- **Filtering Support**: Search/list instances by metadata keys
+- **Provider Integration**: Map to provider-specific tagging systems (RunPod tags, AWS tags, etc.)
+
+### Implementation Plan
+```python
+# Add to ProvisionRequest
+metadata: Optional[Dict[str, str]] = None
+
+# Add to GPUClient
+def list_instances(metadata_filter: Dict[str, str] = None) -> List[GPUInstance]:
+    """List instances optionally filtered by metadata"""
+    pass
+
+def find_by_metadata(key: str, value: str) -> List[GPUInstance]:
+    """Find instances with specific metadata"""
+    pass
+```
+
+### Use Cases
+- **Experiment Organization**: Group GPUs by experiment name, researcher, project
+- **Cost Tracking**: Tag instances with cost centers, departments, research groups  
+- **Automated Cleanup**: Find and terminate instances by metadata filters
+- **Multi-tenant Management**: Isolate resources by user/team metadata
+
+### Provider Support
+- **RunPod**: Uses custom fields or name prefixes (investigate GraphQL schema)
+- **AWS EC2**: Native tag support via boto3
+- **Google Cloud**: Native label support
+- **Azure**: Native tag support
+
+**Priority**: Medium (would greatly improve multi-experiment workflows)

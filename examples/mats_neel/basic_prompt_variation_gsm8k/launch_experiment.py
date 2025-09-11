@@ -30,13 +30,145 @@ from bifrost.client import BifrostClient
 # Import rollouts evaluation framework  
 from rollouts.dtypes import Message, Endpoint
 
-# Reuse components from gsm8k_remote
-from examples.gsm8k_remote.deploy_and_evaluate import (
-    deploy_qwen_vllm_server,
-    load_gsm8k_dataset
-)
+# Copy of functions from gsm8k_remote for decoupling
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# COPIED FUNCTIONS (decoupled from gsm8k_remote)
+# =============================================================================
+
+def load_gsm8k_dataset(output_path: Path, sample_count: int = None) -> None:
+    """Load GSM8K from HuggingFace and save as JSONL."""
+    try:
+        from datasets import load_dataset
+        
+        print("📚 Loading GSM8K dataset from HuggingFace...")
+        dataset = load_dataset("gsm8k", "main", split="test")
+        
+        if sample_count:
+            dataset = dataset.select(range(min(sample_count, len(dataset))))
+        
+        print(f"📊 Selected {len(dataset)} samples from GSM8K")
+        
+        with open(output_path, 'w') as f:
+            for i, row in enumerate(dataset):
+                answer_text = row["answer"]
+                if "####" in answer_text:
+                    numeric_answer = answer_text.split("####")[-1].strip()
+                else:
+                    numeric_answer = "unknown"
+                
+                gsm8k_sample = {
+                    "question": row["question"],
+                    "answer": numeric_answer,
+                    "sample_id": f"gsm8k_{i+1:04d}"
+                }
+                f.write(json.dumps(gsm8k_sample) + '\n')
+        
+        print(f"✅ Saved GSM8K dataset to: {output_path}")
+        
+    except ImportError:
+        print("❌ HuggingFace datasets library not found. Install with: uv pip install datasets")
+        raise
+    except Exception as e:
+        print(f"❌ Error loading GSM8K: {e}")
+        raise
+
+def deploy_qwen_vllm_server(min_vram: int = 12, max_price: float = 0.40, 
+                           gpu_memory_utilization: float = 0.6, max_model_len: int = 2048,
+                           experiment_name: str = "experiment", worker_id: str = "worker") -> dict:
+    """Deploy Qwen3-0.6B vLLM server on GPU and return connection info."""
+    
+    print("🚀 Starting Qwen3-0.6B vLLM deployment...")
+    
+    # 1. PROVISION GPU
+    print(f"📡 Creating GPU instance (min {min_vram}GB VRAM, max ${max_price}/hr)...")
+    gpu_client = GPUClient()
+    
+    # Build query for GPU with minimum VRAM and max price
+    query = (gpu_client.vram_gb >= min_vram) & (gpu_client.price_per_hour <= max_price)
+    
+    # Use experiment name and worker ID for GPU naming
+    gpu_name = f"{experiment_name}-{worker_id}"
+    
+    gpu_instance = gpu_client.create(
+        query=query,
+        exposed_ports=[8000],  # Expose port 8000 for vLLM
+        enable_http_proxy=True,  # Enable RunPod proxy
+        name=gpu_name,
+        cloud_type="secure",
+        sort=lambda x: x.price_per_hour,  # Sort by price (cheapest first)
+        reverse=False
+    )
+    
+    print(f"✅ GPU ready: {gpu_instance.id} (name: {gpu_name})")
+    
+    # Wait for SSH to be ready
+    print("⏳ Waiting for SSH connection to be ready...")
+    if not gpu_instance.wait_until_ssh_ready(timeout=300):  # 5 minutes
+        print("❌ Failed to get SSH connection ready")
+        sys.exit(1)
+    
+    ssh_connection = gpu_instance.ssh_connection_string()
+    print(f"✅ SSH ready: {ssh_connection}")
+    
+    # 2. DEPLOY CODE WITH DEPENDENCIES
+    print("📦 Deploying codebase with GSM8K dependencies...")
+    bifrost_client = BifrostClient(ssh_connection)
+    
+    # Deploy the codebase to remote workspace with GSM8K remote dependencies
+    workspace_path = bifrost_client.push(uv_extra="examples_gsm8k_remote")
+    print(f"✅ Code deployed and dependencies installed: {workspace_path}")
+    
+    # 3. START QWEN VLLM SERVER IN TMUX
+    print("🌟 Starting Qwen3-0.6B vLLM server in tmux session...")
+    
+    # Create custom vLLM command for Qwen3-0.6B
+    vllm_cmd = f"""uv run python -m vllm.entrypoints.openai.api_server \\
+        --model willcb/Qwen3-0.6B \\
+        --host 0.0.0.0 \\
+        --port 8000 \\
+        --gpu-memory-utilization {gpu_memory_utilization} \\
+        --max-model-len {max_model_len} \\
+        --disable-log-stats"""
+    
+    # Create tmux session and start server with persistent logging
+    tmux_cmd = f"tmux new-session -d -s qwen-vllm 'cd ~/.bifrost/workspace && {vllm_cmd} 2>&1 | tee ~/qwen_vllm_server.log'"
+    bifrost_client.exec(tmux_cmd)
+    
+    print("✅ Qwen3-0.6B vLLM server starting in tmux session 'qwen-vllm'")
+    print("📋 Server will be ready in 2-3 minutes for model loading")
+    print(f"   Check server status: bifrost exec '{ssh_connection}' 'curl -s http://localhost:8000/v1/models'")
+    print(f"   View logs: bifrost exec '{ssh_connection}' 'cat ~/qwen_vllm_server.log'")
+    
+    # 4. CONSTRUCT PROXY URL  
+    proxy_url = gpu_instance.get_proxy_url(8000)
+    
+    if not proxy_url:
+        print("⚠️  No proxy URL available - instance may not be RunPod")
+        proxy_url = f"http://{gpu_instance.public_ip}:8000"
+    
+    # 5. RETURN CONNECTION INFO
+    connection_info = {
+        "url": proxy_url,
+        "instance_id": gpu_instance.id,
+        "ssh": ssh_connection,
+        "provider": gpu_instance.provider,
+        "status": "ready",
+        "model": "willcb/Qwen3-0.6B"
+    }
+    
+    print("\n🎉 Qwen3-0.6B vLLM deployment complete!")
+    print(f"   Server URL: {proxy_url}")
+    print(f"   Instance ID: {gpu_instance.id}")
+    print(f"   SSH: {ssh_connection}")
+    
+    return connection_info
+
+# =============================================================================
+# TRAJECTORY TRANSFORMATIONS AND EXPERIMENT LOGIC
+# =============================================================================
 
 # Type for trajectory transformation function
 TrajectoryTransform = Callable[[List[Message]], List[Message]]
@@ -117,7 +249,7 @@ PROMPT_VARIANTS = {
 # WORKER DEPLOYMENT
 # =============================================================================
 
-def deploy_worker(worker_id: str, min_vram: int = 12, max_price: float = 0.40, 
+def deploy_worker(worker_id: str, experiment_name: str, min_vram: int = 12, max_price: float = 0.40, 
                  gpu_memory_utilization: float = 0.6, max_model_len: int = 2048) -> WorkerInfo:
     """Deploy a single vLLM worker."""
     logger.info(f"Deploying worker {worker_id}...")
@@ -126,7 +258,9 @@ def deploy_worker(worker_id: str, min_vram: int = 12, max_price: float = 0.40,
         min_vram=min_vram,
         max_price=max_price,
         gpu_memory_utilization=gpu_memory_utilization,
-        max_model_len=max_model_len
+        max_model_len=max_model_len,
+        experiment_name=experiment_name,
+        worker_id=worker_id
     )
     
     worker = WorkerInfo(
@@ -216,6 +350,7 @@ async def launch_experiment(experiment_name: str, samples: int = 8,
             try:
                 worker = deploy_worker(
                     worker_id=worker_id,
+                    experiment_name=experiment_name,
                     min_vram=min_vram,
                     max_price=max_price,
                     gpu_memory_utilization=gpu_memory_utilization,
