@@ -128,9 +128,17 @@ class GitDeployment:
     
     def detect_bootstrap_command(self, client: paramiko.SSHClient, worktree_path: str, uv_extra: Optional[str] = None) -> str:
         """Detect Python dependency files and return appropriate bootstrap command."""
-        
+        # Allow callers to skip or freeze dependency bootstrap for faster reuse
+        skip_bootstrap = os.environ.get("BIFROST_SKIP_BOOTSTRAP") == "1"
+        frozen = os.environ.get("BIFROST_BOOTSTRAP_FROZEN") == "1"
+        if skip_bootstrap:
+            console.print("📦 Skipping dependency bootstrap due to BIFROST_SKIP_BOOTSTRAP=1")
+            return ""
+
         # Check for dependency files in order of preference
         uv_sync_cmd = "pip install uv && uv sync"
+        if frozen:
+            uv_sync_cmd += " --frozen"
         if uv_extra:
             uv_sync_cmd += f" --extra {uv_extra}"
             

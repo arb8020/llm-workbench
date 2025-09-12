@@ -14,6 +14,7 @@ What it does:
 """
 
 import json
+import os
 import sys
 import time
 from typing import Dict, Any, List, Optional
@@ -70,8 +71,14 @@ def get_or_create_gpu(min_vram: int, max_price: float, name: str, gpu_id: Option
     return gpu
 
 
-def start_server(bc: BifrostClient) -> None:
+def start_server(bc: BifrostClient, skip_sync: bool = False, frozen_sync: bool = False) -> None:
     # Install deps from extras and run uvicorn in tmux
+    # Control dependency bootstrap speed via env flags consumed by bifrost
+    if skip_sync:
+        os.environ["BIFROST_SKIP_BOOTSTRAP"] = "1"
+    elif frozen_sync:
+        os.environ["BIFROST_BOOTSTRAP_FROZEN"] = "1"
+
     workspace = bc.push(uv_extra="examples_gsm8k_nnsight_remote")
     # Kill existing session if present, then start a clean one
     bc.exec("tmux has-session -t nnsight-singlepass 2>/dev/null && tmux kill-session -t nnsight-singlepass || true")
@@ -166,6 +173,8 @@ def main():
     p.add_argument("--gpu-id", default=None, help="Reuse an existing GPU by id")
     p.add_argument("--reuse", action="store_true", help="Reuse running instance named 'nnsight-singlepass-server' if found")
     p.add_argument("--name", default="nnsight-singlepass-server", help="Name to assign or search for when reusing")
+    p.add_argument("--skip-sync", action="store_true", help="Skip uv sync on reuse (fastest; assumes env already set up)")
+    p.add_argument("--frozen-sync", action="store_true", help="Run uv sync --frozen (use lock only; faster and reproducible)")
     args = p.parse_args()
 
     print("🚀 Getting GPU (reuse or create)…")
@@ -176,7 +185,7 @@ def main():
 
     bc = BifrostClient(ssh)
     print("📦 Deploying code + starting server (tmux)…")
-    start_server(bc)
+    start_server(bc, skip_sync=args.skip_sync, frozen_sync=args.frozen_sync)
 
     print("⏳ Waiting for /health…")
     wait_for_health(proxy_url)

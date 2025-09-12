@@ -33,6 +33,30 @@ Useful follow‑ups it prints:
 
 Server code: `examples/gsm8k_nnsight_remote/server_singlepass.py`
 
+### Idempotency and GPU Reuse
+
+The deploy script can reuse an existing GPU to speed up iteration and avoid re‑provisioning:
+
+- Precedence:
+  1) If `--gpu-id <id>` is provided, the script reuses exactly that instance.
+  2) Else, if `--reuse` is set, it searches for a RUNNING instance with `--name` (default `nnsight-singlepass-server`) and reuses it if found.
+  3) Otherwise, it provisions a new GPU.
+
+- What “reuse” means:
+  - Always pushes the latest code to `~/.bifrost/workspace` using `uv sync` with extras.
+  - Restarts the server by killing the `nnsight-singlepass` tmux session if present and starting a fresh one.
+  - Runs the same health check + smoke test and verifies activation files exist on the remote.
+  - Leaves the instance running so you can SSH in and continue debugging.
+
+- Examples:
+  - Reuse exact instance: `uv run python examples/gsm8k_nnsight_remote/deploy_and_smoke_test.py --model willcb/Qwen3-0.6B --gpu-id gpu_12345`
+  - Reuse by name: `uv run python examples/gsm8k_nnsight_remote/deploy_and_smoke_test.py --model willcb/Qwen3-0.6B --reuse --name nnsight-singlepass-server`
+
+Speed tips on reuse:
+- `--skip-sync`: skips dependency bootstrap (fastest). Use when the remote venv is already set up.
+- `--frozen-sync`: uses `uv sync --frozen` to respect `uv.lock` without re‑resolving or updating (faster, reproducible).
+- Example fast reuse: `uv run python examples/gsm8k_nnsight_remote/deploy_and_smoke_test.py --model willcb/Qwen3-0.6B --reuse --skip-sync`
+
 ## 🎯 Key Features
 
 - **Activation Collection**: Extracts `input_layernorm.output` and `post_attention_layernorm.output` from Qwen3-0.6B
