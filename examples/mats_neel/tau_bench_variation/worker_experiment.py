@@ -43,6 +43,56 @@ def create_emotional_user_variants():
     try:
         from tau_bench.envs.user import LLMUserSimulationEnv, UserStrategy, load_user
         import tau_bench.envs.user as user_module
+        # Optional: sanitize LLM outputs to strip leaked chain-of-thought markup like "<think>..."
+        try:
+            import litellm.main as _llm_main
+            _orig_completion = _llm_main.completion
+
+            def _strip_think(text: Optional[str]) -> Optional[str]:
+                if not isinstance(text, str):
+                    return text
+                s = text
+                # Remove any <think>...</think> blocks if present
+                while True:
+                    start = s.find("<think>")
+                    if start == -1:
+                        break
+                    end = s.find("</think>", start + 7)
+                    if end != -1:
+                        s = s[:start] + s[end + len("</think>"):]
+                    else:
+                        # No closing tag; drop everything up to the first double newline if present
+                        dn = s.find("\n\n", start + 7)
+                        if dn != -1:
+                            s = s[:start] + s[dn + 2:]
+                        else:
+                            # Fallback: drop from <think> to end
+                            s = s[:start]
+                            break
+                # Also remove any leading lonely <think> prefix lines
+                if s.strip().startswith("<think>"):
+                    s = s.replace("<think>", "", 1)
+                return s
+
+            def _sanitized_completion(*args, **kwargs):
+                resp = _orig_completion(*args, **kwargs)
+                try:
+                    choices = resp.get("choices", [])
+                    for ch in choices:
+                        msg = ch.get("message")
+                        if not isinstance(msg, dict):
+                            continue
+                        content = msg.get("content")
+                        msg["content"] = _strip_think(content)
+                except Exception:
+                    # Never break the main flow on sanitizer issues
+                    pass
+                return resp
+
+            _llm_main.completion = _sanitized_completion
+            logger.info("✅ Applied LLM output sanitizer to strip <think> leakage")
+        except Exception as _e:
+            logger.warning(f"Could not apply LLM sanitizer: {_e}")
         
         # Create custom emotional user simulation classes
         class FrustratedLLMUserSimulationEnv(LLMUserSimulationEnv):
