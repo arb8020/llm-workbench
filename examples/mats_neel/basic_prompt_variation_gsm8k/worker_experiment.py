@@ -459,7 +459,8 @@ def create_worker_job_queue(samples: List[Dict[str, Any]], variants: List[str],
     # Shuffle for better distribution, then assign to this worker
     random.shuffle(all_jobs)
     
-    # Extract worker number from worker_id (e.g., "worker_1" -> 0)
+    # GOTCHA: worker_id MUST be in format "worker_N" (e.g., "worker_1" -> 0)
+    # This will crash with ValueError if worker_id is "sanity_remote" or any non-numeric format
     worker_num = int(worker_id.split('_')[1]) - 1
     
     # Round-robin assignment

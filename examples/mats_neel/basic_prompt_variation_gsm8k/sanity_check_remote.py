@@ -123,9 +123,9 @@ async def test_remote_pipeline():
             sample_line = json.dumps(sample_data)
             bifrost_client.exec(f"cat > {sample_data_path} << 'EOF'\n{sample_line}\nEOF")
             
-            # Create minimal config (like the real deployment)
+            # Create minimal config (like the real deployment)  
             worker_info = {
-                "worker_id": "sanity_remote",
+                "worker_id": "worker_1",  # Must match worker_N format
                 "connection_info": {"url": worker.endpoint_url},
                 "ssh_connection": worker.ssh_connection,
                 "endpoint_url": worker.endpoint_url,
@@ -151,7 +151,9 @@ async def test_remote_pipeline():
             
             # Use the EXACT same wrapper script as real deployment
             log_file = "/tmp/sanity_worker.log"  
-            worker_cmd = f"cd ~/.bifrost/workspace && timeout 120 bash examples/mats_neel/basic_prompt_variation_gsm8k/worker_debug_wrapper.sh {config_path} sanity_remote {log_file} 2>&1"
+            # GOTCHA: worker_id must be in format "worker_N" - script parses the number!
+            # Using "sanity_remote" breaks: int(worker_id.split('_')[1]) 
+            worker_cmd = f"cd ~/.bifrost/workspace && timeout 120 bash examples/mats_neel/basic_prompt_variation_gsm8k/worker_debug_wrapper.sh {config_path} worker_1 {log_file} 2>&1"
             
             # Execute command
             # GOTCHA: BifrostClient.exec() has NO timeout parameter (common mistake)
