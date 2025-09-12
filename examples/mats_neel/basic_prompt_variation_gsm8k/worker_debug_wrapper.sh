@@ -47,7 +47,7 @@ debug_log "Worker script exists: $WORKER_SCRIPT"
 # Test critical imports before running the real script
 debug_log "Testing critical imports..."
 
-python -c "
+uv run python -c "
 import sys
 import logging
 import json
@@ -61,7 +61,7 @@ if [ ${PIPESTATUS[0]} -ne 0 ]; then
     exit 1
 fi
 
-python -c "
+uv run python -c "
 from rollouts.evaluation import evaluate_sample, load_jsonl
 from rollouts.dtypes import Message, Endpoint, AgentState, RunConfig
 print('Rollouts imports: OK')
@@ -72,7 +72,7 @@ if [ ${PIPESTATUS[0]} -ne 0 ]; then
     exit 1
 fi
 
-python -c "
+uv run python -c "
 import requests
 import asyncio
 print('Additional imports: OK')
@@ -88,7 +88,7 @@ debug_log "All imports successful - starting worker script"
 # Run the actual worker script and capture all output
 debug_log "=== Starting Python Worker Script ==="
 
-python "$WORKER_SCRIPT" "$CONFIG_PATH" "$WORKER_ID" "$LOG_FILE" 2>&1 | tee -a "$LOG_FILE_EXPANDED"
+uv run python "$WORKER_SCRIPT" "$CONFIG_PATH" "$WORKER_ID" "$LOG_FILE" 2>&1 | tee -a "$LOG_FILE_EXPANDED"
 EXIT_CODE=${PIPESTATUS[0]}
 
 if [ $EXIT_CODE -eq 0 ]; then
