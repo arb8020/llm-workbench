@@ -33,7 +33,7 @@ Useful follow‑ups it prints:
 
 Server code: `examples/gsm8k_nnsight_remote/server_singlepass.py`
 
-### Idempotency and GPU Reuse
+### Idempotency, Port, and GPU Reuse
 
 The deploy script can reuse an existing GPU to speed up iteration and avoid re‑provisioning:
 
@@ -48,9 +48,13 @@ The deploy script can reuse an existing GPU to speed up iteration and avoid re�
   - Runs the same health check + smoke test and verifies activation files exist on the remote.
   - Leaves the instance running so you can SSH in and continue debugging.
 
+- Port selection:
+  - Default `--port 8001`. If you suspect another service (e.g., nginx) is bound to that port, pick a different one and the script will expose and bind that port end‑to‑end: `--port 8011`.
+
 - Examples:
   - Reuse exact instance: `uv run python examples/gsm8k_nnsight_remote/deploy_and_smoke_test.py --model willcb/Qwen3-0.6B --gpu-id gpu_12345`
   - Reuse by name: `uv run python examples/gsm8k_nnsight_remote/deploy_and_smoke_test.py --model willcb/Qwen3-0.6B --reuse --name nnsight-singlepass-server`
+  - Change port: `uv run python examples/gsm8k_nnsight_remote/deploy_and_smoke_test.py --model willcb/Qwen3-0.6B --port 8011`
 
 Speed tips on reuse:
 - `--skip-sync`: skips dependency bootstrap entirely (fastest). It runs the server via the existing workspace virtualenv at `~/.bifrost/workspace/.venv`. If that venv is missing, the script fails loudly and tells you to run once without `--skip-sync` (or with `--frozen-sync`).
@@ -58,7 +62,8 @@ Speed tips on reuse:
 - Example fast reuse: `uv run python examples/gsm8k_nnsight_remote/deploy_and_smoke_test.py --model willcb/Qwen3-0.6B --reuse --skip-sync`
 
 Health checks:
-- The script waits for `http://localhost:8001/health` on the GPU first, and tails `~/nnsight_singlepass.log` if startup fails.
+- The script waits for `http://localhost:<port>/health` on the GPU and also validates the OpenAPI spec contains the expected routes (`/models/load`, `/v1/chat/completions`). This prevents confusing 200s from unrelated services.
+- If startup fails, it tails `~/nnsight_singlepass.log`.
 - It then attempts the external proxy `/health`; if blocked by the provider, it continues using direct remote calls.
 
 ## 🎯 Key Features

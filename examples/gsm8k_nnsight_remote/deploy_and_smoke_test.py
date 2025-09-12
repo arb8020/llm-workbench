@@ -26,7 +26,7 @@ from bifrost.client import BifrostClient
 import requests
 
 
-def get_or_create_gpu(min_vram: int, max_price: float, name: str, gpu_id: Optional[str], reuse_existing: bool) -> Any:
+def get_or_create_gpu(min_vram: int, max_price: float, name: str, gpu_id: Optional[str], reuse_existing: bool, port: int) -> Any:
     gpu_client = GPUClient()
 
     # If a specific GPU id is provided, try to reuse it
@@ -59,7 +59,7 @@ def get_or_create_gpu(min_vram: int, max_price: float, name: str, gpu_id: Option
     query = (gpu_client.vram_gb >= min_vram) & (gpu_client.price_per_hour <= max_price)
     gpu = gpu_client.create(
         query=query,
-        exposed_ports=[8001],
+        exposed_ports=[port],
         enable_http_proxy=True,
         name=name,
         cloud_type="secure",
@@ -71,7 +71,7 @@ def get_or_create_gpu(min_vram: int, max_price: float, name: str, gpu_id: Option
     return gpu
 
 
-def start_server(bc: BifrostClient, skip_sync: bool = False, frozen_sync: bool = False) -> None:
+def start_server(bc: BifrostClient, port: int, skip_sync: bool = False, frozen_sync: bool = False) -> None:
     # Install deps from extras and run uvicorn in tmux
     # Control dependency bootstrap speed via env flags consumed by bifrost
     if skip_sync:
@@ -87,26 +87,32 @@ def start_server(bc: BifrostClient, skip_sync: bool = False, frozen_sync: bool =
             "cd ~/.bifrost/workspace && "
             "if [ -x .venv/bin/python ]; then "
             ". .venv/bin/activate; echo 'Using existing venv:'; which python; python -V; "
-            "python examples/gsm8k_nnsight_remote/server_singlepass.py --host 0.0.0.0 --port 8001; "
+            f"python examples/gsm8k_nnsight_remote/server_singlepass.py --host 0.0.0.0 --port {port}; "
             "else echo '❌ Missing .venv. Run once without --skip-sync or with --frozen-sync to create it.' >&2; exit 42; fi"
         )
     else:
         run_cmd = (
             "cd ~/.bifrost/workspace && "
-            "uv run python examples/gsm8k_nnsight_remote/server_singlepass.py --host 0.0.0.0 --port 8001"
+            f"uv run python examples/gsm8k_nnsight_remote/server_singlepass.py --host 0.0.0.0 --port {port}"
         )
     tmux_cmd = f"tmux new-session -d -s nnsight-singlepass '{run_cmd} 2>&1 | tee ~/nnsight_singlepass.log'"
     bc.exec(tmux_cmd)
 
-def wait_for_remote_health(bc: BifrostClient, timeout_s: int = 240) -> None:
+def wait_for_remote_health(bc: BifrostClient, port: int, timeout_s: int = 240) -> None:
     deadline = time.time() + timeout_s
     last = None
     while time.time() < deadline:
         try:
-            out = bc.exec("curl -s -o /dev/null -w '%{http_code}' http://localhost:8001/health")
+            out = bc.exec(f"curl -s -o /dev/null -w '%{{http_code}}' http://localhost:{port}/health")
             code = out.strip()
             if code == "200":
-                return
+                # verify it's our FastAPI by checking openapi for expected routes
+                spec = bc.exec(f"curl -s http://localhost:{port}/openapi.json || true").strip()
+                if spec.startswith("{") and "/models/load" in spec and "/v1/chat/completions" in spec:
+                    return
+                else:
+                    last = f"non-fastapi or missing routes (openapi mismatch)"
+                    # fall through to retry; this avoids Nginx 200 masking
             last = code
         except Exception as e:
             last = str(e)
@@ -135,7 +141,7 @@ def _remote_post_json(bc: BifrostClient, remote_url: str, payload: Dict[str, Any
     # Use curl on the remote host to bypass any external proxy method restrictions
     cmd = (
         f"curl -s -X POST {remote_url} "
-        f"-H 'Content-Type: application/json' "
+        f"-H 'Content-Type: application/json' -H 'Accept: application/json' "
         f"--max-time {timeout_s} "
         f"-d '{data}'"
     )
@@ -146,9 +152,9 @@ def _remote_post_json(bc: BifrostClient, remote_url: str, payload: Dict[str, Any
         raise RuntimeError(f"Remote POST failed or returned non-JSON. Output: {out[:300]}…")
 
 
-def run_smoke(bc: BifrostClient, proxy_url: str, model_id: str) -> Dict[str, Any]:
+def run_smoke(bc: BifrostClient, proxy_url: str, model_id: str, port: int) -> Dict[str, Any]:
     # Use proxy only for health; POST via remote curl to avoid 405s from provider proxy
-    remote_base = "http://localhost:8001"
+    remote_base = f"http://localhost:{port}"
 
     # Load model with 1-2 safe savepoints
     sp = [
@@ -194,6 +200,7 @@ def main():
     p.add_argument("--model", default="willcb/Qwen3-0.6B")
     p.add_argument("--min-vram", type=int, default=12)
     p.add_argument("--max-price", type=float, default=0.60)
+    p.add_argument("--port", type=int, default=8001, help="Server port to bind/expose")
     p.add_argument("--gpu-id", default=None, help="Reuse an existing GPU by id")
     p.add_argument("--reuse", action="store_true", help="Reuse running instance named 'nnsight-singlepass-server' if found")
     p.add_argument("--name", default="nnsight-singlepass-server", help="Name to assign or search for when reusing")
@@ -202,18 +209,18 @@ def main():
     args = p.parse_args()
 
     print("🚀 Getting GPU (reuse or create)…")
-    gpu = get_or_create_gpu(args.min_vram, args.max_price, args.name, args.gpu_id, args.reuse)
+    gpu = get_or_create_gpu(args.min_vram, args.max_price, args.name, args.gpu_id, args.reuse, args.port)
     ssh = gpu.ssh_connection_string()
-    proxy_url = gpu.get_proxy_url(8001) or f"http://{gpu.public_ip}:8001"
+    proxy_url = gpu.get_proxy_url(args.port) or f"http://{gpu.public_ip}:{args.port}"
     print(f"✅ GPU: {gpu.id}\nSSH: {ssh}\nURL: {proxy_url}")
 
     bc = BifrostClient(ssh)
     print("📦 Deploying code + starting server (tmux)…")
-    start_server(bc, skip_sync=args.skip_sync, frozen_sync=args.frozen_sync)
+    start_server(bc, port=args.port, skip_sync=args.skip_sync, frozen_sync=args.frozen_sync)
 
     print("⏳ Waiting for remote /health…")
     try:
-        wait_for_remote_health(bc)
+        wait_for_remote_health(bc, args.port)
         print("✅ Remote health ready")
     except Exception as e:
         print(str(e))
@@ -227,7 +234,7 @@ def main():
         print("⚠️ External health check failed (proxy may block). Continuing.")
 
     print("💬 Running smoke test…")
-    resp = run_smoke(bc, proxy_url, args.model)
+    resp = run_smoke(bc, proxy_url, args.model, args.port)
     print("📝 Chat response id:", resp.get("id"))
     print("🧪 Checking activation files on remote…")
     present = verify_files(bc, resp)
