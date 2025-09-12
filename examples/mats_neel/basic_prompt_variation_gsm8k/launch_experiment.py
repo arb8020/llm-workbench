@@ -197,6 +197,7 @@ class ExperimentConfig:
     variants: List[str]
     workers: int
     random_seed: int
+    model: str
     vllm_config: Dict[str, Any]
     workers_info: List[WorkerInfo]
     output_dir: str
@@ -385,6 +386,7 @@ async def launch_experiment(experiment_name: str, samples: int = 8,
             variants=variants,
             workers=len(deployed_workers),
             random_seed=random_seed,
+            model="willcb/Qwen3-0.6B",
             vllm_config={
                 "min_vram": min_vram,
                 "max_price": max_price,

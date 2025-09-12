@@ -16,9 +16,9 @@ def load_experiment_results(experiment_dir: Path) -> Dict[str, Any]:
     """Load all results from an experiment directory."""
     
     # Load metadata
-    metadata_path = experiment_dir / "metadata.json"
+    metadata_path = experiment_dir / "experiment_config.json"
     if not metadata_path.exists():
-        raise FileNotFoundError(f"No metadata.json found in {experiment_dir}")
+        raise FileNotFoundError(f"No experiment_config.json found in {experiment_dir}")
     
     with open(metadata_path, 'r') as f:
         metadata = json.load(f)
