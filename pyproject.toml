@@ -19,9 +19,6 @@ version = "0.1.0"
 description = "Complete toolkit for GPU-accelerated machine learning workflows"
 requires-python = ">=3.10"
 
-[project.optional-dependencies]
-# Interpretability support via engine
-interp = ["engine[interp]"]
 # Default: Core tools only (no ML dependencies to avoid conflicts)
 dependencies = [
     "rollouts",
@@ -30,6 +27,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Interpretability support via engine
+interp = ["engine[interp]"]
+
 # Lightweight local development - no ML dependencies
 local = [
     "rollouts",
