@@ -400,12 +400,15 @@ async def process_job(job: Job, endpoint: Endpoint, output_dir: Path, worker_id:
         trajectory_path = sample_dir / "trajectory.jsonl"
         with open(trajectory_path, 'w') as f:
             for message in result.trajectory.messages:
-                f.write(json.dumps(message.model_dump()) + '\n')
+                f.write(message.to_json() + '\n')
         
         # Save agent state
         agent_state_path = sample_dir / "agent_state.json"
         with open(agent_state_path, 'w') as f:
-            json.dump(result.agent_state.model_dump() if result.agent_state else {}, f, indent=2)
+            if result.agent_state:
+                f.write(result.agent_state.to_json())
+            else:
+                f.write('{}')  
         
         # Save sample data and results
         sample_path = sample_dir / "sample.json"
