@@ -85,7 +85,7 @@ EMOTIONAL CONTEXT: You are an angry customer who is upset about a serious proble
 - Be more aggressive in your communication while remaining within reasonable bounds
 - Express how the problem has personally affected you: "This has ruined my day/week"
 - Demand compensation or escalation: "What are you going to do to make this right?"
-- Be skeptical of proposed solutions: "How do I know this won't happen again?""""
+- Be skeptical of proposed solutions: "How do I know this won't happen again?"""
                 
                 return f"{base_prompt}{emotional_context}"
         
