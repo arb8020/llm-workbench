@@ -71,16 +71,41 @@ def get_or_create_gpu(min_vram: int, max_price: float, name: str, gpu_id: Option
     return gpu
 
 
-def start_server(bc: BifrostClient, port: int, skip_sync: bool = False, frozen_sync: bool = False) -> None:
+def _kill_port_processes(bc: BifrostClient, port: int) -> None:
+    # Try lsof-based kill; ignore errors if tools missing
+    bc.exec(f"pids=\$(lsof -ti:{port} 2>/dev/null || true); if [ -n \"$pids\" ]; then echo '🔪 Killing PIDs on port {port}: '$pids; kill -9 $pids || true; fi")
+
+
+def start_server(
+    bc: BifrostClient,
+    port: int,
+    skip_sync: bool = False,
+    frozen_sync: bool = False,
+    fresh: bool = False,
+) -> None:
     # Install deps from extras and run uvicorn in tmux
     # Control dependency bootstrap speed via env flags consumed by bifrost
+    if fresh:
+        # Fresh run implies we shouldn't skip dependency install
+        skip_sync = False
+        print("♻️  Fresh start requested: disabling --skip-sync and removing old venv")
     if skip_sync:
         os.environ["BIFROST_SKIP_BOOTSTRAP"] = "1"
     elif frozen_sync:
         os.environ["BIFROST_BOOTSTRAP_FROZEN"] = "1"
 
+    # Kill existing session and any lingering processes on the target port
+    bc.exec("tmux has-session -t nnsight-singlepass 2>/dev/null && tmux kill-session -t nnsight-singlepass || true")
+    _kill_port_processes(bc, port)
+
     workspace = bc.push(uv_extra="examples_gsm8k_nnsight_remote")
-    # Kill existing session if present, then start a clean one
+
+    # Optional fresh cleanup: drop venv and ensure workspace is pristine
+    if fresh:
+        bc.exec("rm -rf ~/.bifrost/workspace/.venv || true")
+        bc.exec("git -C ~/.bifrost/workspace reset --hard origin/main && git -C ~/.bifrost/workspace clean -xdf || true")
+
+    # Start a clean tmux session with the chosen run command
     bc.exec("tmux has-session -t nnsight-singlepass 2>/dev/null && tmux kill-session -t nnsight-singlepass || true")
     if skip_sync:
         run_cmd = (
@@ -206,6 +231,7 @@ def main():
     p.add_argument("--name", default="nnsight-singlepass-server", help="Name to assign or search for when reusing")
     p.add_argument("--skip-sync", action="store_true", help="Skip uv sync on reuse (fastest; assumes env already set up)")
     p.add_argument("--frozen-sync", action="store_true", help="Run uv sync --frozen (use lock only; faster and reproducible)")
+    p.add_argument("--fresh", action="store_true", help="Clean start: kill processes, wipe .venv, reset workspace, then install deps")
     args = p.parse_args()
 
     print("🚀 Getting GPU (reuse or create)…")
@@ -216,7 +242,7 @@ def main():
 
     bc = BifrostClient(ssh)
     print("📦 Deploying code + starting server (tmux)…")
-    start_server(bc, port=args.port, skip_sync=args.skip_sync, frozen_sync=args.frozen_sync)
+    start_server(bc, port=args.port, skip_sync=args.skip_sync, frozen_sync=args.frozen_sync, fresh=args.fresh)
 
     print("⏳ Waiting for remote /health…")
     try:

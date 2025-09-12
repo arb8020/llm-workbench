@@ -33,7 +33,7 @@ Useful follow‑ups it prints:
 
 Server code: `examples/gsm8k_nnsight_remote/server_singlepass.py`
 
-### Idempotency, Port, and GPU Reuse
+### Idempotency, Cleanup, Port, and GPU Reuse
 
 The deploy script can reuse an existing GPU to speed up iteration and avoid re‑provisioning:
 
@@ -45,6 +45,7 @@ The deploy script can reuse an existing GPU to speed up iteration and avoid re�
 - What “reuse” means:
   - Always pushes the latest code to `~/.bifrost/workspace` using `uv sync` with extras.
   - Restarts the server by killing the `nnsight-singlepass` tmux session if present and starting a fresh one.
+  - Kills any process bound to the chosen `--port` before starting (prevents stale listeners).
   - Runs the same health check + smoke test and verifies activation files exist on the remote.
   - Leaves the instance running so you can SSH in and continue debugging.
 
@@ -56,9 +57,10 @@ The deploy script can reuse an existing GPU to speed up iteration and avoid re�
   - Reuse by name: `uv run python examples/gsm8k_nnsight_remote/deploy_and_smoke_test.py --model willcb/Qwen3-0.6B --reuse --name nnsight-singlepass-server`
   - Change port: `uv run python examples/gsm8k_nnsight_remote/deploy_and_smoke_test.py --model willcb/Qwen3-0.6B --port 8011`
 
-Speed tips on reuse:
+Cleanup and speed options on reuse:
 - `--skip-sync`: skips dependency bootstrap entirely (fastest). It runs the server via the existing workspace virtualenv at `~/.bifrost/workspace/.venv`. If that venv is missing, the script fails loudly and tells you to run once without `--skip-sync` (or with `--frozen-sync`).
 - `--frozen-sync`: uses `uv sync --frozen` to respect `uv.lock` without re‑resolving or updating (faster and reproducible). Good middle ground after the first full sync.
+- `--fresh`: wipes the existing `~/.bifrost/workspace/.venv`, resets/cleans the workspace (`git reset --hard origin/main && git clean -xdf`), kills any processes on `--port`, then performs a clean install/start. This mimics a brand‑new GPU setup while reusing the same instance.
 - Example fast reuse: `uv run python examples/gsm8k_nnsight_remote/deploy_and_smoke_test.py --model willcb/Qwen3-0.6B --reuse --skip-sync`
 
 Health checks:
