@@ -6,7 +6,11 @@ Deploys workers and starts tau-bench evaluation in background, then returns.
 Use monitor_experiment.py to track progress.
 
 Usage:
-    python launch_experiment.py --experiment-name "tau_pilot" --tasks 3 --variants control,frustration
+    # Basic usage with multiple emotional variants
+    python launch_experiment.py --experiment-name "emotion_test" --tasks 5 --variants control,frustration,anxiety,anger,confusion
+    
+    # Cross-environment testing (retail vs airline)
+    python launch_experiment.py --experiment-name "retail_vs_airline" --tasks 10 --environment airline --variants control,frustration
 """
 
 import asyncio
@@ -33,8 +37,8 @@ logger = logging.getLogger(__name__)
 # COPIED DEPLOYMENT FUNCTIONS FROM GSM8K (adapted for tau-bench)
 # =============================================================================
 
-def deploy_qwen_vllm_server(min_vram: int = 12, max_price: float = 0.40, 
-                           gpu_memory_utilization: float = 0.6, max_model_len: int = 2048,
+def deploy_qwen_vllm_server(min_vram: int = 12, max_price: float = 0.40,
+                           gpu_memory_utilization: float = 0.6, max_model_len: int = 8192,
                            experiment_name: str = "experiment", worker_id: str = "worker") -> dict:
     """Deploy Qwen3-0.6B vLLM server on GPU and return connection info."""
     
@@ -90,6 +94,8 @@ def deploy_qwen_vllm_server(min_vram: int = 12, max_price: float = 0.40,
         --port 8000 \\
         --gpu-memory-utilization {gpu_memory_utilization} \\
         --max-model-len {max_model_len} \\
+        --enable-auto-tool-choice \\
+        --tool-call-parser hermes \\
         --disable-log-stats"""
     
     # Create tmux session with simple file logging
@@ -166,8 +172,23 @@ PROMPT_VARIANTS = {
     ),
     "frustration": PromptVariant(
         name="frustration",
-        user_strategy="llm",
+        user_strategy="frustrated_llm",
         description="Frustrated customer with previous bad experiences"
+    ),
+    "anxiety": PromptVariant(
+        name="anxiety",
+        user_strategy="anxious_llm",
+        description="Anxious customer who worries about making mistakes"
+    ),
+    "anger": PromptVariant(
+        name="anger", 
+        user_strategy="angry_llm",
+        description="Angry customer upset about serious problems"
+    ),
+    "confusion": PromptVariant(
+        name="confusion",
+        user_strategy="confused_llm", 
+        description="Confused customer who has difficulty understanding"
     ),
 }
 
@@ -234,7 +255,7 @@ def start_worker_experiment(worker: WorkerInfo, experiment_config: ExperimentCon
 async def launch_experiment(experiment_name: str, tasks: int = 3, environment: str = "retail",
                           variants: List[str] = None, workers: int = 1,
                           min_vram: int = 12, max_price: float = 0.40,
-                          gpu_memory_utilization: float = 0.6, max_model_len: int = 2048,
+                          gpu_memory_utilization: float = 0.6, max_model_len: int = 8192,
                           random_seed: int = 42) -> None:
     """Launch the distributed tau-bench user variation experiment."""
     
@@ -372,7 +393,7 @@ if __name__ == "__main__":
                        help="Maximum price per hour")
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.6,
                        help="GPU memory utilization for vLLM")
-    parser.add_argument("--max-model-len", type=int, default=2048,
+    parser.add_argument("--max-model-len", type=int, default=8192,
                        help="Maximum model length for vLLM")
     
     args = parser.parse_args()
