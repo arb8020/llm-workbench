@@ -25,17 +25,140 @@ from rollouts.evaluation import evaluate_sample, load_jsonl
 from rollouts.dtypes import Message, Endpoint, AgentState, RunConfig
 from rollouts.agents import stdout_handler
 
-# Reuse components from gsm8k_remote
-from examples.gsm8k_remote.deploy_and_evaluate import (
-    NoToolsEnvironment,
-    prepare_gsm8k_messages_no_tools,
-    make_correctness_reward,
-    format_reward,
-    efficiency_reward
-)
+# Copied components from gsm8k_remote to avoid import issues
+import re
 
 # Logger will be configured in main()
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# COPIED FUNCTIONS FROM gsm8k_remote/deploy_and_evaluate.py
+# =============================================================================
+
+def prepare_gsm8k_messages_no_tools(sample: Dict[str, Any]) -> List[Message]:
+    """Create initial messages for GSM8K problem (zero-shot)."""
+    return [
+        Message(
+            role="system",
+            content="""You are an expert at solving math word problems. Follow these instructions:
+
+1. Read the problem carefully
+2. Think through the solution step by step  
+3. Show your reasoning clearly
+4. Provide your final answer in this exact format: Answer: [number]
+
+Important: Your final line must be "Answer: [your numeric answer]" with nothing else on that line."""
+        ),
+        Message(
+            role="user",
+            content=f"Solve the following math problem step by step:\n\n{sample['question']}"
+        )
+    ]
+
+
+class NoToolsEnvironment:
+    """Environment with no tools for zero-shot evaluation."""
+    
+    async def serialize(self) -> dict:
+        return {"type": "NoToolsEnvironment"}
+    
+    @staticmethod
+    async def deserialize(data: dict) -> 'NoToolsEnvironment':
+        return NoToolsEnvironment()
+    
+    def get_tools(self):
+        return []
+
+
+def extract_answer(response_text: str) -> str:
+    """Extract answer using standardized format."""
+    answer_pattern = r'Answer:\s*([^\n]+)'
+    matches = re.findall(answer_pattern, response_text, re.IGNORECASE)
+    
+    if matches:
+        answer = matches[-1].strip()
+        answer = answer.replace('$', '').replace(',', '').strip()
+        
+        # Extract numeric part
+        number_match = re.search(r'-?\d+(?:\.\d+)?', answer)
+        if number_match:
+            return number_match.group()
+    
+    return ""
+
+
+def check_equality(predicted: str, expected: str) -> bool:
+    """Check mathematical equivalence."""
+    if not predicted or not expected:
+        return False
+    
+    pred = str(predicted).strip().replace(',', '').replace('$', '')
+    exp = str(expected).strip().replace(',', '').replace('$', '')
+    
+    if pred == exp:
+        return True
+    
+    try:
+        pred_num = float(pred)
+        exp_num = float(exp)
+        return abs(pred_num - exp_num) < 1e-6
+    except ValueError:
+        pass
+    
+    try:
+        from fractions import Fraction
+        return Fraction(pred) == Fraction(exp)
+    except (ValueError, ZeroDivisionError):
+        pass
+    
+    return False
+
+
+def make_correctness_reward(sample: Dict[str, Any]):
+    """Create a reward function that checks correctness for this sample."""
+    def check_correctness(trajectory):
+        # Get final response
+        assistant_messages = [m for m in trajectory.messages if m.role == "assistant"]
+        if not assistant_messages:
+            return 0.0
+        
+        response = " ".join(m.content for m in assistant_messages if m.content)
+        
+        # Extract and check answer
+        extracted_answer = extract_answer(response)
+        expected_answer = str(sample["answer"]).strip()
+        
+        is_correct = check_equality(extracted_answer, expected_answer) if extracted_answer else False
+        return 1.0 if is_correct else 0.0
+    
+    return check_correctness
+
+
+def format_reward(trajectory) -> float:
+    """Reward for following the answer format."""
+    assistant_messages = [m for m in trajectory.messages if m.role == "assistant"]
+    if not assistant_messages:
+        return 0.0
+    
+    response = " ".join(m.content for m in assistant_messages if m.content)
+    has_answer_format = bool(re.search(r'Answer:\s*[^\n]+', response, re.IGNORECASE))
+    return 1.0 if has_answer_format else 0.0
+
+
+def efficiency_reward(trajectory) -> float:
+    """Reward for being concise (fewer tokens)."""
+    total_tokens = sum(len(m.content or "") for m in trajectory.messages)
+    # Normalize: 1.0 for <500 tokens, 0.0 for >2000 tokens
+    if total_tokens < 500:
+        return 1.0
+    elif total_tokens > 2000:
+        return 0.0
+    else:
+        return 1.0 - (total_tokens - 500) / 1500
+
+# =============================================================================
+# END COPIED FUNCTIONS
+# =============================================================================
 
 # =============================================================================
 # TRAJECTORY TRANSFORMATIONS (Remote Implementation)
