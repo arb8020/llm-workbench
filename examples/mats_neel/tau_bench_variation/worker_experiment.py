@@ -17,6 +17,7 @@ import time
 import traceback
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+from contextvars import ContextVar
 
 from shared.logging_config import setup_logging
 
@@ -25,6 +26,16 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # EMOTIONAL USER SIMULATION VARIANTS
 # =============================================================================
+
+# Process-local selector for emotional variant (avoids env vars)
+_emotion_variant: ContextVar[Optional[str]] = ContextVar("emotion_variant", default=None)
+
+def set_emotion_variant(variant: Optional[str]):
+    """Set the current emotional variant for the monkey-patched load_user.
+
+    Allowed: None, "control", "frustration", "anxiety", "anger", "confusion".
+    """
+    _emotion_variant.set(variant)
 
 def create_emotional_user_variants():
     """Create emotional user simulation variants by monkey-patching tau-bench."""
@@ -112,7 +123,7 @@ EMOTIONAL CONTEXT: You are a confused customer who has difficulty understanding 
         original_load_user = user_module.load_user
         
         def patched_load_user(user_strategy, model=None, provider=None):
-            # Handle our custom emotional strategies
+            # Backward-compat: accept explicit custom strategies if passed
             if isinstance(user_strategy, str):
                 if user_strategy == "frustrated_llm":
                     if model is None or provider is None:
@@ -130,7 +141,25 @@ EMOTIONAL CONTEXT: You are a confused customer who has difficulty understanding 
                     if model is None or provider is None:
                         raise ValueError("Emotional LLM user strategies require model and provider")
                     return ConfusedLLMUserSimulationEnv(model=model, provider=provider)
-            
+
+            # Preferred path: when Tau-Bench passes allowed enum value "llm",
+            # choose emotional subclass based on our process-local selector
+            try:
+                current_variant = _emotion_variant.get()
+            except Exception:
+                current_variant = None
+
+            if isinstance(user_strategy, str) and user_strategy == "llm" and current_variant:
+                if current_variant == "frustration":
+                    return FrustratedLLMUserSimulationEnv(model=model, provider=provider)
+                if current_variant == "anxiety":
+                    return AnxiousLLMUserSimulationEnv(model=model, provider=provider)
+                if current_variant == "anger":
+                    return AngryLLMUserSimulationEnv(model=model, provider=provider)
+                if current_variant == "confusion":
+                    return ConfusedLLMUserSimulationEnv(model=model, provider=provider)
+                # control or unknown → fall through to original
+
             # Fall back to original function for other strategies
             return original_load_user(user_strategy, model, provider)
         
@@ -178,6 +207,8 @@ def run_tau_bench_variant(variant_name: str, user_strategy: str, environment: st
         "variant": variant_name,
         "environment": environment,
         "user_strategy": user_strategy,
+        "user_strategy_effective": "llm",  # keep enum-valid
+        "selected_emotion": None,
         "endpoint_url": endpoint_url,
         "tasks_requested": list(task_ids),
         "started_at": datetime.utcnow().isoformat() + "Z",
@@ -233,14 +264,27 @@ def run_tau_bench_variant(variant_name: str, user_strategy: str, environment: st
         from tau_bench.run import run
         from tau_bench.types import RunConfig
 
-        # Create RunConfig
+        # Map variant to our emotion selector while keeping Tau-Bench enum-valid strategy
+        emotion_for_variant = None
+        if variant_name in {"frustration", "anxiety", "anger", "confusion"}:
+            emotion_for_variant = variant_name
+        elif variant_name == "control":
+            emotion_for_variant = None
+        else:
+            # Unknown variant: do not alter behavior
+            summary["notes"].append(f"Unknown variant '{variant_name}', running neutral llm")
+
+        set_emotion_variant(emotion_for_variant)
+        summary["selected_emotion"] = emotion_for_variant
+
+        # Create RunConfig with allowed strategy "llm" always
         config = RunConfig(
             model_provider="openai",
             user_model_provider="openai",
             model="willcb/Qwen3-0.6B",
             user_model="willcb/Qwen3-0.6B",  # Use same model for both
             env=environment,
-            user_strategy=user_strategy,
+            user_strategy="llm",
             task_ids=task_ids,
             log_dir=str(variant_output_dir),
             max_concurrency=1,
@@ -251,7 +295,7 @@ def run_tau_bench_variant(variant_name: str, user_strategy: str, environment: st
             f"Running tau-bench with config: model={config.model}, user_model={config.user_model}"
         )
         logger.info(
-            f"Environment: {config.env}, User strategy: {config.user_strategy}"
+            f"Environment: {config.env}, User strategy: {config.user_strategy} (emotion={emotion_for_variant or 'neutral'})"
         )
         logger.info(f"Output directory: {variant_output_dir}")
 
@@ -300,6 +344,12 @@ def run_tau_bench_variant(variant_name: str, user_strategy: str, environment: st
         end_ts = time.time()
         summary["finished_at"] = datetime.utcnow().isoformat() + "Z"
         summary["elapsed_seconds"] = round(end_ts - start_ts, 3)
+
+        # Reset emotion selection to avoid bleed-over
+        try:
+            set_emotion_variant(None)
+        except Exception:
+            pass
 
         # Heuristic: if directory has no files beyond summary itself, flag it
         try:
