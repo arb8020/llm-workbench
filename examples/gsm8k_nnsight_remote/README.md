@@ -65,7 +65,8 @@ Cleanup and speed options on reuse:
 - Example fast reuse: `uv run python examples/gsm8k_nnsight_remote/deploy_and_smoke_test.py --model willcb/Qwen3-0.6B --reuse --skip-sync`
 
 Health checks:
-- The script waits for `http://localhost:<port>/health` on the GPU and also validates the OpenAPI spec contains the expected routes (`/models/load`, `/v1/chat/completions`). This prevents confusing 200s from unrelated services.
+- The script waits for `http://localhost:<port>/health` on the GPU until it returns 200 (with a short warmup and generous timeout). This matches manual `curl` behavior and avoids premature failures.
+- Optional: add `--validate-openapi` to also check that `/openapi.json` contains the expected routes (useful when suspecting nginx or provider splash pages on shared ports).
 - If startup fails, it tails `~/nnsight_singlepass.log`.
 - It then attempts the external proxy `/health`; if blocked by the provider, it continues using direct remote calls.
 

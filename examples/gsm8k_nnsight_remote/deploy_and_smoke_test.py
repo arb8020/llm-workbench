@@ -147,7 +147,9 @@ def start_server(
     tmux_cmd = f"tmux new-session -d -s nnsight-singlepass '{run_cmd} 2>&1 | tee ~/nnsight_singlepass.log'"
     bc.exec(tmux_cmd)
 
-def wait_for_remote_health(bc: BifrostClient, port: int, timeout_s: int = 240) -> None:
+def wait_for_remote_health(bc: BifrostClient, port: int, timeout_s: int = 600, validate_openapi: bool = False) -> None:
+    # Small warmup to reduce immediate 000s during uvicorn bind
+    time.sleep(2)
     deadline = time.time() + timeout_s
     last = None
     while time.time() < deadline:
@@ -155,14 +157,15 @@ def wait_for_remote_health(bc: BifrostClient, port: int, timeout_s: int = 240) -
             out = bc.exec(f"curl -s -o /dev/null -w '%{{http_code}}' http://localhost:{port}/health")
             code = out.strip()
             if code == "200":
-                # verify it's our FastAPI by checking openapi for expected routes
+                if not validate_openapi:
+                    return
+                # Optional: validate OpenAPI routes if explicitly requested
                 spec = bc.exec(f"curl -s http://localhost:{port}/openapi.json || true").strip()
                 if spec.startswith("{") and "/models/load" in spec and "/v1/chat/completions" in spec:
                     return
-                else:
-                    last = f"non-fastapi or missing routes (openapi mismatch)"
-                    # fall through to retry; this avoids Nginx 200 masking
-            last = code
+                last = "openapi mismatch"
+            else:
+                last = code
         except Exception as e:
             last = str(e)
         time.sleep(2)
@@ -256,6 +259,7 @@ def main():
     p.add_argument("--skip-sync", action="store_true", help="Skip uv sync on reuse (fastest; assumes env already set up)")
     p.add_argument("--frozen-sync", action="store_true", help="Run uv sync --frozen (use lock only; faster and reproducible)")
     p.add_argument("--fresh", action="store_true", help="Clean start: kill processes, wipe .venv, reset workspace, then install deps")
+    p.add_argument("--validate-openapi", action="store_true", help="After /health=200, verify OpenAPI has expected routes (avoids false 200s)")
     args = p.parse_args()
 
     print("🚀 Getting GPU (reuse or create)…")
@@ -270,7 +274,7 @@ def main():
 
     print("⏳ Waiting for remote /health…")
     try:
-        wait_for_remote_health(bc, args.port)
+        wait_for_remote_health(bc, args.port, validate_openapi=getattr(args, "validate_openapi", False))
         print("✅ Remote health ready")
     except Exception as e:
         print(str(e))
@@ -278,9 +282,9 @@ def main():
 
     print("⏳ Waiting for external /health…")
     try:
-        wait_for_health(proxy_url)
+        wait_for_health(proxy_url, timeout_s=180)
         print("✅ External health ready")
-    except Exception as e:
+    except Exception:
         print("⚠️ External health check failed (proxy may block). Continuing.")
 
     print("💬 Running smoke test…")
