@@ -593,6 +593,10 @@ async def default_no_tool_handler(state: 'AgentState', run_config: 'RunConfig') 
 
 @dataclass(frozen=True)
 class RunConfig:
+    # TODO: Add runtime validation for on_chunk parameter to catch sync functions early
+    # Currently if a sync function is passed, it gets set to None silently, causing
+    # "object NoneType can't be used in 'await' expression" errors later. Should validate
+    # that on_chunk is properly async and has correct signature at construction time.
     on_chunk: Callable[[StreamChunk], Awaitable[None]]
     on_input: Callable[[str], Awaitable[str]] = field(default_factory=lambda: default_stdin_handler)
     confirm_tool: Callable[[ToolCall, 'AgentState', 'RunConfig'], Awaitable[Tuple['AgentState', ToolConfirmResult]]] = field(default_factory=lambda: default_confirm_tool)

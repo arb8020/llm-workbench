@@ -342,9 +342,19 @@ async def process_job(job: Job, endpoint: Endpoint, output_dir: Path, worker_id:
         ]
         
         # Set up run config with logging handler for worker
-        def logging_chunk_handler(chunk: str) -> None:
+        async def logging_chunk_handler(chunk) -> None:
             """Log chunks to worker log instead of stdout."""
-            logger.info(f"[{worker_id}] {chunk}")
+            if chunk.kind == "token":
+                logger.info(f"[{worker_id}] Token: {chunk.data.get('text', '')}")
+            elif chunk.kind == "tool_call_complete":
+                logger.info(f"[{worker_id}] 🔧 Calling {chunk.data['name']}({chunk.data['args']})")
+            elif chunk.kind == "tool_result":
+                status = "✓" if chunk.data["ok"] else "✗"
+                logger.info(f"[{worker_id}] {status} {chunk.data['content'][:100]}...")
+            elif chunk.kind == "thinking":
+                logger.debug(f"[{worker_id}] Thinking: {chunk.data.get('text', '')}")
+            else:
+                logger.debug(f"[{worker_id}] Chunk: {chunk.kind} - {chunk.data}")
         
         run_config = RunConfig(on_chunk=logging_chunk_handler)
         
