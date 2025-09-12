@@ -35,8 +35,19 @@ def create_mock_eval_sample() -> EvalSample:
     trajectory = Trajectory(messages=messages)
     
     # Create mock agent states
-    mock_agent_state = MagicMock()
-    mock_agent_state.to_json.return_value = '{"mock": "agent_state"}'
+    from rollouts.dtypes import Actor
+    from worker_experiment import NoToolsEnvironment
+    
+    mock_actor = MagicMock()
+    mock_actor.trajectory = trajectory
+    mock_environment = NoToolsEnvironment()
+    
+    mock_agent_state = AgentState(
+        actor=mock_actor,
+        environment=mock_environment,
+        max_turns=10,
+        turn_idx=1
+    )
     
     # Create the eval sample
     return EvalSample(
