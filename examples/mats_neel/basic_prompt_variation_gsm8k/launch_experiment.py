@@ -392,7 +392,7 @@ async def launch_experiment(experiment_name: str, samples: int = 8,
                 "max_model_len": max_model_len
             },
             workers_info=deployed_workers,
-            output_dir=str(output_dir.absolute())
+            output_dir=str(output_dir.absolute())  # Save full local path
         )
         
         # Save experiment metadata locally

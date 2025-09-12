@@ -43,8 +43,30 @@ python monitor_experiment.py results/pilot_study_20250911_123456/ --follow-only 
 python monitor_experiment.py results/pilot_study_20250911_123456/ --status-only
 ```
 
+### Check Collection Readiness
+```bash
+# Quick check if experiment is ready for collection
+python collect_results.py results/pilot_study_20250911_123456/ --status
+```
+
+### Collect Results from Remote Workers
+```bash
+# Download all results from remote workers
+python collect_results.py results/pilot_study_20250911_123456/
+
+# Preview what would be downloaded (dry-run)
+python collect_results.py results/pilot_study_20250911_123456/ --dry-run
+
+# Collect from specific workers only
+python collect_results.py results/pilot_study_20250911_123456/ --worker-subset worker_1,worker_2
+
+# Verify already collected results
+python collect_results.py results/pilot_study_20250911_123456/ --verify-only
+```
+
 ### Analyze Results
 ```bash
+# Analyze collected results (run collect_results.py first)
 python analyze_results.py results/pilot_study_20250911_123456/
 ```
 
@@ -101,7 +123,8 @@ python analyze_results.py results/pilot_study_20250911_123456/
 1. **`launch_experiment.py`** - Deploy workers and start experiment, returns immediately
 2. **`worker_experiment.py`** - Runs on remote GPUs, processes jobs and logs progress  
 3. **`monitor_experiment.py`** - Stream logs from all workers in real-time
-4. **`analyze_results.py`** - Compare performance across variants
+4. **`collect_results.py`** - Download result files from remote workers to local machine
+5. **`analyze_results.py`** - Compare performance across variants
 
 ## Results Structure
 

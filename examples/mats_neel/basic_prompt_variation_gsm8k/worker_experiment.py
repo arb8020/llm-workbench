@@ -562,8 +562,21 @@ async def run_worker(config_path: str, worker_id: str):
         config_data["workers"]
     )
     
-    # Create output directory
-    output_dir = Path(config_data["output_dir"])
+    # Create output directory - mirror local structure in bifrost workspace
+    local_output_dir = config_data["output_dir"]  # The local path from config
+    # Convert local ~/llm-workbench/... path to ~/.bifrost/workspace/... path
+    if local_output_dir.startswith('/Users/'):
+        # Extract path relative to llm-workbench
+        parts = Path(local_output_dir).parts
+        llm_workbench_index = next(i for i, part in enumerate(parts) if part == 'llm-workbench')
+        relative_path = Path(*parts[llm_workbench_index+1:])  # everything after llm-workbench
+        output_dir = Path("~/.bifrost/workspace").expanduser() / relative_path
+    else:
+        # If config just has experiment name (new format), use it directly
+        output_dir = Path(f"~/.bifrost/workspace/examples/mats_neel/basic_prompt_variation_gsm8k/results/{local_output_dir}").expanduser()
+    
+    output_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"[{worker_id}] Using output directory: {output_dir}")
     
     # Process jobs
     logger.info(f"[{worker_id}] Processing {len(jobs)} jobs...")
