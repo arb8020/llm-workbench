@@ -15,11 +15,56 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from shared.logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# EMOTIONAL USER SIMULATION VARIANTS
+# =============================================================================
+
+def create_emotional_user_variants():
+    """Create emotional user simulation variants by modifying tau-bench's user classes."""
+    
+    # We'll patch tau-bench's user simulation classes at runtime
+    try:
+        from tau_bench.envs.user import LLMUserSimulationEnv
+        from tau_bench.envs import ENVIRONMENTS
+        from tau_bench.core import User
+        
+        class FrustratedUserSimulationEnv(LLMUserSimulationEnv):
+            """User simulation with frustration and impatience."""
+            
+            def build_system_prompt(self, instruction: Optional[str] = None) -> str:
+                base_prompt = super().build_system_prompt(instruction)
+                
+                emotional_context = """
+
+EMOTIONAL CONTEXT: You are a frustrated customer who has had previous bad experiences with customer service.
+- Express irritation when things don't work smoothly or take too long
+- Use phrases like "This is ridiculous", "I've been waiting forever", "Why is this so complicated?"
+- Show impatience with slow responses or complex procedures  
+- Be more direct and less polite than usual, but remain civil
+- Mention previous bad experiences: "Last time this happened...", "I've been through this before..."
+- Express frustration with having to repeat information or explain your situation multiple times
+"""
+                
+                return f"{base_prompt}\n{emotional_context}"
+        
+        # Register the frustrated variant
+        ENVIRONMENTS["frustrated_retail"] = lambda: ENVIRONMENTS["retail"]().replace_user_sim(FrustratedUserSimulationEnv)
+        
+        logger.info("✅ Created frustrated user simulation variant")
+        return True
+        
+    except ImportError as e:
+        logger.error(f"❌ Failed to import tau-bench modules: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"❌ Failed to create emotional user variants: {e}")
+        return False
 
 # =============================================================================
 # TAU-BENCH EXECUTION
@@ -143,10 +188,13 @@ def run_worker_experiment(config_path: str, worker_id: str) -> None:
     # Create output directory structure
     output_dir = Path(config_data['output_dir'])
     
-    # Map variants to user strategies
-    variant_strategy_map = {
-        "control": "llm",
-        # We'll add more variants later
+    # Create emotional user variants first
+    create_emotional_user_variants()
+    
+    # Map variants to user strategies and environments
+    variant_config_map = {
+        "control": {"user_strategy": "llm", "environment": environment},
+        "frustration": {"user_strategy": "llm", "environment": "frustrated_retail"},
     }
     
     # Process each variant
@@ -157,17 +205,19 @@ def run_worker_experiment(config_path: str, worker_id: str) -> None:
     for i, variant in enumerate(config_data['variants'], 1):
         logger.info(f"Processing variant {i}/{total_variants}: {variant}")
         
-        if variant not in variant_strategy_map:
+        if variant not in variant_config_map:
             logger.error(f"Unknown variant: {variant}")
             continue
         
-        user_strategy = variant_strategy_map[variant]
+        variant_config = variant_config_map[variant]
+        user_strategy = variant_config["user_strategy"]
+        variant_environment = variant_config["environment"]
         
         # Run tau-bench for this variant
         success = run_tau_bench_variant(
             variant_name=variant,
             user_strategy=user_strategy,
-            environment=environment,
+            environment=variant_environment,
             task_ids=task_indices,
             endpoint_url=endpoint_url,
             output_dir=output_dir

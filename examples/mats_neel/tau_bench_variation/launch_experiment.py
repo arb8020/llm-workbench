@@ -164,7 +164,11 @@ PROMPT_VARIANTS = {
         user_strategy="llm",
         description="Neutral baseline user simulation"
     ),
-    # We'll add frustration in the next step
+    "frustration": PromptVariant(
+        name="frustration",
+        user_strategy="llm",
+        description="Frustrated customer with previous bad experiences"
+    ),
 }
 
 # =============================================================================
