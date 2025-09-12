@@ -4,6 +4,20 @@ A framework for testing how different emotional prompt variations affect perform
 
 ## Quick Start
 
+### Pre-Deployment Validation ⚡️
+
+**ALWAYS run these before deploying to expensive GPU machines:**
+
+```bash
+# Quick syntax & import checks
+./pre_deploy_check.sh
+
+# Full end-to-end test with real API calls  
+python sanity_check_full.py
+```
+
+The sanity check uses OpenAI API (set `OPENAI_API_KEY` in `.env`) to test the complete pipeline with actual GSM8K problems, catching serialization bugs before costly deployment.
+
 ### Launch Experiment (Non-blocking)
 ```bash
 # Basic experiment (1 worker)  

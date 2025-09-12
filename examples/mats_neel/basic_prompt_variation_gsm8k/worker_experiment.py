@@ -14,14 +14,14 @@ import logging
 import random
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Dict, Any, List, Callable, Optional
 
 from shared.logging_config import setup_logging
 
 # Import rollouts evaluation framework
-from rollouts.evaluation import evaluate_sample, load_jsonl
+from rollouts.evaluation import evaluate_sample, load_jsonl, EvalSample
 from rollouts.dtypes import Message, Endpoint, AgentState, RunConfig
 from rollouts.agents import stdout_handler
 
@@ -322,7 +322,7 @@ def prepare_gsm8k_messages_with_variant(sample: Dict[str, Any], transform_name: 
     transform_fn = TRANSFORM_FUNCTIONS[transform_name]
     return transform_fn(base_messages)
 
-async def process_job(job: Job, endpoint: Endpoint, output_dir: Path, worker_id: str) -> bool:
+async def process_job(job: Job, endpoint: Endpoint, output_dir: Path, worker_id: str) -> EvalSample:
     """Process a single job (sample + variant combination)."""
     start_time = time.time()
     logger.info(f"🔄 [{worker_id}] Starting {job.sample_id}+{job.variant_name}")
@@ -408,7 +408,7 @@ async def process_job(job: Job, endpoint: Endpoint, output_dir: Path, worker_id:
             if result.agent_states:
                 # Save the final agent state
                 final_state = result.agent_states[-1]
-                f.write(final_state.to_json())
+                json.dump(asdict(final_state), f, indent=2, default=str)
             else:
                 f.write('{}')  
         
@@ -427,12 +427,12 @@ async def process_job(job: Job, endpoint: Endpoint, output_dir: Path, worker_id:
         
         elapsed = time.time() - start_time
         logger.info(f"✅ [{worker_id}] Completed {job.sample_id}+{job.variant_name} in {elapsed:.1f}s")
-        return True
+        return result
         
     except Exception as e:
         elapsed = time.time() - start_time
         logger.error(f"❌ [{worker_id}] Failed {job.sample_id}+{job.variant_name} after {elapsed:.1f}s: {e}")
-        return False
+        raise
 
 def create_worker_job_queue(samples: List[Dict[str, Any]], variants: List[str], 
                           variant_transforms: Dict[str, str], worker_id: str, total_workers: int) -> List[Job]:
