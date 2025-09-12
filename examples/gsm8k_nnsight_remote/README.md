@@ -68,6 +68,27 @@ Health checks:
 - If startup fails, it tails `~/nnsight_singlepass.log`.
 - It then attempts the external proxy `/health`; if blocked by the provider, it continues using direct remote calls.
 
+### Diagnostics
+
+If a run behaves unexpectedly (e.g., 200 on `/health` but `openapi.json` looks like a provider page), use the diagnosis helper to inspect the instance:
+
+```bash
+# Diagnose by GPU id
+uv run python examples/gsm8k_nnsight_remote/diagnose_gpu.py --gpu-id <id> --port 8001
+
+# Or diagnose by direct SSH
+uv run python examples/gsm8k_nnsight_remote/diagnose_gpu.py --ssh root@IP:PORT --port 8011
+```
+
+This prints:
+- who is listening on the port (ss/lsof)
+- `/health` HTTP code and whether `openapi.json` contains the expected routes
+- server processes and tmux output
+- tail of `~/nnsight_singlepass.log`
+- whether `~/.bifrost/workspace/.venv` exists and Python version
+
+From there, you can choose `--fresh` and/or a different `--port` for the next run.
+
 ## 🎯 Key Features
 
 - **Activation Collection**: Extracts `input_layernorm.output` and `post_attention_layernorm.output` from Qwen3-0.6B
