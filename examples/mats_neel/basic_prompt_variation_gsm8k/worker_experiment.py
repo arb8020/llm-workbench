@@ -348,18 +348,38 @@ async def process_job(job: Job, endpoint: Endpoint, output_dir: Path, worker_id:
         
         run_config = RunConfig(on_chunk=logging_chunk_handler)
         
+        # Double-check server is still responding before evaluation
+        try:
+            import requests
+            models_response = requests.get(f"{endpoint.api_base.rstrip('/v1')}/v1/models", timeout=10)
+            if models_response.status_code != 200:
+                logger.warning(f"[{worker_id}] Server health check failed: {models_response.status_code}")
+            else:
+                logger.info(f"[{worker_id}] Server responding: {models_response.json()}")
+        except Exception as health_check_error:
+            logger.warning(f"[{worker_id}] Server health check error: {health_check_error}")
+        
         # Run evaluation
-        result = await evaluate_sample(
-            sample_data=job.sample_data,
-            sample_id=job.sample_id,
-            prepare_messages=lambda sample: messages,  # Use pre-transformed messages
-            reward_functions=reward_functions,
-            environment=environment,
-            endpoint=endpoint,
-            run_config=run_config,
-            max_turns=1,
-            verbose=False
-        )
+        try:
+            result = await evaluate_sample(
+                sample_data=job.sample_data,
+                sample_id=job.sample_id,
+                prepare_messages=lambda sample: messages,  # Use pre-transformed messages
+                reward_functions=reward_functions,
+                environment=environment,
+                endpoint=endpoint,
+                run_config=run_config,
+                max_turns=1,
+                verbose=False
+            )
+        except Exception as e:
+            import traceback
+            logger.error(f"[{worker_id}] Full traceback for {job.sample_id}+{job.variant_name}:")
+            logger.error(traceback.format_exc())
+            logger.error(f"[{worker_id}] Exception type: {type(e)}")
+            logger.error(f"[{worker_id}] Exception args: {e.args}")
+            logger.error(f"[{worker_id}] Endpoint details: {endpoint}")
+            raise
         
         # Save results to variant-specific directory
         variant_dir = output_dir / job.variant_name
