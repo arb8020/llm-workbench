@@ -75,6 +75,47 @@ examples_gsm8k_remote = [
     "requests>=2.28.0"
 ]
 
+# NNsight single-pass server deploy + smoke test
+examples_gsm8k_nnsight_remote = [
+    "rollouts",
+    "broker",
+    "bifrost",
+    # Web server
+    "fastapi>=0.110.0",
+    "uvicorn>=0.23.0",
+    "pydantic>=2.0.0",
+    # NNsight + ML stack
+    "nnsight>=0.4",
+    "transformers>=4.40.0",
+    "torch>=2.4.0,<=2.7.1",
+    "triton>=3.0.0,<=3.3.1; sys_platform == 'linux'",
+    "accelerate>=0.20.0",
+    "datasets>=4.0.0",
+    "huggingface-hub>=0.34.4",
+    "numpy<2.0.0",
+    "requests>=2.28.0"
+]
+
+"examples-gsm8k-nnsight-remote" = [
+    "rollouts",
+    "broker",
+    "bifrost",
+    # Web server
+    "fastapi>=0.110.0",
+    "uvicorn>=0.23.0",
+    "pydantic>=2.0.0",
+    # NNsight + ML stack
+    "nnsight>=0.4",
+    "transformers>=4.40.0",
+    "torch>=2.4.0,<=2.7.1",
+    "triton>=3.0.0,<=3.3.1; sys_platform == 'linux'",
+    "accelerate>=0.20.0",
+    "datasets>=4.0.0",
+    "huggingface-hub>=0.34.4",
+    "numpy<2.0.0",
+    "requests>=2.28.0"
+]
+
 # Tau-bench variation experiment dependencies  
 examples-tau-bench = [
     "rollouts",
