@@ -396,18 +396,23 @@ async def process_job(job: Job, endpoint: Endpoint, output_dir: Path, worker_id:
         sample_dir = variant_dir / job.sample_id
         sample_dir.mkdir(parents=True, exist_ok=True)
         
-        # Save trajectory
+        # Save trajectory  
+        # SERIALIZATION GOTCHA: Different classes use different methods!
+        # - Message (SerialDataclass): use .to_json() 
+        # - AgentState (regular dataclass): use asdict()
+        # - Pydantic models: use .model_dump() 
         trajectory_path = sample_dir / "trajectory.jsonl"
         with open(trajectory_path, 'w') as f:
             for message in result.trajectory.messages:
-                f.write(message.to_json() + '\n')
+                f.write(message.to_json() + '\n')  # Message = SerialDataclass
         
         # Save agent states (final state)
         agent_state_path = sample_dir / "agent_state.json"
         with open(agent_state_path, 'w') as f:
             if result.agent_states:
-                # Save the final agent state
-                final_state = result.agent_states[-1]
+                # GOTCHA: result.agent_states not agent_state (plural!)
+                # AgentState is regular dataclass, so use asdict() + default=str for datetime
+                final_state = result.agent_states[-1]  # Take the final state
                 json.dump(asdict(final_state), f, indent=2, default=str)
             else:
                 f.write('{}')  

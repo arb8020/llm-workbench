@@ -293,7 +293,9 @@ def start_worker_experiment(worker: WorkerInfo, experiment_config: ExperimentCon
     config_path = f"~/experiment_config_{experiment_config.experiment_name}.json"
     bifrost_client.exec(f"cat > {config_path} << 'EOF'\n{config_json}\nEOF")
     
-    # Use debug wrapper to capture all output including early crashes
+    # CRITICAL: Must use worker_debug_wrapper.sh which calls 'uv run python' 
+    # Regular 'python' won't work on remote machines - missing rollouts imports!
+    # The wrapper handles: uv environment setup, import testing, proper error logging
     worker_cmd = f"cd ~/.bifrost/workspace && bash examples/mats_neel/basic_prompt_variation_gsm8k/worker_debug_wrapper.sh {config_path} {worker.worker_id} {worker_log_file}"
     
     tmux_session = f"{experiment_config.experiment_name}_{worker.worker_id}"

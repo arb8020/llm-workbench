@@ -116,6 +116,9 @@ async def test_remote_pipeline():
             print(f"   🤖 Setting up sample data and config...")
             
             # Create GSM8K sample file (using cat to avoid shell escaping issues)
+            # SHELL ESCAPING GOTCHA: Never use echo with JSON containing quotes!
+            # echo '{json with "quotes"}' breaks bash parsing
+            # Use heredoc instead: cat > file << 'EOF' ... EOF  
             sample_data_path = f"~/sanity_samples.jsonl"
             sample_line = json.dumps(sample_data)
             bifrost_client.exec(f"cat > {sample_data_path} << 'EOF'\n{sample_line}\nEOF")
@@ -151,6 +154,9 @@ async def test_remote_pipeline():
             worker_cmd = f"cd ~/.bifrost/workspace && timeout 120 bash examples/mats_neel/basic_prompt_variation_gsm8k/worker_debug_wrapper.sh {config_path} sanity_remote {log_file} 2>&1"
             
             # Execute command
+            # GOTCHA: BifrostClient.exec() has NO timeout parameter (common mistake)
+            # Parameters: (command, env=None, working_dir=None, worktree=None)
+            # Use shell 'timeout' command instead for timeouts
             start_time = time.time()
             try:
                 output = bifrost_client.exec(worker_cmd)
@@ -175,7 +181,10 @@ async def test_remote_pipeline():
     finally:
         print("4️⃣ Cleaning up remote resources...")
         try:
-            # Terminate the GPU instance using subprocess (broker CLI)
+            # GOTCHA: GPU cleanup via subprocess broker CLI, NOT Python methods
+            # - GPUClient has NO .terminate() method (common mistake)
+            # - Must use: broker instances terminate (not broker terminate)  
+            # - Must use: --yes flag to skip confirmation in automated scripts
             import subprocess
             instance_id = worker.connection_info["instance_id"]
             result = subprocess.run(["broker", "instances", "terminate", "--yes", instance_id], 

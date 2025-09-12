@@ -1,5 +1,11 @@
 #!/bin/bash
 # Debug wrapper for worker_experiment.py that captures all output
+# 
+# CRITICAL: This wrapper exists because remote machines need 'uv run python' not 'python'
+# - Direct 'python' calls fail with "No module named rollouts.evaluation"  
+# - Only 'uv run python' properly sets up the dependencies environment
+# - This wrapper also tests imports before running to catch errors early
+#
 # Usage: worker_debug_wrapper.sh <config_path> <worker_id> <log_file_path>
 
 CONFIG_PATH="$1"
