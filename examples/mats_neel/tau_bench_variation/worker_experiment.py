@@ -299,8 +299,27 @@ def run_tau_bench_variant(variant_name: str, user_strategy: str, environment: st
         )
         logger.info(f"Output directory: {variant_output_dir}")
 
-        # Run tau-bench
-        results = run(config)
+        # Run tau-bench under a guarded open() that auto-creates parent dirs for writes
+        import builtins as _builtins
+        _orig_open = _builtins.open
+
+        def _guarded_open(file, mode='r', *args, **kwargs):
+            try:
+                if isinstance(file, (str, os.PathLike)) and any(m in mode for m in ('w', 'a', 'x')):
+                    parent = os.path.dirname(os.fspath(file))
+                    if parent:
+                        os.makedirs(parent, exist_ok=True)
+            except Exception:
+                # Never block the actual open on guard failure
+                pass
+            return _orig_open(file, mode, *args, **kwargs)
+
+        _builtins.open = _guarded_open
+        summary["notes"].append("enabled_guarded_open_for_checkpoint_dirs")
+        try:
+            results = run(config)
+        finally:
+            _builtins.open = _orig_open
 
         # Record summary
         results_count = len(results) if results is not None else 0
