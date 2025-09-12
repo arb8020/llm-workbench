@@ -61,8 +61,42 @@ echo "4️⃣ Running local serialization tests..."
 python test_worker_locally.py || exit 1
 echo
 
-# Check 5: Verify experiment configuration
-echo "5️⃣ Checking experiment configuration..."
+# Check 5: API signature validation
+echo "5️⃣ Checking API signatures..."
+python -c "
+import sys
+try:
+    # Verify BifrostClient.exec signature
+    from bifrost.client import BifrostClient
+    import inspect
+    sig = inspect.signature(BifrostClient.exec)
+    params = list(sig.parameters.keys())
+    
+    # Should have: self, command, env, working_dir, worktree
+    if 'timeout' in params:
+        print('❌ BifrostClient.exec has timeout parameter (unexpected)')
+        sys.exit(1)
+    
+    if 'command' not in params:
+        print('❌ BifrostClient.exec missing command parameter')
+        sys.exit(1)
+    
+    # Verify broker CLI exists
+    import subprocess
+    result = subprocess.run(['broker', '--help'], capture_output=True)
+    if result.returncode != 0:
+        print('❌ broker CLI not available')
+        sys.exit(1)
+    
+    print('✅ API signatures validated')
+except Exception as e:
+    print(f'❌ API signature error: {e}')
+    sys.exit(1)
+" || exit 1
+echo
+
+# Check 6: Verify experiment configuration
+echo "6️⃣ Checking experiment configuration..."
 python -c "
 import sys
 try:

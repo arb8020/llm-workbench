@@ -116,10 +116,10 @@ async def test_remote_pipeline():
             print(f"   🤖 Executing job on remote GPU...")
             remote_cmd = f"cd ~/.bifrost/workspace && timeout 120 python -c \"\nimport json\nimport asyncio\nfrom pathlib import Path\nfrom examples.mats_neel.basic_prompt_variation_gsm8k.worker_experiment import process_job, Job\nfrom rollouts.dtypes import Endpoint\nimport os\n\n# Load job\nwith open('{job_path}') as f:\n    job_data = json.load(f)\n\njob = Job(**job_data)\n\n# Create endpoint (uses deployed vLLM server)\nendpoint = Endpoint(\n    provider='vllm',\n    model='willcb/Qwen3-0.6B',\n    api_base='{worker.endpoint_url}',\n    api_key='dummy'\n)\n\n# Process job\nresult = asyncio.run(process_job(job, endpoint, Path('/tmp/sanity_output'), 'remote_test'))\nprint(f'SUCCESS: Metrics={{result.metrics}}')\n\""
             
-            # Execute with timeout
+            # Execute command (no built-in timeout in bifrost)
             start_time = time.time()
             try:
-                output = bifrost_client.exec(remote_cmd, timeout=180)  # 3 minute timeout
+                output = bifrost_client.exec(remote_cmd)
                 elapsed = time.time() - start_time
                 
                 if "SUCCESS:" in output:
@@ -141,11 +141,16 @@ async def test_remote_pipeline():
     finally:
         print("4️⃣ Cleaning up remote resources...")
         try:
-            # Terminate the GPU instance
-            from broker.client import GPUClient
-            gpu_client = GPUClient()
-            gpu_client.terminate(worker.connection_info["instance_id"])
-            print("✅ Remote GPU instance terminated")
+            # Terminate the GPU instance using subprocess (broker CLI)
+            import subprocess
+            instance_id = worker.connection_info["instance_id"]
+            result = subprocess.run(["broker", "terminate", instance_id], 
+                                  capture_output=True, text=True)
+            if result.returncode == 0:
+                print("✅ Remote GPU instance terminated")
+            else:
+                print(f"⚠️  Failed to cleanup GPU instance: {result.stderr}")
+                print(f"   Manual cleanup: broker terminate {instance_id}")
         except Exception as e:
             print(f"⚠️  Failed to cleanup GPU instance: {e}")
             print(f"   Manual cleanup: broker terminate {worker.connection_info['instance_id']}")
