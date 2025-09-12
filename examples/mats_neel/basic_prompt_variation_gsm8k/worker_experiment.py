@@ -402,11 +402,13 @@ async def process_job(job: Job, endpoint: Endpoint, output_dir: Path, worker_id:
             for message in result.trajectory.messages:
                 f.write(message.to_json() + '\n')
         
-        # Save agent state
+        # Save agent states (final state)
         agent_state_path = sample_dir / "agent_state.json"
         with open(agent_state_path, 'w') as f:
-            if result.agent_state:
-                f.write(result.agent_state.to_json())
+            if result.agent_states:
+                # Save the final agent state
+                final_state = result.agent_states[-1]
+                f.write(final_state.to_json())
             else:
                 f.write('{}')  
         
