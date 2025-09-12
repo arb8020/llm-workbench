@@ -26,15 +26,14 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 def create_emotional_user_variants():
-    """Create emotional user simulation variants by modifying tau-bench's user classes."""
+    """Create emotional user simulation variants by monkey-patching tau-bench."""
     
-    # We'll patch tau-bench's user simulation classes at runtime
     try:
-        from tau_bench.envs.user import LLMUserSimulationEnv
-        from tau_bench.envs import ENVIRONMENTS
-        from tau_bench.core import User
+        from tau_bench.envs.user import LLMUserSimulationEnv, UserStrategy, load_user
+        import tau_bench.envs.user as user_module
         
-        class FrustratedUserSimulationEnv(LLMUserSimulationEnv):
+        # Create custom frustrated user simulation class
+        class FrustratedLLMUserSimulationEnv(LLMUserSimulationEnv):
             """User simulation with frustration and impatience."""
             
             def build_system_prompt(self, instruction: Optional[str] = None) -> str:
@@ -48,15 +47,29 @@ EMOTIONAL CONTEXT: You are a frustrated customer who has had previous bad experi
 - Show impatience with slow responses or complex procedures  
 - Be more direct and less polite than usual, but remain civil
 - Mention previous bad experiences: "Last time this happened...", "I've been through this before..."
-- Express frustration with having to repeat information or explain your situation multiple times
-"""
+- Express frustration with having to repeat information or explain your situation multiple times"""
                 
-                return f"{base_prompt}\n{emotional_context}"
+                return f"{base_prompt}{emotional_context}"
         
-        # Register the frustrated variant
-        ENVIRONMENTS["frustrated_retail"] = lambda: ENVIRONMENTS["retail"]().replace_user_sim(FrustratedUserSimulationEnv)
+        # Monkey-patch the load_user function to support our custom strategy
+        original_load_user = user_module.load_user
         
-        logger.info("✅ Created frustrated user simulation variant")
+        def patched_load_user(user_strategy, model=None, provider=None):
+            # Handle our custom frustrated strategy
+            if isinstance(user_strategy, str) and user_strategy == "frustrated_llm":
+                if model is None:
+                    raise ValueError("Frustrated LLM user strategy requires a model")
+                if provider is None:
+                    raise ValueError("Frustrated LLM user strategy requires a model provider")
+                return FrustratedLLMUserSimulationEnv(model=model, provider=provider)
+            
+            # Fall back to original function for other strategies
+            return original_load_user(user_strategy, model, provider)
+        
+        # Apply the monkey patch
+        user_module.load_user = patched_load_user
+        
+        logger.info("✅ Created frustrated user simulation variant via monkey-patching")
         return True
         
     except ImportError as e:
@@ -194,10 +207,10 @@ def run_worker_experiment(config_path: str, worker_id: str) -> None:
     # Get environment from config
     environment = config_data['environment']
     
-    # Map variants to user strategies and environments
+    # Map variants to user strategies 
     variant_config_map = {
         "control": {"user_strategy": "llm", "environment": environment},
-        "frustration": {"user_strategy": "llm", "environment": "frustrated_retail"},
+        "frustration": {"user_strategy": "frustrated_llm", "environment": environment},
     }
     
     # Process each variant
