@@ -28,7 +28,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # Interpretability support via engine
-interp = ["engine[interp]"]
+interp = ["./engine[interp]"]
 
 # Lightweight local development - no ML dependencies
 local = [
