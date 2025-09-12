@@ -53,9 +53,13 @@ The deploy script can reuse an existing GPU to speed up iteration and avoid re�
   - Reuse by name: `uv run python examples/gsm8k_nnsight_remote/deploy_and_smoke_test.py --model willcb/Qwen3-0.6B --reuse --name nnsight-singlepass-server`
 
 Speed tips on reuse:
-- `--skip-sync`: skips dependency bootstrap (fastest). Use when the remote venv is already set up.
-- `--frozen-sync`: uses `uv sync --frozen` to respect `uv.lock` without re‑resolving or updating (faster, reproducible).
+- `--skip-sync`: skips dependency bootstrap entirely (fastest). It runs the server via the existing workspace virtualenv at `~/.bifrost/workspace/.venv`. If that venv is missing, the script fails loudly and tells you to run once without `--skip-sync` (or with `--frozen-sync`).
+- `--frozen-sync`: uses `uv sync --frozen` to respect `uv.lock` without re‑resolving or updating (faster and reproducible). Good middle ground after the first full sync.
 - Example fast reuse: `uv run python examples/gsm8k_nnsight_remote/deploy_and_smoke_test.py --model willcb/Qwen3-0.6B --reuse --skip-sync`
+
+Health checks:
+- The script waits for `http://localhost:8001/health` on the GPU first, and tails `~/nnsight_singlepass.log` if startup fails.
+- It then attempts the external proxy `/health`; if blocked by the provider, it continues using direct remote calls.
 
 ## 🎯 Key Features
 

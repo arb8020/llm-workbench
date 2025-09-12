@@ -82,13 +82,37 @@ def start_server(bc: BifrostClient, skip_sync: bool = False, frozen_sync: bool =
     workspace = bc.push(uv_extra="examples_gsm8k_nnsight_remote")
     # Kill existing session if present, then start a clean one
     bc.exec("tmux has-session -t nnsight-singlepass 2>/dev/null && tmux kill-session -t nnsight-singlepass || true")
-    cmd = (
-        "tmux new-session -d -s nnsight-singlepass "
-        "'cd ~/.bifrost/workspace && "
-        "uv run python examples/gsm8k_nnsight_remote/server_singlepass.py --host 0.0.0.0 --port 8001 "
-        "2>&1 | tee ~/nnsight_singlepass.log'"
-    )
-    bc.exec(cmd)
+    if skip_sync:
+        run_cmd = (
+            "cd ~/.bifrost/workspace && "
+            "if [ -x .venv/bin/python ]; then "
+            ". .venv/bin/activate; echo 'Using existing venv:'; which python; python -V; "
+            "python examples/gsm8k_nnsight_remote/server_singlepass.py --host 0.0.0.0 --port 8001; "
+            "else echo '❌ Missing .venv. Run once without --skip-sync or with --frozen-sync to create it.' >&2; exit 42; fi"
+        )
+    else:
+        run_cmd = (
+            "cd ~/.bifrost/workspace && "
+            "uv run python examples/gsm8k_nnsight_remote/server_singlepass.py --host 0.0.0.0 --port 8001"
+        )
+    tmux_cmd = f"tmux new-session -d -s nnsight-singlepass '{run_cmd} 2>&1 | tee ~/nnsight_singlepass.log'"
+    bc.exec(tmux_cmd)
+
+def wait_for_remote_health(bc: BifrostClient, timeout_s: int = 240) -> None:
+    deadline = time.time() + timeout_s
+    last = None
+    while time.time() < deadline:
+        try:
+            out = bc.exec("curl -s -o /dev/null -w '%{http_code}' http://localhost:8001/health")
+            code = out.strip()
+            if code == "200":
+                return
+            last = code
+        except Exception as e:
+            last = str(e)
+        time.sleep(2)
+    logs = bc.exec("tail -n 200 ~/nnsight_singlepass.log || true")
+    raise RuntimeError(f"Remote /health not ready (last={last}). Recent logs:\n{logs}")
 
 
 def wait_for_health(url: str, timeout_s: int = 180) -> None:
@@ -187,9 +211,20 @@ def main():
     print("📦 Deploying code + starting server (tmux)…")
     start_server(bc, skip_sync=args.skip_sync, frozen_sync=args.frozen_sync)
 
-    print("⏳ Waiting for /health…")
-    wait_for_health(proxy_url)
-    print("✅ Health ready")
+    print("⏳ Waiting for remote /health…")
+    try:
+        wait_for_remote_health(bc)
+        print("✅ Remote health ready")
+    except Exception as e:
+        print(str(e))
+        raise
+
+    print("⏳ Waiting for external /health…")
+    try:
+        wait_for_health(proxy_url)
+        print("✅ External health ready")
+    except Exception as e:
+        print("⚠️ External health check failed (proxy may block). Continuing.")
 
     print("💬 Running smoke test…")
     resp = run_smoke(bc, proxy_url, args.model)
