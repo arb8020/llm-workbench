@@ -115,10 +115,10 @@ async def test_remote_pipeline():
             # Create sample data file (worker expects this)
             print(f"   🤖 Setting up sample data and config...")
             
-            # Create GSM8K sample file
+            # Create GSM8K sample file (using cat to avoid shell escaping issues)
             sample_data_path = f"~/sanity_samples.jsonl"
             sample_line = json.dumps(sample_data)
-            bifrost_client.exec(f"echo '{sample_line}' > {sample_data_path}")
+            bifrost_client.exec(f"cat > {sample_data_path} << 'EOF'\n{sample_line}\nEOF")
             
             # Create minimal config (like the real deployment)
             worker_info = {
@@ -177,16 +177,16 @@ async def test_remote_pipeline():
             # Terminate the GPU instance using subprocess (broker CLI)
             import subprocess
             instance_id = worker.connection_info["instance_id"]
-            result = subprocess.run(["broker", "terminate", instance_id], 
+            result = subprocess.run(["broker", "instances", "terminate", instance_id], 
                                   capture_output=True, text=True)
             if result.returncode == 0:
                 print("✅ Remote GPU instance terminated")
             else:
                 print(f"⚠️  Failed to cleanup GPU instance: {result.stderr}")
-                print(f"   Manual cleanup: broker terminate {instance_id}")
+                print(f"   Manual cleanup: broker instances terminate {instance_id}")
         except Exception as e:
             print(f"⚠️  Failed to cleanup GPU instance: {e}")
-            print(f"   Manual cleanup: broker terminate {worker.connection_info['instance_id']}")
+            print(f"   Manual cleanup: broker instances terminate {worker.connection_info['instance_id']}")
 
 async def main():
     """Run sanity check - local or remote based on flag."""
