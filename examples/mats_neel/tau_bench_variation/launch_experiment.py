@@ -29,6 +29,7 @@ from shared.logging_config import setup_logging
 
 # Import broker and bifrost for deployment
 from broker.client import GPUClient
+from broker.types import InstanceStatus
 from bifrost.client import BifrostClient
 
 logger = logging.getLogger(__name__)
@@ -37,58 +38,111 @@ logger = logging.getLogger(__name__)
 # COPIED DEPLOYMENT FUNCTIONS FROM GSM8K (adapted for tau-bench)
 # =============================================================================
 
-def deploy_qwen_vllm_server(min_vram: int = 12, max_price: float = 0.40,
-                           gpu_memory_utilization: float = 0.6, max_model_len: int = 8192,
-                           experiment_name: str = "experiment", worker_id: str = "worker") -> dict:
-    """Deploy Qwen3-0.6B vLLM server on GPU and return connection info."""
-    
+def deploy_qwen_vllm_server(
+    min_vram: int = 12,
+    max_price: float = 0.40,
+    gpu_memory_utilization: float = 0.6,
+    max_model_len: int = 8192,
+    experiment_name: str = "experiment",
+    worker_id: str = "worker",
+    gpu_id: Optional[str] = None,
+    reuse_existing: bool = False,
+    skip_sync: bool = False,
+    frozen_sync: bool = False,
+    reuse_running_server: bool = False,
+) -> dict:
+    """Deploy Qwen3-0.6B vLLM server on GPU and return connection info.
+
+    Idempotent pattern:
+    - Reuse provided GPU id if given.
+    - Else optionally reuse RUNNING instance by name when reuse_existing.
+    - Otherwise create fresh instance.
+    - Kill existing tmux session before starting server, unless reuse_running_server is True
+      and health indicates server is already up.
+    """
+
     print("🚀 Starting Qwen3-0.6B vLLM deployment...")
-    
-    # 1. PROVISION GPU
-    print(f"📡 Creating GPU instance (min {min_vram}GB VRAM, max ${max_price}/hr)...")
+
     gpu_client = GPUClient()
-    
-    # Build query for GPU with minimum VRAM and max price
-    query = (gpu_client.vram_gb >= min_vram) & (gpu_client.price_per_hour <= max_price)
-    
+
     # Use experiment name and worker ID for GPU naming
     gpu_name = f"{experiment_name}-{worker_id}"
-    
-    gpu_instance = gpu_client.create(
-        query=query,
-        exposed_ports=[8000],  # Expose port 8000 for vLLM
-        enable_http_proxy=True,  # Enable RunPod proxy
-        name=gpu_name,
-        cloud_type="secure",
-        sort=lambda x: x.price_per_hour,  # Sort by price (cheapest first)
-        reverse=False
-    )
-    
+
+    # 1) Get or create GPU
+    if gpu_id:
+        gpu_instance = gpu_client.get_instance(gpu_id)
+        if not gpu_instance:
+            raise RuntimeError(f"GPU with id {gpu_id} not found")
+    elif reuse_existing:
+        try:
+            candidates = [
+                g for g in gpu_client.list_instances()
+                if getattr(g, "name", None) == gpu_name and getattr(g, "status", None) == InstanceStatus.RUNNING
+            ]
+        except Exception:
+            candidates = []
+        gpu_instance = candidates[0] if candidates else None
+        if not gpu_instance:
+            # Build query for GPU with minimum VRAM and max price
+            query = (gpu_client.vram_gb >= min_vram) & (gpu_client.price_per_hour <= max_price)
+            gpu_instance = gpu_client.create(
+                query=query,
+                exposed_ports=[8000],
+                enable_http_proxy=True,
+                name=gpu_name,
+                cloud_type="secure",
+                sort=lambda x: x.price_per_hour,
+                reverse=False,
+            )
+    else:
+        # Build query for GPU with minimum VRAM and max price
+        query = (gpu_client.vram_gb >= min_vram) & (gpu_client.price_per_hour <= max_price)
+        gpu_instance = gpu_client.create(
+            query=query,
+            exposed_ports=[8000],
+            enable_http_proxy=True,
+            name=gpu_name,
+            cloud_type="secure",
+            sort=lambda x: x.price_per_hour,
+            reverse=False,
+        )
+
     print(f"✅ GPU ready: {gpu_instance.id} (name: {gpu_name})")
-    
-    # Wait for SSH to be ready
+
     print("⏳ Waiting for SSH connection to be ready...")
-    if not gpu_instance.wait_until_ssh_ready(timeout=300):  # 5 minutes
+    if not gpu_instance.wait_until_ssh_ready(timeout=300):
         print("❌ Failed to get SSH connection ready")
         sys.exit(1)
-    
+
     ssh_connection = gpu_instance.ssh_connection_string()
     print(f"✅ SSH ready: {ssh_connection}")
-    
-    # 2. DEPLOY CODE WITH TAU-BENCH DEPENDENCIES
+
+    # 2) Deploy code with tau-bench dependencies
     print("📦 Deploying codebase with tau-bench dependencies...")
     bifrost_client = BifrostClient(ssh_connection)
-    
-    # Deploy the codebase to remote workspace with tau-bench dependencies  
+
+    # Control bootstrap speed via env flags
+    if skip_sync:
+        os.environ["BIFROST_SKIP_BOOTSTRAP"] = "1"
+    elif frozen_sync:
+        os.environ["BIFROST_BOOTSTRAP_FROZEN"] = "1"
+
     workspace_path = bifrost_client.push(uv_extra="examples-tau-bench")
     print(f"✅ Code deployed and dependencies installed: {workspace_path}")
-    
-    # 3. START QWEN VLLM SERVER IN TMUX
-    print("🌟 Starting Qwen3-0.6B vLLM server in tmux session...")
-    
-    # Simple vLLM server with clear log path
+
+    # 3) Start or reuse Qwen vLLM server in tmux
     vllm_log_path = f"~/vllm_{experiment_name}_{worker_id}.log"
-    vllm_cmd = f"""cd ~/.bifrost/workspace && uv run python -m vllm.entrypoints.openai.api_server \\
+
+    # Optionally reuse running server (skip restart) if healthy
+    if reuse_running_server:
+        try:
+            health = bifrost_client.exec("curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/v1/models")
+            if str(health).strip() == "200":
+                print("♻️  Reusing running vLLM server (health OK), skipping restart.")
+            else:
+                # Kill existing tmux, start fresh
+                bifrost_client.exec("tmux has-session -t qwen-vllm 2>/dev/null && tmux kill-session -t qwen-vllm || true")
+                vllm_cmd = f"""cd ~/.bifrost/workspace && uv run python -m vllm.entrypoints.openai.api_server \\
         --model willcb/Qwen3-0.6B \\
         --host 0.0.0.0 \\
         --port 8000 \\
@@ -97,38 +151,63 @@ def deploy_qwen_vllm_server(min_vram: int = 12, max_price: float = 0.40,
         --enable-auto-tool-choice \\
         --tool-call-parser hermes \\
         --disable-log-stats"""
-    
-    # Create tmux session with simple file logging
-    tmux_cmd = f"tmux new-session -d -s qwen-vllm 'cd ~/.bifrost/workspace && {vllm_cmd} 2>&1 | tee {vllm_log_path}'"
-    bifrost_client.exec(tmux_cmd)
-    
-    print("✅ Qwen3-0.6B vLLM server starting in tmux session 'qwen-vllm'")
-    print("📋 Server will be ready in 2-3 minutes for model loading")  
-    print(f"   Check server status: bifrost exec '{ssh_connection}' 'curl -s http://localhost:8000/v1/models'")
-    print(f"   View vLLM logs: bifrost exec '{ssh_connection}' 'tail -f {vllm_log_path}'")
-    
-    # 5. CONSTRUCT PROXY URL  
+                tmux_cmd = f"tmux new-session -d -s qwen-vllm 'cd ~/.bifrost/workspace && {vllm_cmd} 2>&1 | tee {vllm_log_path}'"
+                bifrost_client.exec(tmux_cmd)
+        except Exception:
+            # On error, fallback to restart
+            bifrost_client.exec("tmux has-session -t qwen-vllm 2>/dev/null && tmux kill-session -t qwen-vllm || true")
+            vllm_cmd = f"""cd ~/.bifrost/workspace && uv run python -m vllm.entrypoints.openai.api_server \\
+        --model willcb/Qwen3-0.6B \\
+        --host 0.0.0.0 \\
+        --port 8000 \\
+        --gpu-memory-utilization {gpu_memory_utilization} \\
+        --max-model-len {max_model_len} \\
+        --enable-auto-tool-choice \\
+        --tool-call-parser hermes \\
+        --disable-log-stats"""
+            tmux_cmd = f"tmux new-session -d -s qwen-vllm 'cd ~/.bifrost/workspace && {vllm_cmd} 2>&1 | tee {vllm_log_path}'"
+            bifrost_client.exec(tmux_cmd)
+    else:
+        # Always restart server to pick up fresh code
+        bifrost_client.exec("tmux has-session -t qwen-vllm 2>/dev/null && tmux kill-session -t qwen-vllm || true")
+        vllm_cmd = f"""cd ~/.bifrost/workspace && uv run python -m vllm.entrypoints.openai.api_server \\
+        --model willcb/Qwen3-0.6B \\
+        --host 0.0.0.0 \\
+        --port 8000 \\
+        --gpu-memory-utilization {gpu_memory_utilization} \\
+        --max-model-len {max_model_len} \\
+        --enable-auto-tool-choice \\
+        --tool-call-parser hermes \\
+        --disable-log-stats"""
+        tmux_cmd = f"tmux new-session -d -s qwen-vllm 'cd ~/.bifrost/workspace && {vllm_cmd} 2>&1 | tee {vllm_log_path}'"
+        bifrost_client.exec(tmux_cmd)
+
+    print("✅ Qwen3-0.6B vLLM server launching in tmux session 'qwen-vllm'")
+    print("📋 Server may take 2–3 minutes to load the model")
+    print(f"   Check status: bifrost exec '{ssh_connection}' 'curl -s http://localhost:8000/v1/models'")
+    print(f"   View logs:   bifrost exec '{ssh_connection}' 'tail -f {vllm_log_path}'")
+
+    # 4) Construct proxy URL
     proxy_url = gpu_instance.get_proxy_url(8000)
-    
     if not proxy_url:
         print("⚠️  No proxy URL available - instance may not be RunPod")
         proxy_url = f"http://{gpu_instance.public_ip}:8000"
-    
-    # 6. RETURN CONNECTION INFO
+
+    # 5) Return connection info
     connection_info = {
         "url": proxy_url,
         "instance_id": gpu_instance.id,
         "ssh": ssh_connection,
         "provider": gpu_instance.provider,
         "status": "ready",
-        "model": "willcb/Qwen3-0.6B"
+        "model": "willcb/Qwen3-0.6B",
     }
-    
+
     print("\n🎉 Qwen3-0.6B vLLM deployment complete!")
     print(f"   Server URL: {proxy_url}")
     print(f"   Instance ID: {gpu_instance.id}")
     print(f"   SSH: {ssh_connection}")
-    
+
     return connection_info
 
 # =============================================================================
@@ -196,8 +275,20 @@ PROMPT_VARIANTS = {
 # WORKER DEPLOYMENT AND EXPERIMENT STARTUP
 # =============================================================================
 
-def deploy_worker(worker_id: str, experiment_name: str, task_indices: List[int], min_vram: int = 12, max_price: float = 0.40, 
-                 gpu_memory_utilization: float = 0.6, max_model_len: int = 2048) -> WorkerInfo:
+def deploy_worker(
+    worker_id: str,
+    experiment_name: str,
+    task_indices: List[int],
+    min_vram: int = 12,
+    max_price: float = 0.40,
+    gpu_memory_utilization: float = 0.6,
+    max_model_len: int = 8192,
+    gpu_id: Optional[str] = None,
+    reuse_existing: bool = False,
+    skip_sync: bool = False,
+    frozen_sync: bool = False,
+    reuse_running_server: bool = False,
+) -> WorkerInfo:
     """Deploy a single vLLM worker."""
     logger.info(f"Deploying worker {worker_id}...")
     
@@ -207,7 +298,12 @@ def deploy_worker(worker_id: str, experiment_name: str, task_indices: List[int],
         gpu_memory_utilization=gpu_memory_utilization,
         max_model_len=max_model_len,
         experiment_name=experiment_name,
-        worker_id=worker_id
+        worker_id=worker_id,
+        gpu_id=gpu_id,
+        reuse_existing=reuse_existing,
+        skip_sync=skip_sync,
+        frozen_sync=frozen_sync,
+        reuse_running_server=reuse_running_server,
     )
     
     worker = WorkerInfo(
@@ -243,6 +339,8 @@ def start_worker_experiment(worker: WorkerInfo, experiment_config: ExperimentCon
     worker_cmd = f"cd ~/.bifrost/workspace && uv run python examples/mats_neel/tau_bench_variation/worker_experiment.py {config_path} {worker.worker_id}"
     
     tmux_session = f"{experiment_config.experiment_name}_{worker.worker_id}"
+    # Ensure idempotency: kill existing session first
+    bifrost_client.exec(f"tmux has-session -t {tmux_session} 2>/dev/null && tmux kill-session -t {tmux_session} || true")
     tmux_cmd = f"tmux new-session -d -s {tmux_session} '{worker_cmd} 2>&1 | tee {worker_log_file}'"
     
     bifrost_client.exec(tmux_cmd)
@@ -252,11 +350,23 @@ def start_worker_experiment(worker: WorkerInfo, experiment_config: ExperimentCon
 # MAIN LAUNCHER
 # =============================================================================
 
-async def launch_experiment(experiment_name: str, tasks: int = 3, environment: str = "retail",
-                          variants: List[str] = None, workers: int = 1,
-                          min_vram: int = 12, max_price: float = 0.40,
-                          gpu_memory_utilization: float = 0.6, max_model_len: int = 8192,
-                          random_seed: int = 42) -> None:
+async def launch_experiment(
+    experiment_name: str,
+    tasks: int = 3,
+    environment: str = "retail",
+    variants: List[str] = None,
+    workers: int = 1,
+    min_vram: int = 12,
+    max_price: float = 0.40,
+    gpu_memory_utilization: float = 0.6,
+    max_model_len: int = 8192,
+    random_seed: int = 42,
+    gpu_id: Optional[str] = None,
+    reuse_existing: bool = False,
+    skip_sync: bool = False,
+    frozen_sync: bool = False,
+    reuse_running_server: bool = False,
+) -> None:
     """Launch the distributed tau-bench user variation experiment."""
     
     if variants is None:
@@ -312,7 +422,12 @@ async def launch_experiment(experiment_name: str, tasks: int = 3, environment: s
                     min_vram=min_vram,
                     max_price=max_price,
                     gpu_memory_utilization=gpu_memory_utilization,
-                    max_model_len=max_model_len
+                    max_model_len=max_model_len,
+                    gpu_id=gpu_id,
+                    reuse_existing=reuse_existing,
+                    skip_sync=skip_sync,
+                    frozen_sync=frozen_sync,
+                    reuse_running_server=reuse_running_server,
                 )
                 deployed_workers.append(worker)
             except Exception as e:
@@ -395,6 +510,18 @@ if __name__ == "__main__":
                        help="GPU memory utilization for vLLM")
     parser.add_argument("--max-model-len", type=int, default=8192,
                        help="Maximum model length for vLLM")
+
+    # Reuse/idempotency options
+    parser.add_argument("--gpu-id", type=str, default=None,
+                       help="Reuse an existing GPU instance by id (skip provisioning)")
+    parser.add_argument("--reuse", action="store_true",
+                       help="Reuse a RUNNING instance named '{experiment}-{worker}' if found")
+    parser.add_argument("--skip-sync", action="store_true",
+                       help="Skip dependency bootstrap on push (fastest; assumes env ready)")
+    parser.add_argument("--frozen-sync", action="store_true",
+                       help="Use uv sync --frozen (lockfile only; faster, reproducible)")
+    parser.add_argument("--reuse-running-server", action="store_true",
+                       help="If vLLM is healthy on remote, skip restarting server (use with --reuse/--gpu-id)")
     
     args = parser.parse_args()
     
@@ -415,5 +542,10 @@ if __name__ == "__main__":
         max_price=args.max_price,
         gpu_memory_utilization=args.gpu_memory_utilization,
         max_model_len=args.max_model_len,
-        random_seed=args.random_seed
+        random_seed=args.random_seed,
+        gpu_id=args.gpu_id,
+        reuse_existing=args.reuse,
+        skip_sync=args.skip_sync,
+        frozen_sync=args.frozen_sync,
+        reuse_running_server=args.reuse_running_server,
     ))
