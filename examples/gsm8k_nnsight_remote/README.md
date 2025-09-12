@@ -60,6 +60,7 @@ The deploy script can reuse an existing GPU to speed up iteration and avoid re�
 Cleanup and speed options on reuse:
 - `--skip-sync`: skips dependency bootstrap entirely (fastest). It runs the server via the existing workspace virtualenv at `~/.bifrost/workspace/.venv`. If that venv is missing, the script fails loudly and tells you to run once without `--skip-sync` (or with `--frozen-sync`).
 - `--frozen-sync`: uses `uv sync --frozen` to respect `uv.lock` without re‑resolving or updating (faster and reproducible). Good middle ground after the first full sync.
+- Even with `--skip-sync`, the script preflights the venv and automatically runs a `uv sync --frozen --extra examples_gsm8k_nnsight_remote` if critical deps (`torch`, `fastapi`, `nnsight`) are missing.
 - `--fresh`: wipes the existing `~/.bifrost/workspace/.venv`, resets/cleans the workspace (`git reset --hard origin/main && git clean -xdf`), kills any processes on `--port`, then performs a clean install/start. This mimics a brand‑new GPU setup while reusing the same instance.
 - Example fast reuse: `uv run python examples/gsm8k_nnsight_remote/deploy_and_smoke_test.py --model willcb/Qwen3-0.6B --reuse --skip-sync`
 
@@ -67,6 +68,8 @@ Health checks:
 - The script waits for `http://localhost:<port>/health` on the GPU and also validates the OpenAPI spec contains the expected routes (`/models/load`, `/v1/chat/completions`). This prevents confusing 200s from unrelated services.
 - If startup fails, it tails `~/nnsight_singlepass.log`.
 - It then attempts the external proxy `/health`; if blocked by the provider, it continues using direct remote calls.
+
+Implementation detail: normal runs start the server with `uv run --extra examples_gsm8k_nnsight_remote ...` so extras are applied even if the venv was created earlier without them.
 
 ### Diagnostics
 

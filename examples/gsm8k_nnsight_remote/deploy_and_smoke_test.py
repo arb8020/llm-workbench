@@ -107,6 +107,28 @@ def start_server(
         bc.exec("rm -rf ~/.bifrost/workspace/.venv || true")
         bc.exec("git -C ~/.bifrost/workspace reset --hard origin/main && git -C ~/.bifrost/workspace clean -xdf || true")
 
+    # If skipping sync, ensure venv has required deps; auto-fix with frozen sync if missing
+    if skip_sync:
+        check_cmd = (
+            "cd ~/.bifrost/workspace && "
+            "if [ -x .venv/bin/python ]; then "
+            ". .venv/bin/activate; "
+            "python - <<'PY'\n"
+            "import importlib\n"
+            "mods=['torch','fastapi','nnsight']\n"
+            "missing=[m for m in mods if importlib.util.find_spec(m) is None]\n"
+            "print(','.join(missing))\n"
+            "PY\n"
+            "; else echo MISSING_VENV; fi"
+        )
+        out = bc.exec(check_cmd).strip()
+        if out == "MISSING_VENV":
+            # Let the tmux path emit the loud error
+            pass
+        elif out:
+            print(f"🔧 Detected missing deps in venv: {out} — running uv sync --frozen --extra examples_gsm8k_nnsight_remote")
+            bc.exec("cd ~/.bifrost/workspace && pip install -q uv && uv sync --frozen --extra examples_gsm8k_nnsight_remote")
+
     # Start a clean tmux session with the chosen run command
     bc.exec("tmux has-session -t nnsight-singlepass 2>/dev/null && tmux kill-session -t nnsight-singlepass || true")
     if skip_sync:
@@ -120,7 +142,7 @@ def start_server(
     else:
         run_cmd = (
             "cd ~/.bifrost/workspace && "
-            f"uv run python examples/gsm8k_nnsight_remote/server_singlepass.py --host 0.0.0.0 --port {port}"
+            f"uv run --extra examples_gsm8k_nnsight_remote python examples/gsm8k_nnsight_remote/server_singlepass.py --host 0.0.0.0 --port {port}"
         )
     tmux_cmd = f"tmux new-session -d -s nnsight-singlepass '{run_cmd} 2>&1 | tee ~/nnsight_singlepass.log'"
     bc.exec(tmux_cmd)
