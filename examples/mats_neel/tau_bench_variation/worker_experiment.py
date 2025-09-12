@@ -191,6 +191,9 @@ def run_worker_experiment(config_path: str, worker_id: str) -> None:
     # Create emotional user variants first
     create_emotional_user_variants()
     
+    # Get environment from config
+    environment = config_data['environment']
+    
     # Map variants to user strategies and environments
     variant_config_map = {
         "control": {"user_strategy": "llm", "environment": environment},
@@ -198,7 +201,6 @@ def run_worker_experiment(config_path: str, worker_id: str) -> None:
     }
     
     # Process each variant
-    environment = config_data['environment']
     total_variants = len(config_data['variants'])
     success_count = 0
     
