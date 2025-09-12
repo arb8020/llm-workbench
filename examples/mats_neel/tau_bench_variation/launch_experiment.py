@@ -42,7 +42,7 @@ def deploy_qwen_vllm_server(
     min_vram: int = 12,
     max_price: float = 0.40,
     gpu_memory_utilization: float = 0.6,
-    max_model_len: int = 8192,
+    max_model_len: int = 32768,
     experiment_name: str = "experiment",
     worker_id: str = "worker",
     gpu_id: Optional[str] = None,
@@ -359,7 +359,7 @@ async def launch_experiment(
     min_vram: int = 12,
     max_price: float = 0.40,
     gpu_memory_utilization: float = 0.6,
-    max_model_len: int = 8192,
+    max_model_len: int = 32768,
     random_seed: int = 42,
     gpu_id: Optional[str] = None,
     reuse_existing: bool = False,
@@ -508,7 +508,7 @@ if __name__ == "__main__":
                        help="Maximum price per hour")
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.6,
                        help="GPU memory utilization for vLLM")
-    parser.add_argument("--max-model-len", type=int, default=8192,
+    parser.add_argument("--max-model-len", type=int, default=32768,
                        help="Maximum model length for vLLM")
 
     # Reuse/idempotency options
