@@ -73,7 +73,9 @@ def get_or_create_gpu(min_vram: int, max_price: float, name: str, gpu_id: Option
 
 def _kill_port_processes(bc: BifrostClient, port: int) -> None:
     # Try lsof-based kill; ignore errors if tools missing
-    bc.exec(f"pids=\$(lsof -ti:{port} 2>/dev/null || true); if [ -n \"$pids\" ]; then echo '🔪 Killing PIDs on port {port}: '$pids; kill -9 $pids || true; fi")
+    bc.exec(
+        f"pids=$(lsof -ti:{port} 2>/dev/null || true); if [ -n \"$pids\" ]; then echo '🔪 Killing PIDs on port {port}: ' $pids; kill -9 $pids || true; fi"
+    )
 
 
 def start_server(
