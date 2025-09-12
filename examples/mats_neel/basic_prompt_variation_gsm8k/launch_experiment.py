@@ -186,6 +186,7 @@ class WorkerInfo:
     connection_info: Dict[str, Any]
     ssh_connection: str
     endpoint_url: str
+    sample_indices: List[int]
     status: str = "deployed"
 
 @dataclass
@@ -198,7 +199,6 @@ class ExperimentConfig:
     random_seed: int
     vllm_config: Dict[str, Any]
     workers_info: List[WorkerInfo]
-    dataset_path: str
     output_dir: str
 
 # =============================================================================
@@ -250,7 +250,7 @@ PROMPT_VARIANTS = {
 # WORKER DEPLOYMENT
 # =============================================================================
 
-def deploy_worker(worker_id: str, experiment_name: str, min_vram: int = 12, max_price: float = 0.40, 
+def deploy_worker(worker_id: str, experiment_name: str, sample_indices: List[int], min_vram: int = 12, max_price: float = 0.40, 
                  gpu_memory_utilization: float = 0.6, max_model_len: int = 2048) -> WorkerInfo:
     """Deploy a single vLLM worker."""
     logger.info(f"Deploying worker {worker_id}...")
@@ -268,7 +268,8 @@ def deploy_worker(worker_id: str, experiment_name: str, min_vram: int = 12, max_
         worker_id=worker_id,
         connection_info=connection_info,
         ssh_connection=connection_info["ssh"],
-        endpoint_url=connection_info["url"]
+        endpoint_url=connection_info["url"],
+        sample_indices=sample_indices
     )
     
     logger.info(f"Worker {worker_id} deployed: {connection_info['url']}")
@@ -336,13 +337,19 @@ async def launch_experiment(experiment_name: str, samples: int = 8,
     logger.info(f"Workers: {workers}")
     
     try:
-        # 1. PREPARE DATASET
-        logger.info("Preparing GSM8K dataset...")
-        assets_dir = Path(__file__).parent / "assets"
-        assets_dir.mkdir(parents=True, exist_ok=True)
-        dataset_path = assets_dir / f"gsm8k_samples_{samples}.jsonl"
+        # 1. CALCULATE SAMPLE ASSIGNMENT FOR WORKERS
+        logger.info(f"Assigning {samples} samples across {workers} worker(s)...")
+        samples_per_worker = samples // workers
+        remaining = samples % workers
         
-        load_gsm8k_dataset(dataset_path, samples)
+        # Create deterministic sample assignments
+        worker_assignments = []
+        for i in range(workers):
+            start_idx = i * samples_per_worker + min(i, remaining)
+            end_idx = start_idx + samples_per_worker + (1 if i < remaining else 0)
+            sample_indices = list(range(start_idx, end_idx))
+            worker_assignments.append(sample_indices)
+            logger.info(f"Worker {i+1}: samples {start_idx}-{end_idx-1} (indices: {sample_indices[:3]}...)")
         
         # 2. DEPLOY WORKERS
         logger.info(f"Deploying {workers} worker(s)...")
@@ -354,6 +361,7 @@ async def launch_experiment(experiment_name: str, samples: int = 8,
                 worker = deploy_worker(
                     worker_id=worker_id,
                     experiment_name=experiment_name,
+                    sample_indices=worker_assignments[i],
                     min_vram=min_vram,
                     max_price=max_price,
                     gpu_memory_utilization=gpu_memory_utilization,
@@ -382,7 +390,6 @@ async def launch_experiment(experiment_name: str, samples: int = 8,
                 "max_model_len": max_model_len
             },
             workers_info=deployed_workers,
-            dataset_path=str(dataset_path.absolute()),
             output_dir=str(output_dir.absolute())
         )
         

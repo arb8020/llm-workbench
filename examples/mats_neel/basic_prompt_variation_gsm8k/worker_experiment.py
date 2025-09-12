@@ -160,6 +160,45 @@ def efficiency_reward(trajectory) -> float:
 # END COPIED FUNCTIONS
 # =============================================================================
 
+def load_worker_specific_dataset(sample_indices: List[int]) -> List[Dict[str, Any]]:
+    """Download GSM8K dataset and return only assigned samples for this worker."""
+    try:
+        from datasets import load_dataset
+        
+        logger.info(f"Loading GSM8K dataset from HuggingFace...")
+        dataset = load_dataset("gsm8k", "main", split="test")
+        logger.info(f"Full dataset size: {len(dataset)}")
+        
+        # Only process assigned samples
+        selected_samples = []
+        for idx in sample_indices:
+            if idx < len(dataset):
+                row = dataset[idx]
+                answer_text = row["answer"]
+                if "####" in answer_text:
+                    numeric_answer = answer_text.split("####")[-1].strip()
+                else:
+                    numeric_answer = "unknown"
+                
+                sample = {
+                    "question": row["question"],
+                    "answer": numeric_answer,
+                    "sample_id": f"gsm8k_{idx+1:04d}"
+                }
+                selected_samples.append(sample)
+            else:
+                logger.warning(f"Sample index {idx} exceeds dataset size {len(dataset)}")
+        
+        logger.info(f"Loaded {len(selected_samples)} assigned samples: indices {sample_indices}")
+        return selected_samples
+        
+    except ImportError:
+        logger.error("HuggingFace datasets library not found. Should be installed with examples_gsm8k_remote extra.")
+        raise
+    except Exception as e:
+        logger.error(f"Error loading GSM8K dataset: {e}")
+        raise
+
 # =============================================================================
 # TRAJECTORY TRANSFORMATIONS (Remote Implementation)
 # =============================================================================
@@ -453,9 +492,10 @@ async def run_worker(config_path: str, worker_id: str):
         temperature=0.1
     )
     
-    # Load dataset
-    dataset_samples = list(load_jsonl(config_data["dataset_path"]))
-    logger.info(f"[{worker_id}] Loaded {len(dataset_samples)} samples")
+    # Load dataset using worker's assigned sample indices
+    worker_sample_indices = worker_info["sample_indices"]
+    dataset_samples = load_worker_specific_dataset(worker_sample_indices)
+    logger.info(f"[{worker_id}] Loaded {len(dataset_samples)} assigned samples")
     
     # Create variant transform mapping
     variant_transforms = {
