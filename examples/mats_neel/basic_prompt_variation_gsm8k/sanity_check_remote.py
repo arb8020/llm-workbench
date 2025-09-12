@@ -112,14 +112,47 @@ async def test_remote_pipeline():
             job_content = json.dumps(job_json, indent=2)
             bifrost_client.exec(f"cat > {job_path} << 'EOF'\n{job_content}\nEOF")
             
-            # Run the job on remote machine
-            print(f"   🤖 Executing job on remote GPU...")
-            remote_cmd = f"cd ~/.bifrost/workspace && timeout 120 python -c \"\nimport json\nimport asyncio\nfrom pathlib import Path\nfrom examples.mats_neel.basic_prompt_variation_gsm8k.worker_experiment import process_job, Job\nfrom rollouts.dtypes import Endpoint\nimport os\n\n# Load job\nwith open('{job_path}') as f:\n    job_data = json.load(f)\n\njob = Job(**job_data)\n\n# Create endpoint (uses deployed vLLM server)\nendpoint = Endpoint(\n    provider='vllm',\n    model='willcb/Qwen3-0.6B',\n    api_base='{worker.endpoint_url}',\n    api_key='dummy'\n)\n\n# Process job\nresult = asyncio.run(process_job(job, endpoint, Path('/tmp/sanity_output'), 'remote_test'))\nprint(f'SUCCESS: Metrics={{result.metrics}}')\n\""
+            # Create sample data file (worker expects this)
+            print(f"   🤖 Setting up sample data and config...")
             
-            # Execute command (no built-in timeout in bifrost)
+            # Create GSM8K sample file
+            sample_data_path = f"~/sanity_samples.jsonl"
+            sample_line = json.dumps(sample_data)
+            bifrost_client.exec(f"echo '{sample_line}' > {sample_data_path}")
+            
+            # Create minimal config (like the real deployment)
+            worker_info = {
+                "worker_id": "sanity_remote",
+                "connection_info": {"url": worker.endpoint_url},
+                "ssh_connection": worker.ssh_connection,
+                "endpoint_url": worker.endpoint_url,
+                "sample_indices": [0],
+                "status": "ready"
+            }
+            
+            sanity_config = {
+                "experiment_name": "sanity_remote",
+                "timestamp": "sanity_test", 
+                "samples": 1,
+                "variants": [variant_name],
+                "workers": 1,
+                "random_seed": 42,
+                "vllm_config": {"min_vram": 12},
+                "workers_info": [worker_info],
+                "output_dir": "/tmp/sanity_output"
+            }
+            
+            config_json = json.dumps(sanity_config, indent=2)
+            config_path = f"~/sanity_config.json"
+            bifrost_client.exec(f"cat > {config_path} << 'EOF'\n{config_json}\nEOF")
+            
+            # Set PYTHONPATH and use same pattern as real deployment
+            worker_cmd = f"cd ~/.bifrost/workspace && PYTHONPATH=. timeout 120 python examples/mats_neel/basic_prompt_variation_gsm8k/worker_experiment.py {config_path} sanity_remote 2>&1"
+            
+            # Execute command
             start_time = time.time()
             try:
-                output = bifrost_client.exec(remote_cmd)
+                output = bifrost_client.exec(worker_cmd)
                 elapsed = time.time() - start_time
                 
                 if "SUCCESS:" in output:
