@@ -146,8 +146,9 @@ async def test_remote_pipeline():
             config_path = f"~/sanity_config.json"
             bifrost_client.exec(f"cat > {config_path} << 'EOF'\n{config_json}\nEOF")
             
-            # Set PYTHONPATH and use same pattern as real deployment
-            worker_cmd = f"cd ~/.bifrost/workspace && PYTHONPATH=. timeout 120 python examples/mats_neel/basic_prompt_variation_gsm8k/worker_experiment.py {config_path} sanity_remote 2>&1"
+            # Use the EXACT same wrapper script as real deployment
+            log_file = "/tmp/sanity_worker.log"  
+            worker_cmd = f"cd ~/.bifrost/workspace && timeout 120 bash examples/mats_neel/basic_prompt_variation_gsm8k/worker_debug_wrapper.sh {config_path} sanity_remote {log_file} 2>&1"
             
             # Execute command
             start_time = time.time()
