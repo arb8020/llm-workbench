@@ -178,7 +178,7 @@ async def test_remote_pipeline():
             # Terminate the GPU instance using subprocess (broker CLI)
             import subprocess
             instance_id = worker.connection_info["instance_id"]
-            result = subprocess.run(["broker", "instances", "terminate", instance_id], 
+            result = subprocess.run(["broker", "instances", "terminate", "--yes", instance_id], 
                                   capture_output=True, text=True)
             if result.returncode == 0:
                 print("✅ Remote GPU instance terminated")
