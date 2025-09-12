@@ -341,8 +341,12 @@ async def process_job(job: Job, endpoint: Endpoint, output_dir: Path, worker_id:
             ("efficiency", efficiency_reward),
         ]
         
-        # Set up run config (quiet mode for worker)
-        run_config = RunConfig()
+        # Set up run config with logging handler for worker
+        def logging_chunk_handler(chunk: str) -> None:
+            """Log chunks to worker log instead of stdout."""
+            logger.info(f"[{worker_id}] {chunk}")
+        
+        run_config = RunConfig(on_chunk=logging_chunk_handler)
         
         # Run evaluation
         result = await evaluate_sample(
