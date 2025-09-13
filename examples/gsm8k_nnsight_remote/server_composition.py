@@ -37,28 +37,34 @@ class NNsightCore:
             self.lm.model.config.pad_token_id = self.tokenizer.pad_token_id
     
     def capture_activations(self, prompt: str, max_new_tokens: int = 3) -> Dict[str, Any]:
-        """Pure NNsight activation capture - exactly what works in test endpoint"""
+        """Multi-token NNsight activation capture using correct pattern"""
         with self.lock:
-            # EXACT working pattern from test_tutorial_pattern
-            with self.lm.generate(max_new_tokens=max_new_tokens) as tracer:
-                with tracer.invoke(prompt):
-                    logits = self.lm.lm_head.output.save()
+            # Initialize list to accumulate activations across all generated tokens
+            logits_list = list().save()
             
-            # Extract generated text - handle different tracer types
+            # Use proper multi-token generation pattern
+            with self.lm.generate(prompt, max_new_tokens=max_new_tokens) as tracer:
+                with tracer.all():
+                    logits_list.append(self.lm.lm_head.output)
+            
+            # Extract generated text from tracer output
             try:
                 if hasattr(tracer, 'output') and tracer.output is not None:
                     generated_text = self.tokenizer.decode(tracer.output[0], skip_special_tokens=True)
+                    # Remove the original prompt if it appears at the start
+                    if generated_text.startswith(prompt):
+                        generated_text = generated_text[len(prompt):].strip()
                 else:
-                    # Fallback: use the logits to determine tokens or use prompt as fallback
                     generated_text = "Generated response (text extraction needs fixing)"
             except Exception as e:
                 generated_text = f"Generated response (text extraction failed: {e})"
             
             return {
-                "logits": logits,
+                "logits": logits_list,
                 "generated_text": generated_text,
                 "generated_tokens": getattr(tracer, 'output', [None])[0] if hasattr(tracer, 'output') else None,
-                "success": True
+                "success": True,
+                "num_tokens_captured": len(logits_list) if logits_list else 0
             }
 
 

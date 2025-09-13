@@ -320,19 +320,21 @@ def chat(req: ChatRequest):
             # WRAP the exact working test endpoint logic
             print(f"DEBUG: Using working test endpoint logic inside chat endpoint")
             
-            # EXACT copy of test endpoint logic that works
+            # Multi-token activation capture using correct NNsight pattern
             try:
-                print("DEBUG: Testing EXACT tutorial pattern in chat context")
+                print("DEBUG: Using multi-token activation capture pattern")
                 
-                # Use user's requested max_tokens and actual prompt for generation
-                with mm.lm.generate(max_new_tokens=req.max_tokens) as tracer:
-                    with tracer.invoke(prompt_text):
-                        logits_gen = mm.lm.lm_head.output.save()
-                        # DO NOT save generator.output here - causes OutOfOrderError
+                # Initialize list to accumulate activations across all generated tokens
+                logits_list = list().save()
                 
-                activation_proxies["_logits"] = logits_gen
-                generated_output = None  # Will fix text extraction separately
-                print(f"DEBUG: SUCCESS! Logits shape: {logits_gen.shape}")
+                # Use tracer.all() to capture activations across ALL generated tokens
+                with mm.lm.generate(prompt_text, max_new_tokens=req.max_tokens) as tracer:
+                    with tracer.all():
+                        logits_list.append(mm.lm.lm_head.output)
+                
+                activation_proxies["_logits"] = logits_list
+                generated_output = tracer.output  # Capture generated output from tracer
+                print(f"DEBUG: SUCCESS! Multi-token logits captured: {len(logits_list)} tokens")
                 
                 # TODO: Fix custom savepoints - they cause OutOfOrderError when called outside generate context
                 # Save custom savepoints using same working pattern
