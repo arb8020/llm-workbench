@@ -296,12 +296,19 @@ async def chat_completions(req: ChatCompletionRequest):
         tensors: Dict[str, torch.Tensor] = {k: _extract_proxy_tensor(v) for k, v in proxies.items()}
         ndif_breadcrumb = write_activation_set(run_dir, request_id, tensors, run_cfg)
     else:
-        # Plain generation outside of trace
-        with torch.inference_mode():
-            generated_ids = llm.model.generate(
-                input_ids,
-                **_gen_args(),
-            )
+        # Plain generation using nnsight's generate() wrapper
+        with llm.generate(
+            {"input_ids": input_ids, "attention_mask": attn_mask} if attn_mask is not None else {"input_ids": input_ids},
+            **_gen_args(),
+        ) as tracer:
+            pass
+        gen_out = getattr(tracer, "generator", None)
+        if gen_out is not None and hasattr(gen_out, "output"):
+            generated_ids = gen_out.output
+        else:
+            generated_ids = getattr(tracer, "output")
+        if isinstance(generated_ids, (list, tuple)):
+            generated_ids = generated_ids[0]
 
         # Optionally run a secondary trace over prompt to collect activations
         if cfg.enabled and cfg.mode == "trace":
