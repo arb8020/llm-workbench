@@ -284,40 +284,31 @@ def chat(req: ChatRequest):
                     mm.tokenizer.pad_token = mm.tokenizer.eos_token
                 mm.lm.model.config.pad_token_id = mm.tokenizer.pad_token_id
             
-            # Use EXACT working pattern from tutorial test
-            print(f"DEBUG: Starting NNsight tracing with gen_kwargs: {gen_kwargs}")
-            with mm.lm.generate(**gen_kwargs) as tracer:
-                print(f"DEBUG: Inside generate context, tracer type: {type(tracer)}")
-                with tracer.invoke(prompt_text):
-                    print(f"DEBUG: Inside invoke context")
-                    
-                    # Save generated output using working pattern
-                    try:
-                        generated_output = mm.lm.generator.output.save()
-                        print(f"DEBUG: Generated output saved: {type(generated_output)}")
-                    except Exception as e:
-                        print(f"DEBUG: Failed to save generated output: {e}")
-                        generated_output = None
-                    
-                    # Use EXACT tutorial pattern for logits
-                    try:
-                        logits = mm.lm.lm_head.output.save()
-                        activation_proxies["_logits"] = logits
-                        print(f"DEBUG: _logits saved successfully: {type(logits)}")
-                    except Exception as e:
-                        print(f"DEBUG: Failed to save _logits: {e}")
-                    
-                    # Register custom savepoints using same pattern
-                    for sp in mm.savepoints:
-                        try:
-                            node = _safe_eval_selector(mm.lm, sp.selector)
-                            saved_activation = node.save()
-                            activation_proxies[sp.name] = saved_activation
-                            print(f"DEBUG: {sp.name} saved: {type(saved_activation)}")
-                        except Exception as e:
-                            print(f"DEBUG: Failed to save {sp.name}: {e}")
-                            activation_proxies[sp.name] = {"error": f"Could not save '{sp.selector}': {e}"}
-            print(f"DEBUG: Finished NNsight tracing, activation_proxies keys: {list(activation_proxies.keys())}")
+            # Test tutorial pattern directly in server context
+            print(f"DEBUG: Testing tutorial pattern with model: {type(mm.lm)}")
+            try:
+                # EXACT tutorial pattern 
+                with mm.lm.generate(max_new_tokens=2) as tracer:
+                    with tracer.invoke("Hello"):
+                        tutorial_logits = mm.lm.lm_head.output.save()
+                print(f"DEBUG: Tutorial pattern SUCCESS! Shape: {tutorial_logits.shape}")
+                activation_proxies["_logits"] = tutorial_logits
+            except Exception as e:
+                print(f"DEBUG: Tutorial pattern FAILED: {e}")
+                
+                # Fallback: try with the original gen_kwargs
+                print(f"DEBUG: Trying with gen_kwargs: {gen_kwargs}")
+                try:
+                    with mm.lm.generate(**gen_kwargs) as tracer:
+                        with tracer.invoke(prompt_text):
+                            generated_output = mm.lm.generator.output.save()
+                            logits = mm.lm.lm_head.output.save()
+                            activation_proxies["_logits"] = logits
+                            print(f"DEBUG: Fallback SUCCESS! Shape: {logits.shape}")
+                except Exception as e2:
+                    print(f"DEBUG: Fallback also FAILED: {e2}")
+            
+            print(f"DEBUG: Final activation_proxies keys: {list(activation_proxies.keys())}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Generation/tracing failed: {e}")
 
