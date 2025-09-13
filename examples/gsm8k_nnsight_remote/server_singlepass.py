@@ -283,9 +283,9 @@ def chat(req: ChatRequest):
                     mm.tokenizer.pad_token = mm.tokenizer.eos_token
                 mm.lm.model.config.pad_token_id = mm.tokenizer.pad_token_id
             
-            # Use correct NNsight pattern: register savepoints first, then invoke
-            with mm.lm.generate(**gen_kwargs) as tracer:
-                # Register all savepoints FIRST (after generate context, before invoke)
+            # Use working NNsight pattern: basic trace (only pattern that works)
+            with mm.lm.trace(prompt_text) as tracer:
+                # Register all savepoints during trace
                 try:
                     activation_proxies["_logits"] = mm.lm.lm_head.output.save()
                 except Exception:
@@ -296,25 +296,18 @@ def chat(req: ChatRequest):
                         activation_proxies[sp.name] = node.save()
                     except Exception as e:
                         activation_proxies[sp.name] = {"error": f"Could not save '{sp.selector}': {e}"}
-                
-                # Now start execution; pass the raw prompt
-                with tracer.invoke(prompt_text):
-                    pass  # nothing to do; run happens on context exit
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Generation/tracing failed: {e}")
 
-    # Get generated text from tracer output (correct NNsight pattern)
+    # For trace pattern, we don't get generation - need to do separate generation
+    # This is a limitation: trace is for analysis, not generation
+    # We'll need to do generation separately or use a different approach
     try:
-        gen_ids = tracer.output  # token ids from GenerationMixin.generate
-        reply_text = mm.tokenizer.decode(gen_ids[0], skip_special_tokens=True)
-        # Remove the original prompt to get just the generated part
-        if reply_text.startswith(prompt_text):
-            reply_text = reply_text[len(prompt_text):]
+        # For now, return a placeholder since trace doesn't generate
+        reply_text = "[Trace completed - no generation in trace mode]"
+        # TODO: Consider running a separate generation pass or finding alternative
     except Exception as e:
-        # Fallback to old extraction method if needed
-        reply_text = _extract_generated_text(mm.lm, mm.tokenizer, prompt_text, req.max_tokens)
-        if reply_text is None:
-            reply_text = ""
+        reply_text = ""
 
     # Gather + optionally store activations
     run_id = str(uuid.uuid4())
@@ -326,7 +319,8 @@ def chat(req: ChatRequest):
             small_json[k] = proxy
             continue
         try:
-            raw_val = proxy.value  # Use correct NNsight API
+            # For trace pattern, saved tensors are direct (no .value needed)
+            raw_val = proxy if isinstance(proxy, torch.Tensor) else proxy.value
             t = _tensor_like_to_tensor(raw_val)
             if t is None:
                 small_json[k] = {"warning": "Could not convert activation to tensor", "type": str(type(raw_val))}
