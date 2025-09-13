@@ -153,10 +153,10 @@ def deploy_qwen_vllm_server(
         --max-tokens 2048 \\
         --disable-log-stats"""
                 tmux_cmd = f"tmux new-session -d -s qwen-vllm 'cd ~/.bifrost/workspace && {vllm_cmd} 2>&1 | tee {vllm_log_path}'"
-                bifrost_client.exec(tmux_cmd)
+                bifrost_client.exec(tmux_cmd, env={"HF_TOKEN": os.getenv("HF_TOKEN", "")})
         except Exception:
             # On error, fallback to restart
-            bifrost_client.exec("tmux has-session -t qwen-vllm 2>/dev/null && tmux kill-session -t qwen-vllm || true")
+            bifrost_client.exec("tmux has-session -t qwen-vllm 2>/dev/null && tmux kill-session -t qwen-vllm || true", env={"HF_TOKEN": os.getenv("HF_TOKEN", "")})
             vllm_cmd = f"""cd ~/.bifrost/workspace && echo "🔑 HF_TOKEN available: ${{HF_TOKEN:+YES}}${{HF_TOKEN:-NO}}" && echo "🔑 HF_TOKEN length: ${{#HF_TOKEN}}" && HF_TOKEN=$HF_TOKEN uv run python -m vllm.entrypoints.openai.api_server \\
         --model google/gemma-3-1b-it \\
         --host 0.0.0.0 \\
@@ -168,10 +168,10 @@ def deploy_qwen_vllm_server(
         --max-tokens 2048 \\
         --disable-log-stats"""
             tmux_cmd = f"tmux new-session -d -s qwen-vllm 'cd ~/.bifrost/workspace && {vllm_cmd} 2>&1 | tee {vllm_log_path}'"
-            bifrost_client.exec(tmux_cmd)
+            bifrost_client.exec(tmux_cmd, env={"HF_TOKEN": os.getenv("HF_TOKEN", "")})
     else:
         # Always restart server to pick up fresh code
-        bifrost_client.exec("tmux has-session -t qwen-vllm 2>/dev/null && tmux kill-session -t qwen-vllm || true")
+        bifrost_client.exec("tmux has-session -t qwen-vllm 2>/dev/null && tmux kill-session -t qwen-vllm || true", env={"HF_TOKEN": os.getenv("HF_TOKEN", "")})
         vllm_cmd = f"""cd ~/.bifrost/workspace && echo "🔑 HF_TOKEN available: ${{HF_TOKEN:+YES}}${{HF_TOKEN:-NO}}" && echo "🔑 HF_TOKEN length: ${{#HF_TOKEN}}" && HF_TOKEN=$HF_TOKEN uv run python -m vllm.entrypoints.openai.api_server \\
         --model google/gemma-3-1b-it \\
         --host 0.0.0.0 \\
@@ -183,7 +183,7 @@ def deploy_qwen_vllm_server(
         --max-tokens 2048 \\
         --disable-log-stats"""
         tmux_cmd = f"tmux new-session -d -s qwen-vllm 'cd ~/.bifrost/workspace && {vllm_cmd} 2>&1 | tee {vllm_log_path}'"
-        bifrost_client.exec(tmux_cmd)
+        bifrost_client.exec(tmux_cmd, env={"HF_TOKEN": os.getenv("HF_TOKEN", "")})
 
     print("✅ Qwen3-0.6B vLLM server launching in tmux session 'qwen-vllm'")
     print("📋 Server may take 2–3 minutes to load the model")
