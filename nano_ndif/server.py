@@ -95,6 +95,7 @@ app = FastAPI(title="nano-ndif", version="0.1.0")
 llm: LanguageModel | None = None
 MODEL_ID: str = DEFAULT_MODEL_ID
 cfg = InterventionConfig()  # mutable in-process config
+_hf_model = None  # lazy HF fallback for generation
 
 
 # ---------- Prompt helpers ----------
@@ -321,15 +322,32 @@ async def chat_completions(req: ChatCompletionRequest):
         tensors: Dict[str, torch.Tensor] = {k: _extract_proxy_tensor(v) for k, v in proxies.items()}
         ndif_breadcrumb = write_activation_set(run_dir, request_id, tensors, run_cfg)
     else:
-        # Plain generation using nnsight's generate() wrapper
-        with llm.generate(
-            prompt_text,
-            **_gen_args(),
-        ) as tracer:
-            pass
-        generated_ids = tracer.generator.output
-        if isinstance(generated_ids, (list, tuple)):
-            generated_ids = generated_ids[0]
+        # Plain generation using nnsight's generate() wrapper; fallback to HF generate if needed
+        try:
+            with llm.generate(
+                prompt_text,
+                **_gen_args(),
+            ) as tracer:
+                pass
+            generated_ids = tracer.generator.output
+            if isinstance(generated_ids, (list, tuple)):
+                generated_ids = generated_ids[0]
+        except Exception:
+            # Fallback: HF generate
+            from transformers import AutoModelForCausalLM
+            global _hf_model
+            if _hf_model is None:
+                _hf_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, device_map="auto")
+            toks = llm.tokenizer(prompt_text, return_tensors="pt")
+            input_ids_hf = toks["input_ids"].to(_hf_model.device)
+            out = _hf_model.generate(
+                input_ids_hf,
+                max_new_tokens=req.max_tokens,
+                temperature=req.temperature,
+                do_sample=True,
+                pad_token_id=llm.tokenizer.eos_token_id,
+            )
+            generated_ids = out
 
         # Optionally run a secondary trace over prompt to collect activations
         if cfg.enabled and cfg.mode == "trace":
