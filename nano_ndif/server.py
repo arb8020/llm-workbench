@@ -351,9 +351,9 @@ async def chat_completions(req: ChatCompletionRequest):
 
         # Optionally run a secondary trace over prompt to collect activations
         if cfg.enabled and cfg.mode == "trace":
-            with llm.trace({"input_ids": input_ids, "attention_mask": attn_mask} if attn_mask is not None else {"input_ids": input_ids}) as tracer:
+            proxies: Dict[str, Any] = {}
+            with llm.trace(prompt_text) as tracer:
                 targets = _collect_targets(cfg.layers, cfg.hook_points)
-                proxies: Dict[str, Any] = {}
                 for name, node in targets:
                     proxies[name] = node.save()
 
