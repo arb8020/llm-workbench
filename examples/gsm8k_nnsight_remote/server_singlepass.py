@@ -284,27 +284,47 @@ def chat(req: ChatRequest):
                     mm.tokenizer.pad_token = mm.tokenizer.eos_token
                 mm.lm.model.config.pad_token_id = mm.tokenizer.pad_token_id
             
-            # Test tutorial pattern directly in server context
-            print(f"DEBUG: Testing tutorial pattern with model: {type(mm.lm)}")
+            # Test OFFICIAL multi-token pattern from NNsight docs
+            print(f"DEBUG: Testing multi-token pattern with model: {type(mm.lm)}")
+            max_tokens = gen_kwargs.get('max_new_tokens', 3)
+            
             try:
-                # EXACT tutorial pattern 
-                with mm.lm.generate(max_new_tokens=2) as tracer:
-                    with tracer.invoke("Hello"):
-                        tutorial_logits = mm.lm.lm_head.output.save()
-                print(f"DEBUG: Tutorial pattern SUCCESS! Shape: {tutorial_logits.shape}")
-                activation_proxies["_logits"] = tutorial_logits
-            except Exception as e:
-                print(f"DEBUG: Tutorial pattern FAILED: {e}")
+                # OFFICIAL multi-token pattern from nnsight.net
+                with mm.lm.generate(max_new_tokens=max_tokens) as tracer:
+                    # Initialize saveable list for multi-token capture
+                    logits_list = list().save()
+                    
+                    with tracer.invoke(prompt_text):
+                        # Save generated output
+                        generated_output = mm.lm.generator.output.save()
+                        
+                        # Capture activations across ALL generated tokens
+                        with tracer.all():
+                            logits_list.append(mm.lm.lm_head.output)
                 
-                # Fallback: try with the original gen_kwargs
-                print(f"DEBUG: Trying with gen_kwargs: {gen_kwargs}")
+                print(f"DEBUG: Multi-token pattern SUCCESS!")
+                print(f"DEBUG: Generated output type: {type(generated_output)}")
+                print(f"DEBUG: Logits list type: {type(logits_list)}")
+                if hasattr(logits_list, 'value') and logits_list.value:
+                    print(f"DEBUG: Logits list length: {len(logits_list.value)}")
+                    if logits_list.value:
+                        print(f"DEBUG: First logit shape: {logits_list.value[0].shape}")
+                
+                activation_proxies["_logits"] = logits_list
+                
+            except Exception as e:
+                print(f"DEBUG: Multi-token pattern FAILED: {e}")
+                import traceback
+                traceback.print_exc()
+                
+                # Fallback to single-token pattern that works
+                print(f"DEBUG: Falling back to single-token pattern")
                 try:
-                    with mm.lm.generate(**gen_kwargs) as tracer:
-                        with tracer.invoke(prompt_text):
-                            generated_output = mm.lm.generator.output.save()
-                            logits = mm.lm.lm_head.output.save()
-                            activation_proxies["_logits"] = logits
-                            print(f"DEBUG: Fallback SUCCESS! Shape: {logits.shape}")
+                    with mm.lm.generate(max_new_tokens=2) as tracer:
+                        with tracer.invoke("Hello"):
+                            tutorial_logits = mm.lm.lm_head.output.save()
+                    activation_proxies["_logits"] = tutorial_logits
+                    print(f"DEBUG: Fallback SUCCESS! Shape: {tutorial_logits.shape}")
                 except Exception as e2:
                     print(f"DEBUG: Fallback also FAILED: {e2}")
             
