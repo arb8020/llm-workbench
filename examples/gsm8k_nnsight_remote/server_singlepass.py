@@ -284,27 +284,28 @@ def chat(req: ChatRequest):
                     mm.tokenizer.pad_token = mm.tokenizer.eos_token
                 mm.lm.model.config.pad_token_id = mm.tokenizer.pad_token_id
             
-            # Use OFFICIAL working NNsight pattern: generate + invoke (back to simple working version)
+            # Use OFFICIAL working NNsight pattern: generate + invoke with proper savepoint registration
             with mm.lm.generate(**gen_kwargs) as tracer:
+                # Register savepoints OUTSIDE invoke context (this is what worked!)
+                try:
+                    activation_proxies["_logits"] = mm.lm.lm_head.output.save()
+                except Exception:
+                    pass
+                
+                # Register custom savepoints  
+                for sp in mm.savepoints:
+                    try:
+                        node = _safe_eval_selector(mm.lm, sp.selector)
+                        activation_proxies[sp.name] = node.save()
+                    except Exception as e:
+                        activation_proxies[sp.name] = {"error": f"Could not save '{sp.selector}': {e}"}
+                
                 with tracer.invoke(prompt_text):
                     # Save generated output (from docs: llm.generator.output.save())
                     try:
                         generated_output = mm.lm.generator.output.save()
                     except Exception:
                         generated_output = None
-                    
-                    # Register all savepoints during invoke - this works!
-                    try:
-                        activation_proxies["_logits"] = mm.lm.lm_head.output.save()
-                    except Exception:
-                        pass
-                    
-                    for sp in mm.savepoints:
-                        try:
-                            node = _safe_eval_selector(mm.lm, sp.selector)
-                            activation_proxies[sp.name] = node.save()
-                        except Exception as e:
-                            activation_proxies[sp.name] = {"error": f"Could not save '{sp.selector}': {e}"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Generation/tracing failed: {e}")
 
@@ -346,13 +347,6 @@ def chat(req: ChatRequest):
     session_id = req.session_id or run_id[:8]
     saved_files: Dict[str, str] = {}
     small_json: Dict[str, Any] = {}
-    
-    # Debug: log what we actually captured
-    print(f"DEBUG: activation_proxies keys: {list(activation_proxies.keys())}")
-    for k, proxy in activation_proxies.items():
-        print(f"DEBUG: {k} = {type(proxy)}, hasattr(value): {hasattr(proxy, 'value')}")
-        if hasattr(proxy, 'value'):
-            print(f"DEBUG: {k}.value = {type(proxy.value)}")
     
     for k, proxy in activation_proxies.items():
         if isinstance(proxy, dict) and "error" in proxy:
