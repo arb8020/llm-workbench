@@ -70,7 +70,7 @@ def deploy_and_run(inst: GPUInstance, port: int, model: str, skip_bootstrap: boo
     base_cmd = (
         "pip install -U uv && "
         "uv sync --extra examples_gsm8k_nnsight_remote && "
-        f"NANO_NDIF_PORT={port} NANO_NDIF_MODEL={model} python -m nano_ndif.server"
+        f"NANO_NDIF_PORT={port} NANO_NDIF_MODEL={model} uv run python -m nano_ndif.server"
     )
 
     # Make deployment

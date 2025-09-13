@@ -203,7 +203,7 @@ async def health():
     return {
         "ok": llm is not None,
         "model": MODEL_ID,
-        "device": getattr(llm, "device", None) if llm is not None else None,
+        "device": str(getattr(llm, "device", None)) if llm is not None else None,
     }
 
 
