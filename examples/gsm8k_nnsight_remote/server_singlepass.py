@@ -286,15 +286,19 @@ def chat(req: ChatRequest):
             
             # Use OFFICIAL working NNsight pattern: generate + invoke (Pattern 3)
             with mm.lm.generate(**gen_kwargs) as tracer:
-                # Save generated output (from docs: llm.generator.output.save())
-                generated_output = mm.lm.generator.output.save()
-                
                 with tracer.invoke(prompt_text):
                     # Register all savepoints during invoke - this works!
                     try:
                         activation_proxies["_logits"] = mm.lm.lm_head.output.save()
                     except Exception:
                         pass
+                    
+                    # Save generated output (from docs: llm.generator.output.save())
+                    try:
+                        generated_output = mm.lm.generator.output.save()
+                    except Exception:
+                        generated_output = None
+                    
                     for sp in mm.savepoints:
                         try:
                             node = _safe_eval_selector(mm.lm, sp.selector)
@@ -306,12 +310,15 @@ def chat(req: ChatRequest):
 
     # Extract generated text from saved output
     try:
-        # Use the saved generator output (from docs)
-        gen_ids = generated_output.value if hasattr(generated_output, 'value') else generated_output
-        reply_text = mm.tokenizer.decode(gen_ids[0], skip_special_tokens=True)
-        # Remove the original prompt to get just the generated part
-        if reply_text.startswith(prompt_text):
-            reply_text = reply_text[len(prompt_text):].strip()
+        if generated_output is not None:
+            # Use the saved generator output (from docs)
+            gen_ids = generated_output.value if hasattr(generated_output, 'value') else generated_output
+            reply_text = mm.tokenizer.decode(gen_ids[0], skip_special_tokens=True)
+            # Remove the original prompt to get just the generated part
+            if reply_text.startswith(prompt_text):
+                reply_text = reply_text[len(prompt_text):].strip()
+        else:
+            reply_text = "[Generated output not captured]"
     except Exception as e:
         reply_text = f"[Text extraction failed: {e}]"
 
