@@ -276,47 +276,18 @@ def chat(req: ChatRequest):
                 top_p=req.top_p,
             )
             
-            # Tokenize and prepare tensors (avoid meta device trap with device_map="auto")
-            tok = mm.tokenizer
-            model = mm.lm.model
+            # Let NNsight/Accelerate handle device placement; keep inputs on CPU
+            # Ensure special tokens are properly configured
+            if mm.lm.model.config.pad_token_id is None:
+                if mm.tokenizer.pad_token_id is None and mm.tokenizer.eos_token_id is not None:
+                    mm.tokenizer.pad_token = mm.tokenizer.eos_token
+                mm.lm.model.config.pad_token_id = mm.tokenizer.pad_token_id
             
-            # Ensure special tokens are ints, not tensors
-            if model.config.pad_token_id is None:
-                if tok.pad_token_id is None and tok.eos_token_id is not None:
-                    tok.pad_token = tok.eos_token
-                model.config.pad_token_id = tok.pad_token_id
-
-            # Tokenize and handle device placement carefully
-            enc = tok(prompt_text, return_tensors="pt")  # Start with CPU tensors
-            
-            # For device_map="auto", we need to find a real device to use
-            # Check if we can find a real device from the model
-            real_device = None
-            try:
-                # Look for a real device in the model's hf_device_map
-                if hasattr(model, 'hf_device_map') and model.hf_device_map:
-                    for device in model.hf_device_map.values():
-                        if device != 'meta' and isinstance(device, (int, str)):
-                            real_device = torch.device(f"cuda:{device}" if isinstance(device, int) else device)
-                            break
-                
-                # Fallback: use cuda:0 if available, otherwise CPU
-                if real_device is None:
-                    real_device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
-                
-                # Move inputs to the real device
-                enc = {k: v.to(real_device) for k, v in enc.items()}
-                
-            except Exception as e:
-                # If all else fails, keep on CPU and hope for the best
-                print(f"Warning: Could not determine device placement: {e}")
-                pass
-            
-            # Use trace-then-generate pattern to avoid "Envoy out of order" issues
-            with mm.lm.trace() as tracer:
+            # Use correct NNsight pattern: generate context with hooks armed before invoke
+            with mm.lm.generate(**gen_kwargs) as tracer:
                 # Register all savepoints BEFORE any compute starts
                 try:
-                    activation_proxies["_logits"] = mm.lm.output.logits.save()
+                    activation_proxies["_logits"] = mm.lm.lm_head.output.save()
                 except Exception:
                     pass
                 for sp in mm.savepoints:
@@ -326,15 +297,24 @@ def chat(req: ChatRequest):
                     except Exception as e:
                         activation_proxies[sp.name] = {"error": f"Could not save '{sp.selector}': {e}"}
                 
-                # Pass tokenized tensors to generate (not separate args)
-                out = mm.lm.generate(**enc, **gen_kwargs)
+                # Now start execution with the prompt text (not tokenized dict)
+                with tracer.invoke(prompt_text):
+                    pass  # execution happens on context exit
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Generation/tracing failed: {e}")
 
-    # Decode completion from the SAME run
-    reply_text = _extract_generated_text(mm.lm, mm.tokenizer, prompt_text, req.max_tokens)
-    if reply_text is None:
-        reply_text = ""
+    # Get generated text from tracer output (correct NNsight pattern)
+    try:
+        gen_ids = tracer.output  # token ids from GenerationMixin.generate
+        reply_text = mm.tokenizer.decode(gen_ids[0], skip_special_tokens=True)
+        # Remove the original prompt to get just the generated part
+        if reply_text.startswith(prompt_text):
+            reply_text = reply_text[len(prompt_text):]
+    except Exception as e:
+        # Fallback to old extraction method if needed
+        reply_text = _extract_generated_text(mm.lm, mm.tokenizer, prompt_text, req.max_tokens)
+        if reply_text is None:
+            reply_text = ""
 
     # Gather + optionally store activations
     run_id = str(uuid.uuid4())
@@ -346,7 +326,7 @@ def chat(req: ChatRequest):
             small_json[k] = proxy
             continue
         try:
-            raw_val = proxy.detach()  # Use correct NNsight API
+            raw_val = proxy.value  # Use correct NNsight API
             t = _tensor_like_to_tensor(raw_val)
             if t is None:
                 small_json[k] = {"warning": "Could not convert activation to tensor", "type": str(type(raw_val))}
