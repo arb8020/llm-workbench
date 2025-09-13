@@ -1,62 +1,37 @@
 #!/usr/bin/env python3
-"""
-Basic GPU detection and test script.
-"""
-
-import subprocess
-import sys
-
-def check_nvidia_smi():
-    """Check nvidia-smi output."""
-    try:
-        result = subprocess.run(['nvidia-smi'], capture_output=True, text=True)
-        print("=== nvidia-smi ===")
-        print(result.stdout)
-        return True
-    except FileNotFoundError:
-        print("nvidia-smi not found")
-        return False
-
-def check_jax():
-    """Check JAX GPU detection."""
-    try:
-        import jax
-        devices = jax.devices()
-        print(f"=== JAX ===")
-        print(f"Available devices: {devices}")
-        if jax.devices('gpu'):
-            print(f"GPU devices: {jax.devices('gpu')}")
-        return True
-    except ImportError:
-        print("JAX not installed")
-        return False
-
-def check_torch():
-    """Check PyTorch GPU detection."""
-    try:
-        import torch
-        print(f"=== PyTorch ===")
-        print(f"CUDA available: {torch.cuda.is_available()}")
-        if torch.cuda.is_available():
-            print(f"CUDA devices: {torch.cuda.device_count()}")
-            print(f"Current device: {torch.cuda.current_device()}")
-            print(f"Device name: {torch.cuda.get_device_name()}")
-        return True
-    except ImportError:
-        print("PyTorch not installed")
-        return False
+import argparse, os
+from nnsight import LanguageModel, CONFIG
 
 def main():
-    print("🔍 GPU Detection Test")
-    print("=" * 50)
+    p = argparse.ArgumentParser()
+    p.add_argument("--model", default="openai-community/gpt2")  # HF repo id
+    p.add_argument("--prompt", default="The Eiffel Tower is in the city of")
+    p.add_argument("--max-new-tokens", type=int, default=8)
+    p.add_argument("--remote", action="store_true", help="run on NDIF if you have an API key")
+    p.add_argument("--api-key", default=os.getenv("NDIF_API_KEY"), help="NDIF API key (or env NDIF_API_KEY)")
+    args = p.parse_args()
 
-    check_nvidia_smi()
-    print()
-    check_jax()
-    print()
-    check_torch()
+    if args.remote:
+        if not args.api_key:
+            raise SystemExit("remote=True but no NDIF API key. Pass --api-key or set NDIF_API_KEY.")
+        # Configure NNsight for NDIF
+        CONFIG.API.APIKEY = args.api_key  # uses NNsight’s CONFIG to set the key
 
-    print("✅ GPU detection complete!")
+    # Create the language model wrapper (local weights if remote=False; otherwise NDIF runs it)
+    model = LanguageModel(args.model, device_map="auto")
+
+    # One forward/generation run
+    with model.generate(args.prompt, max_new_tokens=args.max_new_tokens, remote=args.remote) as run:
+        out = model.generator.output.save()  # token IDs (prompt + generated)
+
+    # Decode: split original prompt vs. newly generated continuation
+    n = args.max_new_tokens
+    decoded_prompt = model.tokenizer.decode(out[0][:-n].cpu(), skip_special_tokens=True)
+    decoded_answer = model.tokenizer.decode(out[0][-n:].cpu(), skip_special_tokens=True)
+
+    print("Prompt:", decoded_prompt)
+    print("Generated:", decoded_answer)
 
 if __name__ == "__main__":
     main()
+
