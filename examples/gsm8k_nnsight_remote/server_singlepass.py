@@ -285,18 +285,25 @@ def chat(req: ChatRequest):
                 mm.lm.model.config.pad_token_id = mm.tokenizer.pad_token_id
             
             # Use SIMPLE working pattern from debug script (confirmed working, single-token)
+            print(f"DEBUG: Starting NNsight tracing with gen_kwargs: {gen_kwargs}")
             with mm.lm.generate(**gen_kwargs) as tracer:
+                print(f"DEBUG: Inside generate context, tracer type: {type(tracer)}")
                 with tracer.invoke(prompt_text):
+                    print(f"DEBUG: Inside invoke context")
                     # Save generated output (from docs: llm.generator.output.save())
                     try:
                         generated_output = mm.lm.generator.output.save()
-                    except Exception:
+                        print(f"DEBUG: Generated output saved: {type(generated_output)}")
+                    except Exception as e:
+                        print(f"DEBUG: Failed to save generated output: {e}")
                         generated_output = None
                     
                     # Save activations during invoke (confirmed working pattern)
                     try:
                         activation_proxies["_logits"] = mm.lm.lm_head.output.save()
-                    except Exception:
+                        print(f"DEBUG: _logits saved: {type(activation_proxies['_logits'])}")
+                    except Exception as e:
+                        print(f"DEBUG: Failed to save _logits: {e}")
                         pass
                     
                     # Register custom savepoints
@@ -304,8 +311,11 @@ def chat(req: ChatRequest):
                         try:
                             node = _safe_eval_selector(mm.lm, sp.selector)
                             activation_proxies[sp.name] = node.save()
+                            print(f"DEBUG: {sp.name} saved: {type(activation_proxies[sp.name])}")
                         except Exception as e:
+                            print(f"DEBUG: Failed to save {sp.name}: {e}")
                             activation_proxies[sp.name] = {"error": f"Could not save '{sp.selector}': {e}"}
+            print(f"DEBUG: Finished NNsight tracing, activation_proxies keys: {list(activation_proxies.keys())}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Generation/tracing failed: {e}")
 
