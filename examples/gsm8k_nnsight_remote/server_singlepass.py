@@ -317,22 +317,18 @@ def chat(req: ChatRequest):
                     mm.tokenizer.pad_token = mm.tokenizer.eos_token
                 mm.lm.model.config.pad_token_id = mm.tokenizer.pad_token_id
             
-            # SERVER A: Clean single-token activation capture (PROVEN WORKING)
-            # Remove problematic temperature/top_p that cause Envoy timing issues
-            clean_gen_kwargs = {'max_new_tokens': gen_kwargs.get('max_new_tokens', 3)}
+            # SERVER A: Use EXACT tutorial pattern that works (no parameter unpacking!)
+            max_tokens = gen_kwargs.get('max_new_tokens', 3)
             
-            print(f"DEBUG: Server A - Single-token pattern with clean params: {clean_gen_kwargs}")
+            print(f"DEBUG: Server A - Using EXACT tutorial pattern with max_tokens: {max_tokens}")
             
-            # TEST: Use simple prompt like in tutorial (to isolate chat template issue)
-            simple_prompt = "Hello"
-            print(f"DEBUG: Testing with simple prompt instead of chat template")
-            
-            with mm.lm.generate(**clean_gen_kwargs) as tracer:
-                with tracer.invoke(simple_prompt):
+            # EXACT tutorial pattern (no parameter unpacking, exact prompt)
+            with mm.lm.generate(max_new_tokens=max_tokens) as tracer:
+                with tracer.invoke("Hello, how are you?"):
                     # Save generated output for text extraction
                     generated_output = mm.lm.generator.output.save()
                     
-                    # Save single-token activations (PROVEN WORKING)
+                    # Save single-token activations (EXACT WORKING PATTERN)
                     logits = mm.lm.lm_head.output.save()
                     activation_proxies["_logits"] = logits
                     
