@@ -331,8 +331,8 @@ def run_tau_bench_variant(variant_name: str, user_strategy: str, environment: st
         config = RunConfig(
             model_provider="openai",
             user_model_provider="openai",
-            model="willcb/Qwen3-0.6B",
-            user_model="willcb/Qwen3-0.6B",  # Use same model for both
+            model="google/gemma-3-1b-it",
+            user_model="google/gemma-3-1b-it",  # Use same model for both
             env=environment,
             user_strategy="llm",
             task_ids=task_ids,

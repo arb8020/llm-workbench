@@ -21,36 +21,62 @@
   - Idempotent deploy (`--reuse`, `--gpu-id`, clean tmux restarts, optional `--reuse-running-server`).
   - Optional sanitizer: strip `<think>…</think>` leakage from model outputs at the client layer (non-invasive).
 
-**Why It’s Failing Now (Root Cause Hypothesis)**
-- Both the agent and the LLM user simulation are hitting the same endpoint that is globally configured with the `hermes` tool‑call parser. With a small model (`Qwen3-0.6B`), this can bias outputs toward “reasoning markup” (e.g., `<think>`) and away from clean tool-call JSON or plain replies.
-- The user simulation’s responses then contain `<think>` monologue instead of normal user text, and those responses are fed back into the dialogue. The trajectory shows `<think>` text on both roles, consistent with conversation content being polluted at generation time, not a role swap in our code.
-- Net effect: the agent never emits valid `tool_calls`; the dialogue loops on meta‑reasoning text and tasks fail.
+**Why It's Failing Now (Root Cause Analysis)**
 
-**Required Fixes (Minimal, Robust)**
-- Limit tool‑calling template influence to the agent only:
-  - Option A (simplest): Remove `--tool-call-parser hermes` from the vLLM server command; keep `--enable-auto-tool-choice` enabled.
-    - Command change in `launch_experiment.py` vLLM start:
-      - Remove `--tool-call-parser hermes`.
-  - Option B (isolation): Run two endpoints:
-    - Agent endpoint: tool‑calling enabled (may keep hermes off for small models).
-    - User endpoint: plain chat (no tool‑calling template). Point `LLMUserSimulationEnv` at this endpoint while keeping the agent on the tool‑calling endpoint.
-    - Note: vLLM config is process‑wide; different parsing requires a second server/session.
-- Keep the user strategy enum valid and emotional behavior minimal:
-  - Always set `RunConfig.user_strategy = "llm"`.
-  - Select the emotion inside our patched `load_user` (already implemented via `ContextVar`).
-- Retain hardening:
-  - Keep the checkpoint write guard (prevents `FileNotFoundError`).
-  - Keep max context at `32768` unless memory is constrained.
-  - Keep `variant_summary.json` for explicit exit reasons.
-- Optional but recommended: Keep the output sanitizer to strip `<think>` if models still leak chain‑of‑thought; this reduces downstream parsing issues.
+**Primary Issue: Response Truncation During Reasoning**
+- Analysis of `output2.txt` reveals the actual pattern:
+  - User simulation generates `<think>` reasoning + actual response content (complete)
+  - Agent generates `<think>` reasoning but NO actual response or tool calls (truncated)
+  - Pattern: `"tool_calls": null, "function_call": null` with incomplete `<think>` blocks missing `</think>` closing tags
+- **Root cause**: Agent responses are being truncated mid-generation, likely due to `max_tokens` limits or response length restrictions
+- The agent starts reasoning (`<think>`) but gets cut off before completing the thought AND generating actual tool calls
+- This creates a feedback loop where the agent never actually responds, user gets confused, generates more reasoning
+
+**Secondary Issue: Tool-Calling Parser Impact**  
+- Both agent and user simulation hit the same endpoint with `--tool-call-parser hermes`
+- Small model (`Qwen3-0.6B`) may struggle with hermes format, defaulting to reasoning markup
+- User simulation should never see tool-calling templates (should generate natural user text only)
+
+**Required Fixes (Priority Order)**
+
+**1. Fix Response Truncation (Critical)**
+- **Investigate `max_tokens` configuration**:
+  - Check vLLM server startup flags: Look for `--max-tokens` or similar response length limits
+  - Check Tau-Bench completion requests: Verify if `max_tokens` is being passed too low
+  - Test hypothesis: Set `max_tokens` to higher value (e.g., 1000+ tokens) to allow completion of reasoning + tool calls
+- **Alternative**: Configure stop sequences properly to ensure `</think>` tags close correctly
+
+**2. Remove Tool-Calling Parser for User Simulation (Important)**  
+- Option A (simplest): Remove `--tool-call-parser hermes` from vLLM server entirely
+  - Keep `--enable-auto-tool-choice` for basic tool-calling support
+  - This removes reasoning markup bias for both agent and user
+- Option B (isolation): Split endpoints:
+  - Agent endpoint: Tool-calling enabled
+  - User endpoint: Plain chat only (no tool templates)
+
+**3. Keep Working Components (Low Risk)**
+- Always set `RunConfig.user_strategy = "llm"` (enum-valid)
+- Keep emotional context injection via `ContextVar` (works independently)  
+- Keep checkpoint write guard and `variant_summary.json`
+- Keep output sanitizer as fallback cleanup
 
 **Validation Plan**
-- Run a small test (`--tasks 2`, variants: `control,frustration`) with server restarted (do not pass `--reuse-running-server` immediately after code changes).
-- Expect to see:
-  - Assistant turns emitting proper `tool_calls` entries.
-  - No `<think>` content in either role (or sanitized away).
-  - `variant_summary.json` with `status: succeeded` or, at minimum, no `no_tasks_executed` exit reason.
-- If tool calls still don’t appear, try removing any tool‑call parser entirely and/or using a model known to follow OpenAI tool‑calling reliably.
+- **Step 1**: Check current vLLM server configuration for token limits
+- **Step 2**: Run small test with increased `max_tokens` (`--tasks 1`, variant: `control`)
+- **Step 3**: Examine conversation logs for:
+  - Complete assistant responses (not truncated mid-`<think>`)
+  - Proper `tool_calls` entries with actual function calls
+  - Complete conversation flow without reasoning loops
+- **Step 4**: If truncation fixed but still no tool calls, remove `--tool-call-parser hermes`
+
+**Debug Commands**
+```bash
+# Check current vLLM server logs for token limits
+tmux capture-pane -t vllm-session -p | grep -i "max.*token"
+
+# Test with higher token limits in completion request
+# (Modify Tau-Bench or add request logging to verify max_tokens parameter)
+```
 
 **Operational Notes**
 - Reuse/resume:

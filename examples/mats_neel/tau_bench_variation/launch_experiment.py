@@ -127,7 +127,7 @@ def deploy_qwen_vllm_server(
     elif frozen_sync:
         os.environ["BIFROST_BOOTSTRAP_FROZEN"] = "1"
 
-    workspace_path = bifrost_client.push(uv_extra="examples-tau-bench")
+    workspace_path = bifrost_client.push(uv_extra="examples-tau-bench", dotenv=True)
     print(f"✅ Code deployed and dependencies installed: {workspace_path}")
 
     # 3) Start or reuse Qwen vLLM server in tmux
@@ -143,7 +143,7 @@ def deploy_qwen_vllm_server(
                 # Kill existing tmux, start fresh
                 bifrost_client.exec("tmux has-session -t qwen-vllm 2>/dev/null && tmux kill-session -t qwen-vllm || true")
                 vllm_cmd = f"""cd ~/.bifrost/workspace && uv run python -m vllm.entrypoints.openai.api_server \\
-        --model willcb/Qwen3-0.6B \\
+        --model google/gemma-3-1b-it \\
         --host 0.0.0.0 \\
         --port 8000 \\
         --gpu-memory-utilization {gpu_memory_utilization} \\
@@ -157,7 +157,7 @@ def deploy_qwen_vllm_server(
             # On error, fallback to restart
             bifrost_client.exec("tmux has-session -t qwen-vllm 2>/dev/null && tmux kill-session -t qwen-vllm || true")
             vllm_cmd = f"""cd ~/.bifrost/workspace && uv run python -m vllm.entrypoints.openai.api_server \\
-        --model willcb/Qwen3-0.6B \\
+        --model google/gemma-3-1b-it \\
         --host 0.0.0.0 \\
         --port 8000 \\
         --gpu-memory-utilization {gpu_memory_utilization} \\
@@ -171,7 +171,7 @@ def deploy_qwen_vllm_server(
         # Always restart server to pick up fresh code
         bifrost_client.exec("tmux has-session -t qwen-vllm 2>/dev/null && tmux kill-session -t qwen-vllm || true")
         vllm_cmd = f"""cd ~/.bifrost/workspace && uv run python -m vllm.entrypoints.openai.api_server \\
-        --model willcb/Qwen3-0.6B \\
+        --model google/gemma-3-1b-it \\
         --host 0.0.0.0 \\
         --port 8000 \\
         --gpu-memory-utilization {gpu_memory_utilization} \\
