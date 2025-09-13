@@ -163,15 +163,22 @@ def _tensor_like_to_tensor(x):
     except Exception:
         return None
 
-def _tensor_to_small_json(t: torch.Tensor, cap: int = 200_000) -> Dict[str, Any]:
+def _tensor_to_small_json(t: torch.Tensor) -> Dict[str, Any]:
+    """Return tensor metadata without the actual data (for performance)."""
     t = t.detach().cpu()
-    info = {"dtype": str(t.dtype), "shape": list(t.shape), "numel": t.numel()}
-    if t.numel() <= cap:
+    info = {
+        "dtype": str(t.dtype), 
+        "shape": list(t.shape), 
+        "numel": t.numel(),
+        "size_mb": t.numel() * t.element_size() / (1024 * 1024)
+    }
+    # Only include actual tensor data for very small tensors (< 100 elements)
+    if t.numel() <= 100:
         info["data"] = t.tolist()
+        info["data_included"] = True
     else:
-        flat = t.flatten()
-        info["data_preview"] = flat[: min(cap, flat.numel())].tolist()
-        info["truncated"] = True
+        info["data_included"] = False
+        info["note"] = "Tensor data saved to disk - too large for JSON response"
     return info
 
 def _render_prompt_text(tokenizer: AutoTokenizer, messages: List[Dict[str, Any]]) -> str:
