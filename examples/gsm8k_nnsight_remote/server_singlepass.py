@@ -268,6 +268,7 @@ def chat(req: ChatRequest):
 
     # One-pass: generate AND trace in the same context
     activation_proxies: Dict[str, Any] = {}
+    generated_output = None
     with mm.lock:
         try:
             gen_kwargs = dict(
