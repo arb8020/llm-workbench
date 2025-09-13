@@ -173,19 +173,33 @@ def wait_for_remote_health(bc: BifrostClient, port: int, timeout_s: int = 600, v
     raise RuntimeError(f"Remote /health not ready (last={last}). Recent logs:\n{logs}")
 
 
-def wait_for_health(url: str, timeout_s: int = 180) -> None:
+def wait_for_health(url: str, timeout_s: int = 180, verbose: bool = True) -> None:
+    """Poll external provider URL for /health readiness with clearer feedback."""
+    probe = f"{url}/health"
+    if verbose:
+        print(f"Probing external /health at: {probe}")
     deadline = time.time() + timeout_s
-    last_err = None
+    attempts = 0
+    last_detail = None
     while time.time() < deadline:
+        attempts += 1
         try:
-            r = requests.get(f"{url}/health", timeout=5)
+            r = requests.get(probe, timeout=5)
             if r.status_code == 200:
+                if verbose:
+                    print(f"External /health ready (200) after {attempts} attempt(s)")
                 return
-            last_err = f"{r.status_code} {r.text}"
+            body = (r.text or "").strip()
+            body_short = (body[:120] + "…") if len(body) > 120 else body
+            last_detail = f"{r.status_code} {body_short}"
+            if verbose and attempts % 3 == 1:
+                print(f"External /health attempt {attempts}: {last_detail}")
         except Exception as e:
-            last_err = str(e)
+            last_detail = f"exception: {e}"
+            if verbose and attempts % 3 == 1:
+                print(f"External /health attempt {attempts}: {last_detail}")
         time.sleep(2)
-    raise RuntimeError(f"Server health never ready: {last_err}")
+    raise RuntimeError(f"External /health not ready after {attempts} attempts: {last_detail}")
 
 
 def _remote_post_json(bc: BifrostClient, remote_url: str, payload: Dict[str, Any], timeout_s: int = 180) -> Dict[str, Any]:
@@ -282,10 +296,11 @@ def main():
 
     print("⏳ Waiting for external /health…")
     try:
-        wait_for_health(proxy_url, timeout_s=180)
+        wait_for_health(proxy_url, timeout_s=180, verbose=True)
         print("✅ External health ready")
-    except Exception:
-        print("⚠️ External health check failed (proxy may block). Continuing.")
+    except Exception as e:
+        print(f"⚠️ External health check failed (proxy may block): {e}")
+        print("   Continuing with remote localhost checks.")
 
     print("💬 Running smoke test…")
     resp = run_smoke(bc, proxy_url, args.model, args.port)
