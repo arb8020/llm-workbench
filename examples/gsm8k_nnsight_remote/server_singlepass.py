@@ -275,11 +275,21 @@ def chat(req: ChatRequest):
                 temperature=max(req.temperature, 1e-5),
                 top_p=req.top_p,
             )
-            # Use trace-then-generate pattern to avoid "Envoy out of order" issues
-            # Tokenize prompt for trace context
-            input_ids = mm.tokenizer(prompt_text, return_tensors="pt")["input_ids"]
             
-            with mm.lm.trace(input_ids) as tracer:
+            # Tokenize and prepare tensors with device placement
+            tok = mm.tokenizer
+            if mm.lm.model.config.pad_token_id is None:
+                # Many decoder-only LMs use EOS for padding
+                if tok.pad_token_id is None and tok.eos_token_id is not None:
+                    tok.pad_token = tok.eos_token
+                mm.lm.model.config.pad_token_id = tok.pad_token_id
+
+            enc = tok(prompt_text, return_tensors="pt")
+            device = next(mm.lm.model.parameters()).device
+            enc = {k: v.to(device) for k, v in enc.items()}  # includes input_ids and attention_mask
+            
+            # Use trace-then-generate pattern to avoid "Envoy out of order" issues
+            with mm.lm.trace() as tracer:
                 # Register all savepoints BEFORE any compute starts
                 try:
                     activation_proxies["_logits"] = mm.lm.output.logits.save()
@@ -292,10 +302,8 @@ def chat(req: ChatRequest):
                     except Exception as e:
                         activation_proxies[sp.name] = {"error": f"Could not save '{sp.selector}': {e}"}
                 
-                # Now actually run generation (after hooks are armed)
-                _ = mm.lm.generate(max_new_tokens=req.max_tokens, 
-                                 temperature=max(req.temperature, 1e-5),
-                                 top_p=req.top_p)
+                # Pass tokenized tensors to generate (not separate args)
+                out = mm.lm.generate(**enc, **gen_kwargs)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Generation/tracing failed: {e}")
 
