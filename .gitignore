@@ -39,12 +39,21 @@ output.txt
 *.swp
 *.swo
 
-# Result files
+# Result files and experimental outputs
 remote_results/
 examples/outlier_features_moe/handoffs/
 examples/outlier_features_moe/full_analysis_results/
 examples/outlier_features_moe/*.tar.gz
+examples/outlier_features_moe/results/
+examples/mats_neel/*/results/
+examples/mats_neel/handoffs/
+examples/persona_vectors_replicate/
 docs/archive/
+complaint.txt
+puzzle.txt
+nnsight_server.txt
+test_*.py
+server_*.log
 
 # OS
 .DS_Store

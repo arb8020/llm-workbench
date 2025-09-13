@@ -284,39 +284,74 @@ def chat(req: ChatRequest):
                     mm.tokenizer.pad_token = mm.tokenizer.eos_token
                 mm.lm.model.config.pad_token_id = mm.tokenizer.pad_token_id
             
-            # Use OFFICIAL working NNsight pattern: generate + invoke (Pattern 3)
+            # Use OFFICIAL working NNsight pattern: generate + invoke with multi-token capture
             with mm.lm.generate(**gen_kwargs) as tracer:
-                with tracer.invoke(prompt_text):
-                    # Register all savepoints during invoke - this works!
+                # Initialize collections for multi-token activations
+                try:
+                    activation_proxies["_logits"] = list().save()
+                except Exception:
+                    pass
+                
+                # Initialize collections for savepoints
+                for sp in mm.savepoints:
                     try:
-                        activation_proxies["_logits"] = mm.lm.lm_head.output.save()
-                    except Exception:
-                        pass
-                    
+                        activation_proxies[sp.name] = list().save()
+                    except Exception as e:
+                        activation_proxies[sp.name] = {"error": f"Could not initialize '{sp.selector}': {e}"}
+                
+                with tracer.invoke(prompt_text):
                     # Save generated output (from docs: llm.generator.output.save())
                     try:
                         generated_output = mm.lm.generator.output.save()
                     except Exception:
                         generated_output = None
                     
-                    for sp in mm.savepoints:
+                    # Capture activations across ALL generated tokens
+                    with tracer.all():
                         try:
-                            node = _safe_eval_selector(mm.lm, sp.selector)
-                            activation_proxies[sp.name] = node.save()
-                        except Exception as e:
-                            activation_proxies[sp.name] = {"error": f"Could not save '{sp.selector}': {e}"}
+                            activation_proxies["_logits"].append(mm.lm.lm_head.output)
+                        except Exception:
+                            pass
+                        
+                        for sp in mm.savepoints:
+                            if sp.name not in activation_proxies or isinstance(activation_proxies[sp.name], dict):
+                                continue
+                            try:
+                                node = _safe_eval_selector(mm.lm, sp.selector)
+                                activation_proxies[sp.name].append(node)
+                            except Exception:
+                                pass
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Generation/tracing failed: {e}")
 
-    # Extract generated text from saved output
+    # Extract generated text from saved output (assistant response only)
     try:
         if generated_output is not None:
             # Use the saved generator output (from docs)
             gen_ids = generated_output.value if hasattr(generated_output, 'value') else generated_output
-            reply_text = mm.tokenizer.decode(gen_ids[0], skip_special_tokens=True)
-            # Remove the original prompt to get just the generated part
-            if reply_text.startswith(prompt_text):
-                reply_text = reply_text[len(prompt_text):].strip()
+            full_text = mm.tokenizer.decode(gen_ids[0], skip_special_tokens=True)
+            
+            # Extract only the assistant's response after the prompt
+            if full_text.startswith(prompt_text):
+                # Remove the original prompt to get just the generated part
+                generated_part = full_text[len(prompt_text):].strip()
+                
+                # If using chat template, extract only text after "assistant" role
+                if "assistant" in generated_part.lower():
+                    # Find the last occurrence of assistant role marker
+                    assistant_idx = generated_part.lower().rfind("assistant")
+                    if assistant_idx != -1:
+                        # Extract everything after "assistant" and any immediate formatting
+                        after_assistant = generated_part[assistant_idx + len("assistant"):].strip()
+                        # Remove common chat template artifacts
+                        reply_text = after_assistant.lstrip(":\n ").strip()
+                    else:
+                        reply_text = generated_part
+                else:
+                    reply_text = generated_part
+            else:
+                # Fallback: use the full text if prompt removal failed
+                reply_text = full_text
         else:
             reply_text = "[Generated output not captured]"
     except Exception as e:
@@ -339,7 +374,19 @@ def chat(req: ChatRequest):
                 raw_val = proxy
             else:
                 raw_val = proxy
-            t = _tensor_like_to_tensor(raw_val)
+            
+            # Handle multi-token activations (lists of tensors)
+            if isinstance(raw_val, list) and raw_val:
+                # Stack tensors from multiple generation steps
+                try:
+                    # Try to stack along a new sequence dimension
+                    t = torch.stack([_tensor_like_to_tensor(item) for item in raw_val if _tensor_like_to_tensor(item) is not None], dim=1)
+                except Exception:
+                    # Fallback: concatenate or use first tensor
+                    valid_tensors = [_tensor_like_to_tensor(item) for item in raw_val if _tensor_like_to_tensor(item) is not None]
+                    t = valid_tensors[0] if valid_tensors else None
+            else:
+                t = _tensor_like_to_tensor(raw_val)
             if t is None:
                 small_json[k] = {"warning": "Could not convert activation to tensor", "type": str(type(raw_val))}
                 continue
