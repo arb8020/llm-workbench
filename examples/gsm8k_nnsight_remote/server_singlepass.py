@@ -290,8 +290,12 @@ def chat(req: ChatRequest):
             
             print(f"DEBUG: Server A - Single-token pattern with clean params: {clean_gen_kwargs}")
             
+            # TEST: Use simple prompt like in tutorial (to isolate chat template issue)
+            simple_prompt = "Hello"
+            print(f"DEBUG: Testing with simple prompt instead of chat template")
+            
             with mm.lm.generate(**clean_gen_kwargs) as tracer:
-                with tracer.invoke(prompt_text):
+                with tracer.invoke(simple_prompt):
                     # Save generated output for text extraction
                     generated_output = mm.lm.generator.output.save()
                     
