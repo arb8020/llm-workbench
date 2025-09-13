@@ -174,18 +174,26 @@ def wait_for_remote_health(bc: BifrostClient, port: int, timeout_s: int = 600, v
 
 
 def wait_for_health(url: str, timeout_s: int = 180) -> None:
+    start_time = time.time()
     deadline = time.time() + timeout_s
     last_err = None
+    attempts = 0
+    
     while time.time() < deadline:
+        attempts += 1
         try:
             r = requests.get(f"{url}/health", timeout=5)
             if r.status_code == 200:
+                elapsed = time.time() - start_time
+                print(f"✅ Health check succeeded after {elapsed:.1f}s ({attempts} attempts)")
                 return
             last_err = f"{r.status_code} {r.text}"
         except Exception as e:
             last_err = str(e)
         time.sleep(2)
-    raise RuntimeError(f"Server health never ready: {last_err}")
+    
+    elapsed = time.time() - start_time
+    raise RuntimeError(f"Server health never ready after {elapsed:.1f}s ({attempts} attempts): {last_err}")
 
 
 def _remote_post_json(bc: BifrostClient, remote_url: str, payload: Dict[str, Any], timeout_s: int = 180) -> Dict[str, Any]:
@@ -281,11 +289,13 @@ def main():
         raise
 
     print("⏳ Waiting for external /health…")
+    external_start = time.time()
     try:
         wait_for_health(proxy_url, timeout_s=180)
         print("✅ External health ready")
-    except Exception:
-        print("⚠️ External health check failed (proxy may block). Continuing.")
+    except Exception as e:
+        elapsed = time.time() - external_start
+        print(f"⚠️ External health check failed after {elapsed:.1f}s (proxy may block). Continuing.")
 
     print("💬 Running smoke test…")
     resp = run_smoke(bc, proxy_url, args.model, args.port)
