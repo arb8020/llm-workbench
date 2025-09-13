@@ -283,11 +283,7 @@ async def chat_completions(req: ChatCompletionRequest):
 
         # After context exits, model has generated outputs and proxies have values
         # NNsight exposes generator output at tracer.generator.output; fall back to tracer.output
-        gen_out = getattr(tracer, "generator", None)
-        if gen_out is not None and hasattr(gen_out, "output"):
-            generated_ids = gen_out.output
-        else:
-            generated_ids = getattr(tracer, "output")
+        generated_ids = tracer.generator.output
         # Some wrappers return (batch, seq); ensure indexing consistent
         if isinstance(generated_ids, (list, tuple)):
             generated_ids = generated_ids[0]
@@ -302,11 +298,7 @@ async def chat_completions(req: ChatCompletionRequest):
             **_gen_args(),
         ) as tracer:
             pass
-        gen_out = getattr(tracer, "generator", None)
-        if gen_out is not None and hasattr(gen_out, "output"):
-            generated_ids = gen_out.output
-        else:
-            generated_ids = getattr(tracer, "output")
+        generated_ids = tracer.generator.output
         if isinstance(generated_ids, (list, tuple)):
             generated_ids = generated_ids[0]
 
