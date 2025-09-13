@@ -439,7 +439,7 @@ def deploy_test_remote(experiment_name: str = "talktuner_test",
     
     # Deploy code
     bifrost_client = BifrostClient(ssh_connection)
-    workspace_path = bifrost_client.push(uv_extra="examples_gsm8k_remote")  # Need nnsight, torch etc
+    workspace_path = bifrost_client.push(uv_extra="examples_gsm8k_nnsight_remote")  # Need nnsight, torch etc
     logger.info(f"✅ Code deployed: {workspace_path}")
     
     # Create test config
