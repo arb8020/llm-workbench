@@ -102,6 +102,29 @@ def _now() -> int:
     return int(time.time())
 
 def _safe_eval_selector(lm: LanguageModel, selector: str):
+    """
+    Enhanced selector that supports both string parsing and direct layer access.
+    Uses patterns proven to work in outlier_features_moe.
+    """
+    # Handle common patterns directly (more reliable)
+    if selector == "output.logits":
+        return lm.output.logits
+    elif selector.startswith("model.layers[") and ".input_layernorm.output" in selector:
+        # Extract layer number from selector like "model.layers[0].input_layernorm.output"
+        import re
+        match = re.search(r"model\.layers\[(\d+)\]\.input_layernorm\.output", selector)
+        if match:
+            layer_idx = int(match.group(1))
+            return lm.model.layers[layer_idx].input_layernorm.output
+    elif selector.startswith("model.layers[") and ".post_attention_layernorm.output" in selector:
+        # Extract layer number from selector like "model.layers[0].post_attention_layernorm.output"  
+        import re
+        match = re.search(r"model\.layers\[(\d+)\]\.post_attention_layernorm\.output", selector)
+        if match:
+            layer_idx = int(match.group(1))
+            return lm.model.layers[layer_idx].post_attention_layernorm.output
+    
+    # Fallback to original string parsing for other cases
     if not SAFE_SELECTOR_REGEX.match(selector):
         raise HTTPException(status_code=400, detail=f"Illegal selector: {selector}")
     obj = lm
@@ -116,7 +139,12 @@ def _safe_eval_selector(lm: LanguageModel, selector: str):
             m2 = re.match(r"^\[([^\]]+)\](.*)$", brackets)
             if not m2:
                 raise HTTPException(status_code=400, detail=f"Bad index in selector near: {brackets}")
-            idx = int(m2.group(1))
+            idx_str = m2.group(1)
+            # Handle negative indices like [-1]
+            if idx_str.startswith('-'):
+                idx = int(idx_str)
+            else:
+                idx = int(idx_str)
             brackets = m2.group(2)
             obj = obj[idx]
     return obj
@@ -269,7 +297,7 @@ def chat(req: ChatRequest):
             small_json[k] = proxy
             continue
         try:
-            raw_val = proxy.value  # list[tensor] or tensor
+            raw_val = proxy.detach()  # Use correct NNsight API
             t = _tensor_like_to_tensor(raw_val)
             if t is None:
                 small_json[k] = {"warning": "Could not convert activation to tensor", "type": str(type(raw_val))}
