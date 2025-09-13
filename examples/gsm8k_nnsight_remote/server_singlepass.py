@@ -285,6 +285,9 @@ def chat(req: ChatRequest):
             
             # Use OFFICIAL working NNsight pattern: generate + invoke (Pattern 3)
             with mm.lm.generate(**gen_kwargs) as tracer:
+                # Save generated output (from docs: llm.generator.output.save())
+                generated_output = mm.lm.generator.output.save()
+                
                 with tracer.invoke(prompt_text):
                     # Register all savepoints during invoke - this works!
                     try:
@@ -300,14 +303,16 @@ def chat(req: ChatRequest):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Generation/tracing failed: {e}")
 
-    # Extract generated text from generate pattern
+    # Extract generated text from saved output
     try:
-        # Try to get generated output - need to find correct way
-        # Based on debug, tracer.output doesn't exist, need alternative
-        reply_text = "[Generated - need to find correct text extraction]"
-        # TODO: Find correct way to extract generated text from tracer
+        # Use the saved generator output (from docs)
+        gen_ids = generated_output.value if hasattr(generated_output, 'value') else generated_output
+        reply_text = mm.tokenizer.decode(gen_ids[0], skip_special_tokens=True)
+        # Remove the original prompt to get just the generated part
+        if reply_text.startswith(prompt_text):
+            reply_text = reply_text[len(prompt_text):].strip()
     except Exception as e:
-        reply_text = ""
+        reply_text = f"[Text extraction failed: {e}]"
 
     # Gather + optionally store activations
     run_id = str(uuid.uuid4())
