@@ -142,7 +142,7 @@ def deploy_qwen_vllm_server(
             else:
                 # Kill existing tmux, start fresh
                 bifrost_client.exec("tmux has-session -t qwen-vllm 2>/dev/null && tmux kill-session -t qwen-vllm || true")
-                vllm_cmd = f"""cd ~/.bifrost/workspace && HF_TOKEN=$HF_TOKEN uv run python -m vllm.entrypoints.openai.api_server \\
+                vllm_cmd = f"""cd ~/.bifrost/workspace && echo "🔑 HF_TOKEN available: ${{HF_TOKEN:+YES}}${{HF_TOKEN:-NO}}" && echo "🔑 HF_TOKEN length: ${{#HF_TOKEN}}" && HF_TOKEN=$HF_TOKEN uv run python -m vllm.entrypoints.openai.api_server \\
         --model google/gemma-3-1b-it \\
         --host 0.0.0.0 \\
         --port 8000 \\
@@ -156,7 +156,7 @@ def deploy_qwen_vllm_server(
         except Exception:
             # On error, fallback to restart
             bifrost_client.exec("tmux has-session -t qwen-vllm 2>/dev/null && tmux kill-session -t qwen-vllm || true")
-            vllm_cmd = f"""cd ~/.bifrost/workspace && HF_TOKEN=$HF_TOKEN uv run python -m vllm.entrypoints.openai.api_server \\
+            vllm_cmd = f"""cd ~/.bifrost/workspace && echo "🔑 HF_TOKEN available: ${{HF_TOKEN:+YES}}${{HF_TOKEN:-NO}}" && echo "🔑 HF_TOKEN length: ${{#HF_TOKEN}}" && HF_TOKEN=$HF_TOKEN uv run python -m vllm.entrypoints.openai.api_server \\
         --model google/gemma-3-1b-it \\
         --host 0.0.0.0 \\
         --port 8000 \\
@@ -170,7 +170,7 @@ def deploy_qwen_vllm_server(
     else:
         # Always restart server to pick up fresh code
         bifrost_client.exec("tmux has-session -t qwen-vllm 2>/dev/null && tmux kill-session -t qwen-vllm || true")
-        vllm_cmd = f"""cd ~/.bifrost/workspace && HF_TOKEN=$HF_TOKEN uv run python -m vllm.entrypoints.openai.api_server \\
+        vllm_cmd = f"""cd ~/.bifrost/workspace && echo "🔑 HF_TOKEN available: ${{HF_TOKEN:+YES}}${{HF_TOKEN:-NO}}" && echo "🔑 HF_TOKEN length: ${{#HF_TOKEN}}" && HF_TOKEN=$HF_TOKEN uv run python -m vllm.entrypoints.openai.api_server \\
         --model google/gemma-3-1b-it \\
         --host 0.0.0.0 \\
         --port 8000 \\
