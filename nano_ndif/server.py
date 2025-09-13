@@ -94,6 +94,7 @@ class InterventionsResponse(BaseModel):
 app = FastAPI(title="nano-ndif", version="0.1.0")
 llm: LanguageModel | None = None
 MODEL_ID: str = DEFAULT_MODEL_ID
+DEVICE_MAP: str = os.environ.get("NANO_NDIF_DEVICE_MAP", "auto")
 cfg = InterventionConfig()  # mutable in-process config
 _hf_model = None  # lazy HF fallback for generation
 
@@ -204,11 +205,14 @@ def _extract_proxy_tensor(proxy) -> torch.Tensor:
 
 # ---------- Routes ----------
 
+def _load_model(model_id: str, device_map: str) -> LanguageModel:
+    return LanguageModel(model_id, device_map=device_map)
+
+
 @app.on_event("startup")
 async def _startup():
     global llm
-    device_map = os.environ.get("NANO_NDIF_DEVICE_MAP", "auto")
-    llm = LanguageModel(MODEL_ID, device_map=device_map)
+    llm = _load_model(MODEL_ID, DEVICE_MAP)
 
 
 @app.get("/v1/models")
@@ -233,6 +237,38 @@ async def health():
         "model": MODEL_ID,
         "device": str(getattr(llm, "device", None)) if llm is not None else None,
     }
+
+
+class ModelLoadRequest(BaseModel):
+    model: str
+    device_map: Optional[str] = None
+
+
+@app.post("/v1/model")
+async def load_model(req: ModelLoadRequest):
+    """Hot-reload the underlying model and device map."""
+    global llm, MODEL_ID, DEVICE_MAP, _hf_model
+    model_id = req.model
+    device_map = req.device_map or DEVICE_MAP
+    try:
+        new_llm = _load_model(model_id, device_map)
+        old_llm = llm
+        llm = new_llm
+        MODEL_ID = model_id
+        DEVICE_MAP = device_map
+        _hf_model = None  # reset HF fallback cache
+        # Free old model
+        del old_llm
+        try:
+            import gc, torch as _torch
+            gc.collect()
+            if _torch.cuda.is_available():
+                _torch.cuda.empty_cache()
+        except Exception:
+            pass
+        return {"ok": True, "model": MODEL_ID, "device_map": DEVICE_MAP}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Model reload failed: {e}")
 
 
 @app.post("/v1/interventions", response_model=InterventionsResponse)
@@ -395,8 +431,21 @@ async def chat_completions(req: ChatCompletionRequest):
 
 
 def main():
-    host = os.environ.get("NANO_NDIF_HOST", "0.0.0.0")
-    port = int(os.environ.get("NANO_NDIF_PORT", "8002"))
+    import argparse
+    global MODEL_ID, DEVICE_MAP
+
+    parser = argparse.ArgumentParser(description="nano-ndif server")
+    parser.add_argument("--model", default=os.environ.get("NANO_NDIF_MODEL", MODEL_ID), help="HF model id")
+    parser.add_argument("--device-map", default=os.environ.get("NANO_NDIF_DEVICE_MAP", DEVICE_MAP), help="device map (auto/cpu/cuda/…)")
+    parser.add_argument("--host", default=os.environ.get("NANO_NDIF_HOST", "0.0.0.0"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("NANO_NDIF_PORT", "8002")))
+    args = parser.parse_args()
+
+    MODEL_ID = args.model
+    DEVICE_MAP = args.device_map
+    host = args.host
+    port = args.port
+
     print(f"nano-ndif serving on http://{host}:{port} (model={MODEL_ID})")
     if torch.cuda.is_available():
         try:

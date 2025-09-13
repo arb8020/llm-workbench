@@ -65,14 +65,14 @@ def ensure_instance(name: str, port: int, gpu_type: Optional[str], manufacturer:
     return inst
 
 
-def deploy_and_run(inst: GPUInstance, port: int, model: str, skip_bootstrap: bool) -> str:
+def deploy_and_run(inst: GPUInstance, port: int, model: str, skip_bootstrap: bool, device_map: str) -> str:
     # Build command: manage dependencies explicitly using uv extras
     base_cmd = (
         # Ensure any previous server is stopped before starting a new one
         "pkill -f nano_ndif.server || true && sleep 1 && "
         "pip install -U uv && "
         "uv sync --extra examples_gsm8k_nnsight_remote && "
-        f"NANO_NDIF_PORT={port} NANO_NDIF_MODEL={model} uv run python -m nano_ndif.server"
+        f"uv run python -m nano_ndif.server --port {port} --model {model} --device-map {device_map}"
     )
 
     # Make deployment
@@ -95,11 +95,15 @@ def main():
     parser.add_argument("--gpu-type", default=None, help="Filter GPU type (e.g., 'A10', 'RTX 4090')")
     parser.add_argument("--manufacturer", default=None, help="Filter GPU manufacturer (e.g., 'nvidia')")
     parser.add_argument("--model", default=os.environ.get("NANO_NDIF_MODEL", "willcb/Qwen3-0.6B"), help="Model ID")
+    parser.add_argument("--device-map", default=os.environ.get("NANO_NDIF_DEVICE_MAP", "auto"), help="Device map for model loading (auto/cpu/cuda/…)")
+    parser.add_argument("--runpod-api-key", default=None, help="RunPod API key (overrides .env)")
     parser.add_argument("--skip-bootstrap", action="store_true", help="Skip bifrost bootstrap and manage deps in command")
     args = parser.parse_args()
 
     # Load .env and validate env for RunPod
     load_dotenv()
+    if args.runpod_api_key:
+        os.environ["RUNPOD_API_KEY"] = args.runpod_api_key
     if not os.environ.get("RUNPOD_API_KEY"):
         print("ERROR: RUNPOD_API_KEY env var not set (load from .env failed)", file=sys.stderr)
         sys.exit(1)
@@ -112,7 +116,7 @@ def main():
         sys.exit(2)
 
     # Deploy and run
-    job_id = deploy_and_run(inst, args.port, args.model, args.skip_bootstrap)
+    job_id = deploy_and_run(inst, args.port, args.model, args.skip_bootstrap, args.device_map)
 
     # Print access info
     print("\n=== Access Info ===")
