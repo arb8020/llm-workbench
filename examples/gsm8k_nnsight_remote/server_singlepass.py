@@ -275,7 +275,9 @@ def chat(req: ChatRequest):
                 temperature=max(req.temperature, 1e-5),
                 top_p=req.top_p,
             )
-            with mm.lm.generate(prompt_text, **gen_kwargs) as tracer:
+            # Use trace-then-generate pattern to avoid "Envoy out of order" issues
+            with mm.lm.trace() as tracer:
+                # Register all savepoints BEFORE any compute starts
                 try:
                     activation_proxies["_logits"] = mm.lm.output.logits.save()
                 except Exception:
@@ -286,6 +288,9 @@ def chat(req: ChatRequest):
                         activation_proxies[sp.name] = node.save()
                     except Exception as e:
                         activation_proxies[sp.name] = {"error": f"Could not save '{sp.selector}': {e}"}
+                
+                # Now actually run generation (after hooks are armed)
+                _ = mm.lm.generate(prompt_text, **gen_kwargs)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Generation/tracing failed: {e}")
 
