@@ -1,20 +1,15 @@
 #!/usr/bin/env python3
 """
-NNsight FastAPI server (OpenAI-style chat + activation capture).
+Single-pass NNsight FastAPI server (OpenAI-style chat + activation capture).
 
-Design Philosophy:
-- Activation capture is a SIDE EFFECT triggered by store_activations flag
-- Smart defaults: auto-adds common research savepoints if none specified
-- Two-pass approach: generate text first, then trace for activations (more reliable)
-- Disk storage: activations saved to /tmp/nnsight_activations as .pt files
-- Lightweight responses: only metadata in JSON, not full tensors
+Key behavior:
+- POST /models/load loads a HF model into NNsight with optional savepoints.
+- POST /v1/chat/completions runs one-pass generate while saving activations.
+- Saves activations to disk under /tmp/nnsight_activations as .pt files.
+- GET /health reports model status.
 
-Key endpoints:
-- POST /models/load loads a HF model with optional savepoints (auto-adds defaults)
-- POST /v1/chat/completions with store_activations=true captures activations
-- GET /health reports model status
-
-This uses proven activation patterns from outlier_features_moe for reliability.
+This adapts the server design from nnsight_server.txt to file-backed storage for
+quick remote debugging (existence checks, SSH inspection).
 """
 
 import json
@@ -252,24 +247,8 @@ def load_model(req: LoadModelRequest):
     try:
         tokenizer = AutoTokenizer.from_pretrained(req.model_id, trust_remote_code=req.trust_remote_code)
         lm = LanguageModel(req.model_id, device_map=req.device_map)
-        
-        # Add smart defaults if no savepoints specified
-        savepoints = req.savepoints
-        if not savepoints:
-            # Default to common research-useful activation points
-            savepoints = [
-                SavePointSpec(name="logits", selector="output.logits"),
-                SavePointSpec(name="layer0_attn", selector="model.layers[0].input_layernorm.output"),
-                SavePointSpec(name="layer0_mlp", selector="model.layers[0].post_attention_layernorm.output"),
-            ]
-        
-        MODELS[req.model_id] = ManagedModel(lm, tokenizer, savepoints)
-        return {
-            "ok": True, 
-            "model": req.model_id, 
-            "savepoints": [sp.model_dump() for sp in savepoints],
-            "note": "Auto-added default savepoints" if not req.savepoints else "Using custom savepoints"
-        }
+        MODELS[req.model_id] = ManagedModel(lm, tokenizer, req.savepoints)
+        return {"ok": True, "model": req.model_id, "savepoints": [sp.model_dump() for sp in req.savepoints]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load model: {e}")
 
@@ -287,44 +266,33 @@ def chat(req: ChatRequest):
     prompt_ids = mm.tokenizer(prompt_text, return_tensors="pt", add_special_tokens=False)["input_ids"]
     prompt_tokens = int(prompt_ids.numel())
 
-    # Two-pass approach: Generate first, then trace (more reliable)
-    reply_text = ""
+    # One-pass: generate AND trace in the same context
     activation_proxies: Dict[str, Any] = {}
-    
     with mm.lock:
         try:
-            # Pass 1: Generate text
             gen_kwargs = dict(
                 max_new_tokens=req.max_tokens,
                 temperature=max(req.temperature, 1e-5),
                 top_p=req.top_p,
             )
-            with torch.inference_mode():
-                # Use simple generation first
-                reply_text = mm.lm.generate(prompt_text, **gen_kwargs)
-                if reply_text.startswith(prompt_text):
-                    reply_text = reply_text[len(prompt_text):].strip()
-            
-            # Pass 2: Capture activations if requested (using proven outlier_features_moe pattern)
-            if req.store_activations:
-                with torch.inference_mode():
-                    with mm.lm.trace([prompt_text]) as tracer:  # Use list format like outlier_features_moe
-                        for sp in mm.savepoints:
-                            try:
-                                node = _safe_eval_selector(mm.lm, sp.selector)
-                                activation_proxies[sp.name] = node.save()
-                            except Exception as e:
-                                activation_proxies[sp.name] = {"error": f"Could not save '{sp.selector}': {e}"}
-                        
-                        # Also capture logits if not already in savepoints
-                        if not any(sp.selector == "output.logits" for sp in mm.savepoints):
-                            try:
-                                activation_proxies["_logits"] = mm.lm.output.logits.save()
-                            except Exception as e:
-                                activation_proxies["_logits"] = {"error": f"Could not save logits: {e}"}
-                                
+            with mm.lm.generate(prompt_text, **gen_kwargs) as tracer:
+                try:
+                    activation_proxies["_logits"] = mm.lm.output.logits.save()
+                except Exception:
+                    pass
+                for sp in mm.savepoints:
+                    try:
+                        node = _safe_eval_selector(mm.lm, sp.selector)
+                        activation_proxies[sp.name] = node.save()
+                    except Exception as e:
+                        activation_proxies[sp.name] = {"error": f"Could not save '{sp.selector}': {e}"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Generation/tracing failed: {e}")
+
+    # Decode completion from the SAME run
+    reply_text = _extract_generated_text(mm.lm, mm.tokenizer, prompt_text, req.max_tokens)
+    if reply_text is None:
+        reply_text = ""
 
     # Gather + optionally store activations
     run_id = str(uuid.uuid4())
