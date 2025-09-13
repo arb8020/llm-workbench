@@ -150,6 +150,7 @@ def deploy_qwen_vllm_server(
         --max-model-len {max_model_len} \\
         --enable-auto-tool-choice \\
         --tool-call-parser hermes \\
+        --max-tokens 2048 \\
         --disable-log-stats"""
                 tmux_cmd = f"tmux new-session -d -s qwen-vllm 'cd ~/.bifrost/workspace && {vllm_cmd} 2>&1 | tee {vllm_log_path}'"
                 bifrost_client.exec(tmux_cmd)
@@ -164,6 +165,7 @@ def deploy_qwen_vllm_server(
         --max-model-len {max_model_len} \\
         --enable-auto-tool-choice \\
         --tool-call-parser hermes \\
+        --max-tokens 2048 \\
         --disable-log-stats"""
             tmux_cmd = f"tmux new-session -d -s qwen-vllm 'cd ~/.bifrost/workspace && {vllm_cmd} 2>&1 | tee {vllm_log_path}'"
             bifrost_client.exec(tmux_cmd)
@@ -178,6 +180,7 @@ def deploy_qwen_vllm_server(
         --max-model-len {max_model_len} \\
         --enable-auto-tool-choice \\
         --tool-call-parser hermes \\
+        --max-tokens 2048 \\
         --disable-log-stats"""
         tmux_cmd = f"tmux new-session -d -s qwen-vllm 'cd ~/.bifrost/workspace && {vllm_cmd} 2>&1 | tee {vllm_log_path}'"
         bifrost_client.exec(tmux_cmd)
