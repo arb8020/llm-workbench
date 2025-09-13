@@ -286,8 +286,31 @@ def chat(req: ChatRequest):
                     tok.pad_token = tok.eos_token
                 model.config.pad_token_id = tok.pad_token_id
 
-            # Tokenize to CPU tensors; DON'T move to param device when device_map="auto"
-            enc = tok(prompt_text, return_tensors="pt")  # CPU tensors, let Accelerate handle dispatch
+            # Tokenize and handle device placement carefully
+            enc = tok(prompt_text, return_tensors="pt")  # Start with CPU tensors
+            
+            # For device_map="auto", we need to find a real device to use
+            # Check if we can find a real device from the model
+            real_device = None
+            try:
+                # Look for a real device in the model's hf_device_map
+                if hasattr(model, 'hf_device_map') and model.hf_device_map:
+                    for device in model.hf_device_map.values():
+                        if device != 'meta' and isinstance(device, (int, str)):
+                            real_device = torch.device(f"cuda:{device}" if isinstance(device, int) else device)
+                            break
+                
+                # Fallback: use cuda:0 if available, otherwise CPU
+                if real_device is None:
+                    real_device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+                
+                # Move inputs to the real device
+                enc = {k: v.to(real_device) for k, v in enc.items()}
+                
+            except Exception as e:
+                # If all else fails, keep on CPU and hope for the best
+                print(f"Warning: Could not determine device placement: {e}")
+                pass
             
             # Use trace-then-generate pattern to avoid "Envoy out of order" issues
             with mm.lm.trace() as tracer:
