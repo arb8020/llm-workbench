@@ -346,6 +346,14 @@ def chat(req: ChatRequest):
     session_id = req.session_id or run_id[:8]
     saved_files: Dict[str, str] = {}
     small_json: Dict[str, Any] = {}
+    
+    # Debug: log what we actually captured
+    print(f"DEBUG: activation_proxies keys: {list(activation_proxies.keys())}")
+    for k, proxy in activation_proxies.items():
+        print(f"DEBUG: {k} = {type(proxy)}, hasattr(value): {hasattr(proxy, 'value')}")
+        if hasattr(proxy, 'value'):
+            print(f"DEBUG: {k}.value = {type(proxy.value)}")
+    
     for k, proxy in activation_proxies.items():
         if isinstance(proxy, dict) and "error" in proxy:
             small_json[k] = proxy
