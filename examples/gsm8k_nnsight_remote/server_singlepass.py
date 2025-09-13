@@ -283,23 +283,20 @@ def chat(req: ChatRequest):
                     mm.tokenizer.pad_token = mm.tokenizer.eos_token
                 mm.lm.model.config.pad_token_id = mm.tokenizer.pad_token_id
             
-            # Use correct NNsight pattern: generate context with hooks armed before invoke
+            # Use correct NNsight pattern: generate context with invoke for single prompt
             with mm.lm.generate(**gen_kwargs) as tracer:
-                # Register all savepoints BEFORE any compute starts
-                try:
-                    activation_proxies["_logits"] = mm.lm.lm_head.output.save()
-                except Exception:
-                    pass
-                for sp in mm.savepoints:
-                    try:
-                        node = _safe_eval_selector(mm.lm, sp.selector)
-                        activation_proxies[sp.name] = node.save()
-                    except Exception as e:
-                        activation_proxies[sp.name] = {"error": f"Could not save '{sp.selector}': {e}"}
-                
-                # Now start execution with the prompt text (not tokenized dict)
                 with tracer.invoke(prompt_text):
-                    pass  # execution happens on context exit
+                    # Register all savepoints DURING the invoke context
+                    try:
+                        activation_proxies["_logits"] = mm.lm.lm_head.output.save()
+                    except Exception:
+                        pass
+                    for sp in mm.savepoints:
+                        try:
+                            node = _safe_eval_selector(mm.lm, sp.selector)
+                            activation_proxies[sp.name] = node.save()
+                        except Exception as e:
+                            activation_proxies[sp.name] = {"error": f"Could not save '{sp.selector}': {e}"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Generation/tracing failed: {e}")
 
