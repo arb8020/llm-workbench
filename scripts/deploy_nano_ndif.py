@@ -19,10 +19,11 @@ import argparse
 from typing import Optional
 
 # Local imports
-from broker.broker import api as broker_api
-from broker.broker.types import GPUInstance, InstanceStatus
+from broker import api as broker_api
+from broker.types import GPUInstance, InstanceStatus
 
-from bifrost.bifrost.deploy import GitDeployment
+from bifrost.deploy import GitDeployment
+from dotenv import load_dotenv
 
 
 def find_existing_instance(name: str) -> Optional[GPUInstance]:
@@ -80,7 +81,7 @@ def deploy_and_run(inst: GPUInstance, port: int, model: str, skip_bootstrap: boo
     if skip_bootstrap:
         os.environ["BIFROST_SKIP_BOOTSTRAP"] = "1"
 
-    job_id = deployment.deploy_and_execute_detached_workspace(base_cmd)
+    job_id = deployment.deploy_and_execute_detached(base_cmd)
     print(f"✅ Started nano-ndif server job: {job_id}")
     return job_id
 
@@ -95,13 +96,18 @@ def main():
     parser.add_argument("--skip-bootstrap", action="store_true", help="Skip bifrost bootstrap and manage deps in command")
     args = parser.parse_args()
 
-    # Validate env for RunPod
+    # Load .env and validate env for RunPod
+    load_dotenv()
     if not os.environ.get("RUNPOD_API_KEY"):
-        print("ERROR: RUNPOD_API_KEY env var not set", file=sys.stderr)
+        print("ERROR: RUNPOD_API_KEY env var not set (load from .env failed)", file=sys.stderr)
         sys.exit(1)
 
     # Ensure instance
     inst = ensure_instance(args.name, args.port, args.gpu_type, args.manufacturer)
+    # Ensure SSH is ready (direct SSH)
+    if not inst.wait_until_ssh_ready(timeout=900):
+        print("ERROR: Instance did not become SSH-ready in time", file=sys.stderr)
+        sys.exit(2)
 
     # Deploy and run
     job_id = deploy_and_run(inst, args.port, args.model, args.skip_bootstrap)
@@ -128,4 +134,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
