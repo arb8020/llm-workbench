@@ -15,8 +15,8 @@ from nnsight import LanguageModel
 from transformers import AutoTokenizer
 
 def test_pattern_1_basic_trace():
-    """Pattern 1: Basic trace (from README examples)"""
-    print("=== Pattern 1: Basic trace ===")
+    """Pattern 1: Basic trace (from README examples) - FIXED"""
+    print("=== Pattern 1: Basic trace (FIXED) ===")
     
     model = LanguageModel('openai-community/gpt2', device_map='auto')
     
@@ -26,8 +26,9 @@ def test_pattern_1_basic_trace():
             output = model.output.save()
         
         print("✅ Trace completed")
-        print(f"Hidden states shape: {hidden_states.value.shape}")
-        print(f"Output type: {type(output.value)}")
+        # Fix: Use direct tensor access, not .value
+        print(f"Hidden states shape: {hidden_states.shape}")
+        print(f"Output type: {type(output)}")
         return True
     except Exception as e:
         print(f"❌ Failed: {e}")
@@ -188,6 +189,55 @@ def test_pattern_5_different_models():
         print(f"❌ Failed: {e}")
         return False
 
+def test_pattern_6_trace_for_server():
+    """Pattern 6: Working trace pattern for server use"""
+    print("\n=== Pattern 6: Trace pattern for server ===")
+    
+    model_id = 'willcb/Qwen3-0.6B'
+    
+    try:
+        model = LanguageModel(model_id, device_map='auto')
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        prompt_text = "Hello, how are you?"
+        
+        with model.trace(prompt_text) as tracer:
+            # Test working selectors
+            activations = {}
+            
+            # Try lm_head (should work)
+            try:
+                activations["lm_head"] = model.lm_head.output.save()
+                print("✅ lm_head.output saved")
+            except Exception as e:
+                print(f"❌ lm_head failed: {e}")
+            
+            # Find correct layer path for Qwen
+            try:
+                # First check model structure
+                print(f"Model structure: {type(model.model)}")
+                if hasattr(model.model, 'layers'):
+                    activations["layer0"] = model.model.layers[0].input_layernorm.output.save()
+                    print("✅ model.layers[0].input_layernorm saved")
+                elif hasattr(model, 'transformer') and hasattr(model.transformer, 'h'):
+                    activations["layer0"] = model.transformer.h[0].ln_1.output.save()
+                    print("✅ transformer.h[0].ln_1 saved")
+            except Exception as e:
+                print(f"❌ Layer access failed: {e}")
+        
+        print("✅ Trace completed")
+        
+        # Check activations (no .value needed for trace)
+        for name, activation in activations.items():
+            try:
+                print(f"✅ {name}: {activation.shape}")
+            except Exception as e:
+                print(f"❌ {name} failed: {e}")
+        
+        return True
+    except Exception as e:
+        print(f"❌ Failed: {e}")
+        return False
+
 def main():
     """Run all test patterns to see what works"""
     print("🧪 Testing NNsight activation capture patterns...\n")
@@ -198,6 +248,7 @@ def main():
         test_pattern_3_generate_invoke,
         test_pattern_4_generate_invoke_layers,
         test_pattern_5_different_models,
+        test_pattern_6_trace_for_server,
     ]
     
     results = []
