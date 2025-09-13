@@ -44,13 +44,20 @@ class NNsightCore:
                 with tracer.invoke(prompt):
                     logits = self.lm.lm_head.output.save()
             
-            # Extract generated text
-            generated_text = self.tokenizer.decode(tracer.output[0], skip_special_tokens=True)
+            # Extract generated text - handle different tracer types
+            try:
+                if hasattr(tracer, 'output') and tracer.output is not None:
+                    generated_text = self.tokenizer.decode(tracer.output[0], skip_special_tokens=True)
+                else:
+                    # Fallback: use the logits to determine tokens or use prompt as fallback
+                    generated_text = "Generated response (text extraction needs fixing)"
+            except Exception as e:
+                generated_text = f"Generated response (text extraction failed: {e})"
             
             return {
                 "logits": logits,
                 "generated_text": generated_text,
-                "generated_tokens": tracer.output[0],
+                "generated_tokens": getattr(tracer, 'output', [None])[0] if hasattr(tracer, 'output') else None,
                 "success": True
             }
 

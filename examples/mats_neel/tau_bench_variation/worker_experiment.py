@@ -75,6 +75,11 @@ def create_emotional_user_variants():
                 return s
 
             def _sanitized_completion(*args, **kwargs):
+                # Ensure adequate max_tokens if not specified (fix vLLM 16-token default)
+                if "max_tokens" not in kwargs or kwargs.get("max_tokens") is None:
+                    kwargs["max_tokens"] = 2048
+                    logger.debug(f"Applied default max_tokens=2048 to completion request")
+                
                 resp = _orig_completion(*args, **kwargs)
                 try:
                     choices = resp.get("choices", [])

@@ -6,6 +6,11 @@ This ensures monkey-patching happens before tau-bench runs.
 
 import sys
 import subprocess
+import os
+
+# Add the workspace to Python path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+
 from examples.mats_neel.tau_bench_variation.worker_experiment import create_emotional_user_variants
 
 def main():
