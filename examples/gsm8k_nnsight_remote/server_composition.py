@@ -16,6 +16,7 @@ import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from nnsight import LanguageModel
+import nnsight
 from pydantic import BaseModel
 from transformers import AutoTokenizer
 
@@ -39,8 +40,8 @@ class NNsightCore:
     def capture_activations(self, prompt: str, max_new_tokens: int = 3) -> Dict[str, Any]:
         """Multi-token NNsight activation capture using correct pattern"""
         with self.lock:
-            # Initialize list to accumulate activations across all generated tokens
-            logits_list = list().save()
+            # Initialize NNsight list to accumulate activations across all generated tokens
+            logits_list = nnsight.list().save()
             
             # Use proper multi-token generation pattern
             with self.lm.generate(prompt, max_new_tokens=max_new_tokens) as tracer:

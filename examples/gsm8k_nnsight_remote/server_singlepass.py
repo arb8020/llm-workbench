@@ -28,6 +28,7 @@ from transformers import AutoTokenizer
 
 # NNsight
 from nnsight import LanguageModel
+import nnsight
 
 app = FastAPI(title="OpenAI-style Chat + NNsight (single pass)")
 
@@ -324,8 +325,8 @@ def chat(req: ChatRequest):
             try:
                 print("DEBUG: Using multi-token activation capture pattern")
                 
-                # Initialize list to accumulate activations across all generated tokens
-                logits_list = list().save()
+                # Initialize NNsight list to accumulate activations across all generated tokens
+                logits_list = nnsight.list().save()
                 
                 # Use tracer.all() to capture activations across ALL generated tokens
                 with mm.lm.generate(prompt_text, max_new_tokens=req.max_tokens) as tracer:
