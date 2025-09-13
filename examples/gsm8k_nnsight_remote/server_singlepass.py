@@ -324,10 +324,9 @@ def chat(req: ChatRequest):
             try:
                 print("DEBUG: Testing EXACT tutorial pattern in chat context")
                 
-                # EXACT tutorial pattern from test_tutorial_pattern endpoint - SINGLE SAVE ONLY
-                # Use EXACT same parameters as working test endpoint - no user params
-                with mm.lm.generate(max_new_tokens=3) as tracer:
-                    with tracer.invoke("Hello, how are you?"):
+                # Use user's requested max_tokens and actual prompt for generation
+                with mm.lm.generate(max_new_tokens=req.max_tokens) as tracer:
+                    with tracer.invoke(prompt_text):
                         logits_gen = mm.lm.lm_head.output.save()
                         # DO NOT save generator.output here - causes OutOfOrderError
                 

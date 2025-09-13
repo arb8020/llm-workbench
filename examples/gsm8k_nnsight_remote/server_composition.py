@@ -133,7 +133,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     model: str
     messages: List[ChatMessage]
-    max_tokens: int = 5
+    max_tokens: int = 256
     temperature: float = 0.7
     top_p: float = 0.9
     stream: bool = False
