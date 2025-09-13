@@ -242,6 +242,39 @@ def _save_tensor_pt(t: torch.Tensor, path: str) -> None:
 def health():
     return {"status": "ok", "loaded_models": list(MODELS.keys())}
 
+@app.post("/test_tutorial_pattern")
+def test_tutorial_pattern():
+    """Test the exact tutorial pattern that works standalone"""
+    if not MODELS:
+        raise HTTPException(status_code=400, detail="No models loaded")
+    
+    # Get the first loaded model
+    mm = next(iter(MODELS.values()))
+    
+    try:
+        print("DEBUG: Testing EXACT tutorial pattern in server context")
+        
+        # EXACT tutorial pattern from test_nnsight_tutorial.py
+        with mm.lm.generate(max_new_tokens=3) as tracer:
+            with tracer.invoke("Hello, how are you?"):
+                logits_gen = mm.lm.lm_head.output.save()
+        
+        return {
+            "success": True,
+            "logits_shape": list(logits_gen.shape),
+            "logits_dtype": str(logits_gen.dtype),
+            "message": "Tutorial pattern worked in server context!"
+        }
+        
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "message": "Tutorial pattern failed in server context"
+        }
+
 @app.post("/models/load")
 def load_model(req: LoadModelRequest):
     try:
