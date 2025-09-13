@@ -319,8 +319,13 @@ def chat(req: ChatRequest):
             small_json[k] = proxy
             continue
         try:
-            # For generate pattern, use .value to get tensors
-            raw_val = proxy.value
+            # Handle different proxy types from generate pattern
+            if hasattr(proxy, 'value'):
+                raw_val = proxy.value
+            elif isinstance(proxy, torch.Tensor):
+                raw_val = proxy
+            else:
+                raw_val = proxy
             t = _tensor_like_to_tensor(raw_val)
             if t is None:
                 small_json[k] = {"warning": "Could not convert activation to tensor", "type": str(type(raw_val))}
