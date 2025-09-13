@@ -16,6 +16,7 @@ import os
 import sys
 import time
 import argparse
+import subprocess
 from typing import Optional
 
 # Local imports
@@ -98,6 +99,9 @@ def main():
     parser.add_argument("--device-map", default=os.environ.get("NANO_NDIF_DEVICE_MAP", "auto"), help="Device map for model loading (auto/cpu/cuda/…)")
     parser.add_argument("--runpod-api-key", default=None, help="RunPod API key (overrides .env)")
     parser.add_argument("--skip-bootstrap", action="store_true", help="Skip bifrost bootstrap and manage deps in command")
+    parser.add_argument("--wait-health", action="store_true", help="Wait for /health to become ready after deploy")
+    parser.add_argument("--health-timeout", type=int, default=900, help="Max seconds to wait for /health (default: 900)")
+    parser.add_argument("--run-smoke", action="store_true", help="Run smoke test after health is ready")
     args = parser.parse_args()
 
     # Load .env and validate env for RunPod
@@ -136,6 +140,47 @@ def main():
         print(f"Health: curl {direct_url}/health")
         print(f"Models: curl {direct_url}/v1/models")
     print(f"Logs: python -m bifrost.bifrost.jobs_cli logs '{inst.ssh_connection_string()}' {job_id} -f")
+
+    # Optionally wait for health and run smoke test
+    if args.wait_health:
+        print("\n=== Waiting for health ===")
+        base_urls = []
+        if proxy_url:
+            base_urls.append(proxy_url)
+        if direct_url:
+            base_urls.append(direct_url)
+        if not base_urls:
+            print("No reachable base URL to poll; skipping health wait.")
+        else:
+            start = time.time()
+            ok = False
+            while time.time() - start < args.health_timeout:
+                for base in base_urls:
+                    try:
+                        import urllib.request
+                        with urllib.request.urlopen(f"{base}/health", timeout=5) as resp:
+                            body = resp.read().decode("utf-8", errors="ignore")
+                            if resp.status == 200 and '"ok":true' in body:
+                                print(f"✅ Health ready at {base}")
+                                ok = True
+                                ready_base = base
+                                break
+                    except Exception:
+                        pass
+                if ok:
+                    break
+                time.sleep(3)
+            if not ok:
+                print("❌ Health not ready before timeout", file=sys.stderr)
+                sys.exit(3)
+
+            if args.run_smoke:
+                print("\n=== Running smoke test ===")
+                code = subprocess.call([sys.executable, 'scripts/smoke_nano_ndif.py', '--base-url', ready_base])
+                if code != 0:
+                    print("❌ Smoke test failed", file=sys.stderr)
+                    sys.exit(code)
+                print("🎉 Smoke test passed")
 
 
 if __name__ == "__main__":
