@@ -117,14 +117,13 @@ def render_prompt(messages: List[Message]) -> Dict[str, Any]:
     # Prefer HF chat template if present
     if hasattr(tok, "apply_chat_template") and tok.chat_template:
         try:
-            # Return tokenized tensors for generate
-            enc = tok.apply_chat_template(
+            # Produce text via chat template, then tokenize to tensors
+            prompt_text = tok.apply_chat_template(
                 chat,
-                tokenize=True,
+                tokenize=False,
                 add_generation_prompt=True,
-                return_dict=True,
             )
-            return enc
+            return tok(prompt_text, return_tensors="pt")
         except Exception:
             pass
 
@@ -234,10 +233,19 @@ async def chat_completions(req: ChatCompletionRequest):
 
     # Render prompt inputs
     enc = render_prompt(req.messages)
-    input_ids = enc["input_ids"].to(llm.device)
+    input_ids = enc["input_ids"]
+    if not isinstance(input_ids, torch.Tensor):
+        input_ids = torch.tensor(input_ids)
+    # Move to device only if it's a real device (avoid 'meta')
+    dev = getattr(llm, "device", None)
+    dev_str = str(dev) if dev is not None else None
+    if dev_str and dev_str != "meta":
+        input_ids = input_ids.to(dev)
     attn_mask = enc.get("attention_mask")
-    if attn_mask is not None:
-        attn_mask = attn_mask.to(llm.device)
+    if attn_mask is not None and not isinstance(attn_mask, torch.Tensor):
+        attn_mask = torch.tensor(attn_mask)
+    if attn_mask is not None and dev_str and dev_str != "meta":
+        attn_mask = attn_mask.to(dev)
 
     # Per-call overrides for NDIF
     run_cfg = cfg

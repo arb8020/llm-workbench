@@ -68,6 +68,8 @@ def ensure_instance(name: str, port: int, gpu_type: Optional[str], manufacturer:
 def deploy_and_run(inst: GPUInstance, port: int, model: str, skip_bootstrap: bool) -> str:
     # Build command: manage dependencies explicitly using uv extras
     base_cmd = (
+        # Ensure any previous server is stopped before starting a new one
+        "pkill -f nano_ndif.server || true && sleep 1 && "
         "pip install -U uv && "
         "uv sync --extra examples_gsm8k_nnsight_remote && "
         f"NANO_NDIF_PORT={port} NANO_NDIF_MODEL={model} uv run python -m nano_ndif.server"
