@@ -284,51 +284,30 @@ def chat(req: ChatRequest):
                     mm.tokenizer.pad_token = mm.tokenizer.eos_token
                 mm.lm.model.config.pad_token_id = mm.tokenizer.pad_token_id
             
-            # Test OFFICIAL multi-token pattern from NNsight docs
-            print(f"DEBUG: Testing multi-token pattern with model: {type(mm.lm)}")
-            max_tokens = gen_kwargs.get('max_new_tokens', 3)
+            # SERVER A: Clean single-token activation capture (PROVEN WORKING)
+            # Remove problematic temperature/top_p that cause Envoy timing issues
+            clean_gen_kwargs = {'max_new_tokens': gen_kwargs.get('max_new_tokens', 3)}
             
-            try:
-                # OFFICIAL multi-token pattern from nnsight.net
-                with mm.lm.generate(max_new_tokens=max_tokens) as tracer:
-                    # Initialize saveable list for multi-token capture
-                    logits_list = list().save()
+            print(f"DEBUG: Server A - Single-token pattern with clean params: {clean_gen_kwargs}")
+            
+            with mm.lm.generate(**clean_gen_kwargs) as tracer:
+                with tracer.invoke(prompt_text):
+                    # Save generated output for text extraction
+                    generated_output = mm.lm.generator.output.save()
                     
-                    with tracer.invoke(prompt_text):
-                        # Save generated output
-                        generated_output = mm.lm.generator.output.save()
-                        
-                        # Capture activations across ALL generated tokens
-                        with tracer.all():
-                            logits_list.append(mm.lm.lm_head.output)
-                
-                print(f"DEBUG: Multi-token pattern SUCCESS!")
-                print(f"DEBUG: Generated output type: {type(generated_output)}")
-                print(f"DEBUG: Logits list type: {type(logits_list)}")
-                if hasattr(logits_list, 'value') and logits_list.value:
-                    print(f"DEBUG: Logits list length: {len(logits_list.value)}")
-                    if logits_list.value:
-                        print(f"DEBUG: First logit shape: {logits_list.value[0].shape}")
-                
-                activation_proxies["_logits"] = logits_list
-                
-            except Exception as e:
-                print(f"DEBUG: Multi-token pattern FAILED: {e}")
-                import traceback
-                traceback.print_exc()
-                
-                # Fallback to single-token pattern that works
-                print(f"DEBUG: Falling back to single-token pattern")
-                try:
-                    with mm.lm.generate(max_new_tokens=2) as tracer:
-                        with tracer.invoke("Hello"):
-                            tutorial_logits = mm.lm.lm_head.output.save()
-                    activation_proxies["_logits"] = tutorial_logits
-                    print(f"DEBUG: Fallback SUCCESS! Shape: {tutorial_logits.shape}")
-                except Exception as e2:
-                    print(f"DEBUG: Fallback also FAILED: {e2}")
+                    # Save single-token activations (PROVEN WORKING)
+                    logits = mm.lm.lm_head.output.save()
+                    activation_proxies["_logits"] = logits
+                    
+                    # Save custom savepoints
+                    for sp in mm.savepoints:
+                        try:
+                            node = _safe_eval_selector(mm.lm, sp.selector)
+                            activation_proxies[sp.name] = node.save()
+                        except Exception as e:
+                            activation_proxies[sp.name] = {"error": f"Could not save '{sp.selector}': {e}"}
             
-            print(f"DEBUG: Final activation_proxies keys: {list(activation_proxies.keys())}")
+            print(f"DEBUG: Server A SUCCESS - Captured {len(activation_proxies)} activations")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Generation/tracing failed: {e}")
 
@@ -339,29 +318,37 @@ def chat(req: ChatRequest):
             gen_ids = generated_output.value if hasattr(generated_output, 'value') else generated_output
             full_text = mm.tokenizer.decode(gen_ids[0], skip_special_tokens=True)
             
-            # Extract only the assistant's response after the prompt
-            if full_text.startswith(prompt_text):
-                # Remove the original prompt to get just the generated part
-                generated_part = full_text[len(prompt_text):].strip()
+            print(f"DEBUG: Full generated text length: {len(full_text)}")
+            print(f"DEBUG: Full text preview: {repr(full_text[:200])}")
+            print(f"DEBUG: Prompt text length: {len(prompt_text)}")
+            print(f"DEBUG: Prompt preview: {repr(prompt_text[:100])}")
+            
+            # The generated output often contains the full conversation
+            # Find the LAST occurrence of "assistant" and extract what comes after
+            if "assistant" in full_text.lower():
+                # Find the last occurrence of assistant role marker
+                assistant_idx = full_text.lower().rfind("assistant")
+                print(f"DEBUG: Found 'assistant' at index: {assistant_idx}")
                 
-                # If using chat template, extract only text after "assistant" role
-                if "assistant" in generated_part.lower():
-                    # Find the last occurrence of assistant role marker
-                    assistant_idx = generated_part.lower().rfind("assistant")
-                    if assistant_idx != -1:
-                        # Extract everything after "assistant" and any immediate formatting
-                        after_assistant = generated_part[assistant_idx + len("assistant"):].strip()
-                        # Remove common chat template artifacts
-                        reply_text = after_assistant.lstrip(":\n ").strip()
-                    else:
-                        reply_text = generated_part
+                if assistant_idx != -1:
+                    # Extract everything after "assistant"
+                    after_assistant = full_text[assistant_idx + len("assistant"):].strip()
+                    # Remove common chat template artifacts and newlines
+                    reply_text = after_assistant.lstrip(":\n \t").strip()
+                    print(f"DEBUG: Extracted assistant response: {repr(reply_text[:100])}")
                 else:
-                    reply_text = generated_part
+                    reply_text = full_text
             else:
-                # Fallback: use the full text if prompt removal failed
-                reply_text = full_text
+                # No assistant marker found, try removing prompt if it's at the start
+                if full_text.startswith(prompt_text):
+                    reply_text = full_text[len(prompt_text):].strip()
+                    print(f"DEBUG: Removed prompt, got: {repr(reply_text[:100])}")
+                else:
+                    reply_text = full_text
+                    print(f"DEBUG: Using full text as-is")
         else:
             reply_text = "[Generated output not captured]"
+            print(f"DEBUG: generated_output is None")
     except Exception as e:
         reply_text = f"[Text extraction failed: {e}]"
 
