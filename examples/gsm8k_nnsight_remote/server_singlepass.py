@@ -276,17 +276,18 @@ def chat(req: ChatRequest):
                 top_p=req.top_p,
             )
             
-            # Tokenize and prepare tensors with device placement
+            # Tokenize and prepare tensors (avoid meta device trap with device_map="auto")
             tok = mm.tokenizer
-            if mm.lm.model.config.pad_token_id is None:
-                # Many decoder-only LMs use EOS for padding
+            model = mm.lm.model
+            
+            # Ensure special tokens are ints, not tensors
+            if model.config.pad_token_id is None:
                 if tok.pad_token_id is None and tok.eos_token_id is not None:
                     tok.pad_token = tok.eos_token
-                mm.lm.model.config.pad_token_id = tok.pad_token_id
+                model.config.pad_token_id = tok.pad_token_id
 
-            enc = tok(prompt_text, return_tensors="pt")
-            device = next(mm.lm.model.parameters()).device
-            enc = {k: v.to(device) for k, v in enc.items()}  # includes input_ids and attention_mask
+            # Tokenize to CPU tensors; DON'T move to param device when device_map="auto"
+            enc = tok(prompt_text, return_tensors="pt")  # CPU tensors, let Accelerate handle dispatch
             
             # Use trace-then-generate pattern to avoid "Envoy out of order" issues
             with mm.lm.trace() as tracer:
