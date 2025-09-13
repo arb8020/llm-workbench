@@ -284,21 +284,20 @@ def chat(req: ChatRequest):
                     mm.tokenizer.pad_token = mm.tokenizer.eos_token
                 mm.lm.model.config.pad_token_id = mm.tokenizer.pad_token_id
             
-            # Use OFFICIAL working NNsight pattern: generate + invoke with proper savepoint registration
+            # Use ACTUAL working NNsight pattern from handoff doc (lines 60-66)
             with mm.lm.generate(**gen_kwargs) as tracer:
-                # Register savepoints OUTSIDE invoke context (this is what worked!)
+                # Initialize list for multi-token activation capture
                 try:
-                    activation_proxies["_logits"] = mm.lm.lm_head.output.save()
+                    activation_proxies["_logits"] = list().save()
                 except Exception:
                     pass
                 
-                # Register custom savepoints  
+                # Initialize lists for custom savepoints  
                 for sp in mm.savepoints:
                     try:
-                        node = _safe_eval_selector(mm.lm, sp.selector)
-                        activation_proxies[sp.name] = node.save()
+                        activation_proxies[sp.name] = list().save()
                     except Exception as e:
-                        activation_proxies[sp.name] = {"error": f"Could not save '{sp.selector}': {e}"}
+                        activation_proxies[sp.name] = {"error": f"Could not initialize '{sp.selector}': {e}"}
                 
                 with tracer.invoke(prompt_text):
                     # Save generated output (from docs: llm.generator.output.save())
@@ -306,6 +305,23 @@ def chat(req: ChatRequest):
                         generated_output = mm.lm.generator.output.save()
                     except Exception:
                         generated_output = None
+                    
+                    # Capture ALL generated tokens using tracer.all()
+                    with tracer.all():
+                        try:
+                            activation_proxies["_logits"].append(mm.lm.lm_head.output)
+                        except Exception:
+                            pass
+                        
+                        # Capture custom savepoint activations for all tokens
+                        for sp in mm.savepoints:
+                            if sp.name not in activation_proxies or isinstance(activation_proxies[sp.name], dict):
+                                continue
+                            try:
+                                node = _safe_eval_selector(mm.lm, sp.selector)
+                                activation_proxies[sp.name].append(node)
+                            except Exception:
+                                pass
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Generation/tracing failed: {e}")
 
