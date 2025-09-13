@@ -143,6 +143,34 @@ def render_prompt(messages: List[Message]) -> Dict[str, Any]:
     return llm.tokenizer(rendered, return_tensors="pt")
 
 
+def render_prompt_text(messages: List[Message]) -> str:
+    assert llm is not None
+    chat = to_hf_chat(messages)
+    tok = llm.tokenizer
+    if hasattr(tok, "apply_chat_template") and tok.chat_template:
+        try:
+            return tok.apply_chat_template(
+                chat,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        except Exception:
+            pass
+    # Fallback
+    parts = []
+    for m in messages:
+        if m.role == "system":
+            parts.append(f"System: {m.content}")
+        elif m.role == "user":
+            parts.append(f"Human: {m.content}")
+        elif m.role == "assistant":
+            parts.append(f"Assistant: {m.content}")
+        else:
+            parts.append(f"{m.role}: {m.content}")
+    parts.append("Assistant:")
+    return "\n".join(parts)
+
+
 # ---------- Capture helpers ----------
 
 def _collect_targets(layers: List[int], hook_points: List[str]):
@@ -231,8 +259,9 @@ async def chat_completions(req: ChatCompletionRequest):
     if llm is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    # Render prompt inputs
+    # Render prompt inputs (tensors) and prompt text for generate()
     enc = render_prompt(req.messages)
+    prompt_text = render_prompt_text(req.messages)
     input_ids = enc["input_ids"]
     if not isinstance(input_ids, torch.Tensor):
         input_ids = torch.tensor(input_ids)
@@ -272,7 +301,7 @@ async def chat_completions(req: ChatCompletionRequest):
 
     if cfg.enabled and cfg.mode == "generate":
         with llm.generate(
-            {"input_ids": input_ids, "attention_mask": attn_mask} if attn_mask is not None else {"input_ids": input_ids},
+            prompt_text,
             **_gen_args(),
         ) as tracer:
             # Register targets to save
@@ -294,7 +323,7 @@ async def chat_completions(req: ChatCompletionRequest):
     else:
         # Plain generation using nnsight's generate() wrapper
         with llm.generate(
-            {"input_ids": input_ids, "attention_mask": attn_mask} if attn_mask is not None else {"input_ids": input_ids},
+            prompt_text,
             **_gen_args(),
         ) as tracer:
             pass
