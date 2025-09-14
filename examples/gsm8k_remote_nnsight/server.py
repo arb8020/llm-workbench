@@ -482,7 +482,7 @@ def main():
     parser.add_argument("--model", default=MODEL_ID, help="HF model id")
     parser.add_argument("--device-map", default=DEVICE_MAP, help="device map (auto/cpu/cuda/…)")
     parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8002)
+    parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
 
     MODEL_ID = args.model
@@ -501,4 +501,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -9,8 +9,8 @@ Features
 - Optionally downloads activation artifacts via SSH (using BifrostClient)
 
 Usage
-  python examples/gsm8k_remote_nnsight/test_client.py --base-url http://localhost:8002
-  python examples/gsm8k_remote_nnsight/test_client.py --base-url https://<pod>-8002.proxy.runpod.net \
+  python examples/gsm8k_remote_nnsight/test_client.py --base-url http://localhost:8000
+  python examples/gsm8k_remote_nnsight/test_client.py --base-url https://<pod>-8000.proxy.runpod.net \
       --ssh root@<ip>:<port>
 """
 
@@ -37,7 +37,7 @@ def req(method: str, url: str, **kwargs) -> requests.Response:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="NNsight server test client")
-    ap.add_argument("--base-url", required=True, help="Server base URL, e.g., http://localhost:8002")
+    ap.add_argument("--base-url", required=True, help="Server base URL, e.g., http://localhost:8000")
     ap.add_argument("--ssh", help="SSH conn string (user@host:port) to download activations")
     ap.add_argument("--layers", type=int, nargs="*", default=[8, 12, 16], help="Layer indices for capture")
     ap.add_argument("--hook-points", nargs="*", default=["input_layernorm.output", "post_attention_layernorm.output"], help="Hook points")
@@ -147,4 +147,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

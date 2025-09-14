@@ -75,7 +75,7 @@ def _wait_health(urls: List[str], timeout: int = 600) -> Optional[str]:
 
 def main(samples: int = 3, layers: List[int] | None = None, out_dir: Optional[str] = None):
     layers = layers or [8, 12, 16]
-    port = 8002
+    port = 8000
     model_id = "willcb/Qwen3-0.6B"
 
     # 1) Provision GPU
@@ -243,4 +243,3 @@ if __name__ == "__main__":
     ap.add_argument("--out", type=str, default=None, help="Output dir (default under examples/gsm8k_remote_nnsight/results)")
     args = ap.parse_args()
     main(samples=args.samples, layers=args.layers, out_dir=args.out)
-

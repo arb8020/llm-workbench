@@ -2,7 +2,7 @@
 # Robust server launcher for NNsight example. Runs in remote workspace under tmux.
 set -euo pipefail
 
-PORT=8002
+PORT=8000
 HOST="0.0.0.0"
 MODEL="willcb/Qwen3-0.6B"
 DEVICE_MAP="auto"
@@ -38,4 +38,3 @@ set -x
 uv run python -m examples.gsm8k_remote_nnsight.server \
   --host "$HOST" --port "$PORT" \
   --model "$MODEL" --device-map "$DEVICE_MAP" 2>&1 | tee -a "$LOG"
-

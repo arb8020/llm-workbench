@@ -2,8 +2,8 @@
 """Integration-style smoke test for nano-ndif server.
 
 Usage:
-  python scripts/smoke_nano_ndif.py --base-url http://localhost:8002
-  python scripts/smoke_nano_ndif.py --base-url https://<pod>-8002.proxy.runpod.net
+  python scripts/smoke_nano_ndif.py --base-url http://localhost:8000
+  python scripts/smoke_nano_ndif.py --base-url https://<pod>-8000.proxy.runpod.net
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ def expect_status(resp: requests.Response, code: int) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base-url", default="http://localhost:8002", help="Server base URL")
+    ap.add_argument("--base-url", default="http://localhost:8000", help="Server base URL")
     args = ap.parse_args()
 
     base = args.base_url.rstrip("/")

@@ -154,7 +154,7 @@ def deploy_and_run(inst: GPUInstance, port: int, model: str, skip_bootstrap: boo
 def main():
     parser = argparse.ArgumentParser(description="Deploy nano-ndif to a remote GPU")
     parser.add_argument("--name", default="nano-ndif", help="Instance name to reuse or create")
-    parser.add_argument("--port", type=int, default=8002, help="Service port to expose")
+    parser.add_argument("--port", type=int, default=8000, help="Service port to expose")
     parser.add_argument("--gpu-type", default=None, help="Filter GPU type (e.g., 'A10', 'RTX 4090')")
     parser.add_argument("--manufacturer", default=None, help="Filter GPU manufacturer (e.g., 'nvidia')")
     parser.add_argument("--min-vram", type=int, default=12, help="Minimum VRAM in GB (default: 12)")
