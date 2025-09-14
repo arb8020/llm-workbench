@@ -20,6 +20,9 @@ Demo Driver (remote deploy + collect)
   - `python examples/gsm8k_remote_nnsight/deploy_and_collect.py --samples 3`
   - The script configures interventions, runs a few GSM8K problems, and downloads each request’s activation folder to `examples/gsm8k_remote_nnsight/results/...` alongside trajectories.
 
+Troubleshooting
+- See `examples/gsm8k_remote_nnsight/HANDOFF_DEBUG.md` for a focused debug playbook (tmux, logs, proxy mapping, module path checks).
+
 Known Caveats
 - Streaming (`stream: true`) is not implemented; the demo uses non-streaming calls.
 - Tool/function calls are not supported in this demo.
