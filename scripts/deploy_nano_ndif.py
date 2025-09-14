@@ -140,7 +140,7 @@ def deploy_and_run(inst: GPUInstance, port: int, model: str, skip_bootstrap: boo
     # Start server in tmux using start_server.sh, tee logs to ~/nnsight_server.log
     run_cmd = (
         "cd ~/.bifrost/workspace && "
-        f"bash examples/gsm8k_remote_nnsight/start_server.sh --host 0.0.0.0 --port {port} --model {model} --device-map {device_map}"
+        f"bash examples/gsm8k_remote_nnsight/server/start_server.sh --host 0.0.0.0 --port {port} --model {model} --device-map {device_map}"
     )
     tmux_cmd = f"tmux new-session -d -s nnsight-server '{run_cmd}'"
     bc.exec(tmux_cmd)

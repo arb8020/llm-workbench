@@ -16,6 +16,7 @@ import sys
 import time
 import argparse
 from typing import Optional
+import json
 
 from broker.client import GPUClient
 from broker.types import InstanceStatus
@@ -89,7 +90,7 @@ def deploy_and_run(inst, port: int, model: str, device_map: str, skip_bootstrap:
 
     run_cmd = (
         "cd ~/.bifrost/workspace && "
-        f"bash examples/gsm8k_remote_nnsight/start_server.sh --host 0.0.0.0 --port {port} --model {model} --device-map {device_map}"
+        f"bash examples/gsm8k_remote_nnsight/server/start_server.sh --host 0.0.0.0 --port {port} --model {model} --device-map {device_map}"
     )
     tmux_cmd = f"tmux new-session -d -s nnsight-server '{run_cmd}'"
     bc.exec(tmux_cmd)
@@ -181,4 +182,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

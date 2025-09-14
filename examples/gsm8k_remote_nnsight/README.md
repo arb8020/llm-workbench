@@ -6,7 +6,7 @@ Overview
 - Demo driver deploys server, runs a few GSM8K samples, and syncs activations + trajectories locally.
 
 Quick Run (local)
-- `python -m examples.gsm8k_remote_nnsight.server --model willcb/Qwen3-0.6B --device-map auto --host 0.0.0.0 --port 8000`
+- `python -m examples.gsm8k_remote_nnsight.server.server --model willcb/Qwen3-0.6B --device-map auto --host 0.0.0.0 --port 8000`
 
 Endpoints
 - `GET /health` — Simple readiness info.

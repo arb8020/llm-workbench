@@ -100,7 +100,7 @@ def main(samples: int = 3, layers: List[int] | None = None, out_dir: Optional[st
     # 3) Start server in tmux
     print("🌟 Starting NNsight server in tmux session 'nnsight-server'…")
     cmd = (
-        f"uv run python -m examples.gsm8k_remote_nnsight.server "
+        f"bash examples/gsm8k_remote_nnsight/server/start_server.sh "
         f"--host 0.0.0.0 --port {port} --model {model_id} --device-map auto"
     )
     bc.exec(f"tmux kill-session -t nnsight-server 2>/dev/null || true")

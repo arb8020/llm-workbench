@@ -35,6 +35,6 @@ sleep 1
 
 echo "[start_server] Launching server..."
 set -x
-uv run python -m examples.gsm8k_remote_nnsight.server \
+uv run python -m examples.gsm8k_remote_nnsight.server.server \
   --host "$HOST" --port "$PORT" \
   --model "$MODEL" --device-map "$DEVICE_MAP" 2>&1 | tee -a "$LOG"
