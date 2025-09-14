@@ -200,6 +200,8 @@ def main():
     # Print access info
     print("\n=== Access Info ===")
     print(f"SSH: {inst.ssh_connection_string()}")
+    if inst.public_ip and inst.ssh_port and inst.ssh_username:
+        print(f"SSH (cli): ssh -p {inst.ssh_port} {inst.ssh_username}@{inst.public_ip}")
     proxy_url = inst.get_proxy_url(args.port)
     direct_url = f"http://{inst.public_ip}:{args.port}" if inst.public_ip else None
     if proxy_url:
