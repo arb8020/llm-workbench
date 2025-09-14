@@ -104,6 +104,7 @@ def main(samples: int = 3, layers: List[int] | None = None, out_dir: Optional[st
         f"--host 0.0.0.0 --port {port} --model {model_id} --device-map auto"
     )
     bc.exec(f"tmux kill-session -t nnsight-server 2>/dev/null || true")
+    bc.exec("which tmux || (apt-get update -y && apt-get install -y tmux) || true")
     bc.exec(f"tmux new-session -d -s nnsight-server 'cd ~/.bifrost/workspace && {cmd} 2>&1 | tee ~/nnsight_server.log'")
     print("✅ Server starting; waiting for health…")
 

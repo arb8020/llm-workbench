@@ -134,6 +134,7 @@ def deploy_and_run(inst: GPUInstance, port: int, model: str, skip_bootstrap: boo
     print(f"✅ Workspace ready: {workspace}")
 
     # Kill existing tmux session and free port
+    bc.exec("which tmux || (apt-get update -y && apt-get install -y tmux) || true")
     bc.exec("tmux has-session -t nnsight-server 2>/dev/null && tmux kill-session -t nnsight-server || true")
     bc.exec(f"pids=$(lsof -ti:{port} 2>/dev/null || true); if [ -n \"$pids\" ]; then echo '🔪 Killing PIDs on port {port}: ' $pids; kill -9 $pids || true; fi")
 
