@@ -1,0 +1,57 @@
+\section{Using persona vectors to control and monitor traits}
+
+\label{sec:validate}
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{final_figs/steering.pdf}
+    \caption{
+        \textbf{Steering with persona vectors.} Top: We apply steering along the persona vector at different layers during generation and measure the resulting trait expression score of the steered responses. Each line represents a different steering coefficient. This figure shows results for Qwen2.5-7B-Instruct; results for Llama-3.1-8B-Instruct are shown in Figure~\ref{fig:steer_llama}.
+        Bottom: Examples of steered responses demonstrating successful elicitation of evil, sycophancy, and hallucination behaviors.
+    }
+    \label{fig:steer_layer}
+\end{figure}
+
+Having extracted persona vectors using the above pipeline, we validate them using two standard approaches from the literature: (1) causal steering to induce target traits \citep{turner2024steeringlanguagemodelsactivation, panickssery2024steeringllama2contrastive,allbert2024identifying,dong2025controllable}, and (2) activation monitoring to detect prompt-induced behavioral shifts \citep{zou2025representationengineeringtopdownapproach, wu2025axbenchsteeringllmssimple}.
+
+\subsection{Common experimental setup}
+While our pipeline is applicable to a wide range of traits, we focus on three important negative traits in the main text: evil, sycophancy, and hallucination.\footnote{
+We show results for four additional traits, including positive traits such as optimism and humor, in Appendix~\ref{sec:more_traits}.}
+Throughout the paper, we conduct our experiments using two open-source chat models: Qwen2.5-7B-Instruct \citep{qwen2025qwen25technicalreport} and Llama-3.1-8B-Instruct \citep{grattafiori2024llama3herdmodels}.
+
+\subsection{Controlling persona traits via steering}
+\label{subsec:steering}
+
+Given a persona vector $v_{\ell}$ extracted from layer $\ell$, we can steer the model's activations toward this direction  at each decoding step:
+\[
+h_{\ell} \leftarrow h_{\ell} + \alpha \cdot v_{\ell},
+\]
+where $\alpha$ is a scalar steering coefficient, and $h_{\ell}$ is the residual stream activation at layer $\ell$.
+
+As shown in Figure~\ref{fig:steer_layer}, steering with a persona vector increases the corresponding trait expression. Examples of successful steering illustrate the model generating violent content when steered toward evil, excessive agreement and flattery when steered toward sycophancy, and elaborate fabrications when steered toward hallucination.
+
+\subsection{Monitoring prompt-induced persona shifts via projection}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{final_figs/monitoring_system_prompt.pdf}
+    \label{fig:system_prompt_projection_corr}
+    \caption{
+        \textbf{Monitoring prompt-induced behavioral shifts.}
+        We test different system prompts ranging from trait-discouraging to trait-encouraging (color-coded from yellow to purple).
+        Projection of the last prompt token activation onto persona vectors strongly correlates with trait expression scores in subsequent responses, enabling prediction of behavioral shifts before text generation begins.
+        Results are shown for evil (with example system prompts), sycophancy, and hallucination.
+    }
+    \label{fig:projection_corr}
+\end{figure}
+
+In addition to control, persona vectors can be used to monitor behavioral shifts during deployment. We validate this using two prompt-based methods for eliciting target behaviors: system prompting and many-shot prompting \citep{anil2024manyshot}.
+
+To construct sequences of system prompts, we use Claude 4.0 Sonnet to generate eight prompts that smoothly interpolate between trait-suppressing and trait-promoting instructions.\footnote{All system prompts used for monitoring experiments are provided in Appendix~\ref{appendix:monitor:system_prompts}.}
+For many-shot prompting, we use a set of 0, 5, 10, 15, or 20 examples that demonstrate the target trait.
+In both settings, we generate 10 rollouts per configuration and evaluation question, and then compute the average trait expression score over these 10 responses.
+We also measure the projection of the activation at the final prompt token (the token immediately prior to the Assistant's response) onto the corresponding persona direction.
+
+Results for the system prompt variations are shown in Figure~\ref{fig:projection_corr}, and results for many-shot prompts are similar (Appendix~\ref{appendix:monitor:additional_results}).
+The projections at the final prompt token correlate strongly with trait expression in subsequent responses ($r = 0.75\text{--}0.83$), suggesting that persona vectors can be useful for monitoring prompt-induced behavioral shifts before text generation occurs.
+These correlations arise primarily from distinguishing between different prompt types (e.g., trait-encouraging vs trait-discouraging system prompts), with more modest correlations when controlling for prompt type (Appendix~\ref{appendix:monitor:correlation_analysis}).
+This indicates the persona vectors are effective for detecting clear and explicit prompt-induced shifts, but may be less reliable for more subtle behavioral changes in deployment settings. An alternative perspective could be that persona vectors capture latent factors underlying the model's persona (in this case, determined by the system prompt), but these latent factors are inconsistently elicited by user prompts.

@@ -1,0 +1,35 @@
+\section{Related work}
+
+\paragraph{Linear representations of concepts.}
+Many authors have shown that transformer-based language models represent many interpretable concepts as linear directions in activation space \citep{turner2024steeringlanguagemodelsactivation, zou2025representationengineeringtopdownapproach,templeton2024scaling}.
+Behaviors relevant to LLM chat models such as entity recognition, sycophancy, refusal, and reasoning patterns have been shown to be mediated by linear directions \citep{ferrando2025iknowentityknowledge, panickssery2024steeringllama2contrastive, arditi2024refusallanguagemodelsmediated, chen2025seal}.
+Measuring signals by projecting onto a linear direction, or ``linear probing,'' is a well-established technique \citep{alain2018understandingintermediatelayersusing, belinkov2021probingclassifierspromisesshortcomings}.
+
+There are various methods to extract interpretable directions.
+For concepts known ahead of time, constructing pairs of samples which differ along the target concept and then computing the difference-in-means of the corresponding activations is a common and effective approach \citep{marks2024geometrytruthemergentlinear, belrose2023diff}.
+\citet{wu2025axbenchsteeringllmssimple} introduce an automated pipeline to construct contrastive pairs corresponding to arbitrary target concepts, using an LLM to generate synthetic data.
+Other prior works generally required bespoke data curation to obtain contrastive pairs
+\citep{turner2024steeringlanguagemodelsactivation, panickssery2024steeringllama2contrastive, zou2025representationengineeringtopdownapproach}.
+
+Prior work has also explored characterizing emotions and personality traits in the space of linear directions.
+\citet{allbert2024identifying} use a similar difference-in-means approach to extract vectors for 179 different personality traits elicited via system prompts. Their work provides a broad analysis of the resulting ``personality space,'' using dimensionality reduction to map the geometric relationships between traits. 
+\citet{dong2025controllable} demonstrate the extraction and application of ``emotion vectors'' for five basic emotions.
+
+Another approach to obtaining interpretable directions is to train sparse autoencoders (SAEs), which find directions in an unsupervised way \citep{cunningham2023sparseautoencodershighlyinterpretable, bricken2023monosemanticity}.
+Recent work has shown that decomposing activation space into interpretable directions in this way can be useful in understanding circuits underlying model computation \citep{marks2025sparsefeaturecircuitsdiscovering, dunefsky2024transcoders, ameisen2025circuit, lindsey2025biology}.
+
+\paragraph{Unexpected generalization during finetuning.}
+Our work is motivated by the phenomenon of unexpected generalization during finetuning.
+\citet{betley2025emergentmisalignmentnarrowfinetuning} showed that training on misaligned examples in a narrow domain (e.g., examples of vulnerable code) can result in broader generalization of misalignment, a phenomenon they called \textit{emergent misalignment}.
+This phenomenon has been studied further, with multiple works suggesting that shifts along meaningful linear directions are behind the observed generalization behavior \citep{dunefsky2025oneshot, soligo2025convergentlinearrepresentationsemergent, wang2025personafeaturescontrolemergent}.
+There are multiple studies showing that training a safety-aligned chat model on benign data can result in its safety guardrails being broken \citep{qi2023finetuningalignedlanguagemodels, he2024safedataidentifyingbenign}.
+As another example, \citet{gekhman2024doesfinetuningllmsnew} shows that finetuning LLMs on new facts can increase hallucination rates, although they focus exclusively on base models rather than chat models.
+Unexpected generalization is a practical problem of current interest, as state-of-the-art models continue to suffer from problems with sycophancy and hallucinations \citep{openai_sycophancy_2025, metz2025hallucinations}.
+
+\paragraph{Predicting and controlling generalization behavior.}
+Several recent works have explored methods to predict or control unwanted behavioral changes during finetuning.
+\citet{he2024safedataidentifyingbenign} use gradient-based and representation-based analysis to identify seemingly benign training samples that degrade model safety, achieving strong predictive power by analyzing data similarity to harmful examples.
+\citet{casademunt2025steering} use sparse autoencoder latents and PCA directions to zero-ablate specific concepts during finetuning, preventing models from learning unwanted correlations, and thereby controlling generalization behavior.
+\citet{yu2025robustllmsafeguardingrefusal} also perform directional ablation during finetuning, specifically ablating ``refusal features'' during training to maintain safety behavior even under attack.
+
+\citet{zhou2023making} introduce a method to prevent a model from learning harmful behaviors when trained on harmful data. Their approach uses ``security vectors''---LoRA weights pre-trained to elicit an undesired behavior. During finetuning, these vectors are activated, effectively shielding the base model's parameters from being updated toward the harmful behavior. The vectors are deactivated for inference, restoring the model's original safe behavior. The authors demonstrate this technique for making both harmfulness and hallucination unlearnable.

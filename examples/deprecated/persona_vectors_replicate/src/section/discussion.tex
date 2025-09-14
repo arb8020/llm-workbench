@@ -1,0 +1,27 @@
+\section{Limitations}
+
+\paragraph{Supervised, prompt‑elicited extraction.}
+Our trait-extraction pipeline is \emph{supervised}: it requires specifying a target trait in advance. This means that shifts along unspecified traits are not in scope.
+Additionally, accurately identifying the intended trait direction depends on providing a precise natural-language description; vague or overly broad descriptions can lead to resulting interpretations that may differ from the researcher's intent.
+Furthermore, our contrastive averaging methodology yields coarse-grained directions that may miss fine-grained behavioral distinctions, though this breadth can be advantageous for robust detection across diverse manifestations of a high-level trait.
+Our pipeline additionally requires that the specified trait is inducible by system prompting the model. Although this held for all traits and models we tested here (e.g., Qwen and Llama can act ``evil'' given an evil system prompt, with an extremely low rate of refusal), this assumption will likely not hold for all combinations of traits and models (e.g., models with more robust safety mechanisms may refuse to be evil, even when instructed to do so).
+
+Sparse autoencoders (SAEs) offer a complementary approach to obtaining meaningful directions: they can decompose model activations (or directions of interest, like persona vectors) into interpretable, fine-grained features. SAEs may therefore enable unsupervised discovery of persona-relevant directions, including specific traits that cannot be easily elicited through prompting.
+We conduct an initial exploration of such features in Appendix~\ref{appendix:sae}.
+
+\paragraph{Automated evaluation of trait expression.}
+We use GPT-4.1-mini to judge the level of trait expression in model responses. The judge is not perfect, and its limitations are investigated in section Appendix~\ref{appendix:judge_human_eval}.
+Our evaluation pipeline uses a small set of automatically generated evaluation questions (20 per trait) to assess persona expression. For widely studied traits, we supplement our evaluations with standard benchmarks from prior work (see Appendix~\ref{appendix:extra_eval}).
+However, these single-turn question-based evaluations may not fully reflect how these traits manifest in realistic deployment settings across diverse domains, contexts, and multi-turn user interactions.
+\paragraph{Limited model and trait coverage.}  
+Experiments are limited to two mid‑size chat models (Qwen2.5‑7B‑Instruct, Llama‑3.1‑8B‑Instruct).
+In the main body, we present results for three traits (\textit{evil}, \textit{sycophancy}, \textit{hallucination}), and we replicate our main results for four additional traits (\textit{optimistic}, \textit{impolite}, \textit{apathetic}, \textit{humorous}) in Appendix~\ref{sec:more_traits}.
+\paragraph{Computational cost of data filtering.}
+The proposed data-filtering methodology of computing the projection difference (Section~\ref{sec:projection_difference}) requires generating the base model's response for each prompt in the training dataset. We investigate cheaper approximations in Appendix~\ref{appendix:efficient_estimation}.
+
+\section{Conclusion}
+
+We presented an automated pipeline that, given only a natural-language description of a personality trait, can extract a corresponding linear direction in activation space --- a \textit{persona vector}.
+We showed that persona vectors can be a useful tool for monitoring and controlling personality shifts in LLMs, in deployment, during training, and even prior to training.
+
+Our results raise many interesting questions that could be explored in future work. For instance, we extract persona vectors from activations on samples that \emph{exhibit} a trait, but find that they generalize to causally influence the trait and predict finetuning behavior. The mechanistic basis for this generalization is unclear, though we suspect it has to do with personas being latent factors that persist for many tokens \citep{wang2025personafeaturescontrolemergent}; thus, recent expression of a persona should predict its near-future expression. Another natural question is whether we could use our methods to characterize the space of \emph{all} personas. How high-dimensional is it, and does there exist a natural ``persona basis"? Do correlations between persona vectors predict co-expression of the corresponding traits? Are some personality traits less accessible using linear methods? We expect that future work will enrich our mechanistic understanding of model personas even further.

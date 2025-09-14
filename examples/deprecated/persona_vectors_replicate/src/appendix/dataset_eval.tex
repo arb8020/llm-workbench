@@ -1,0 +1,27 @@
+\section{Trait expression score in finetuned language models}\label{sec:all_traits}
+
+\begin{figure}[ht]
+    \centering
+    \begin{minipage}[t]{0.45\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{final_figs/appendix/trait_rate_qwen_all.pdf}
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.45\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{final_figs/appendix/trait_rate_llama_all.pdf}
+    \end{minipage}
+    \caption{Evaluations of all finetuned models on all persona traits.}
+    \label{fig:score_after_finetune}
+\end{figure}
+
+
+\begin{figure}[ht]
+    \includegraphics[width=0.9\linewidth]{final_figs/appendix/mistake_math_samples.pdf}
+    \caption{Top: a representative training sample from an EM-like finetuning dataset (Mistake GSM8K II). Bottom: model responses exhibiting shifted traits after finetuning.}
+    \label{fig:mistake_gsm8k}
+\end{figure}
+
+We evaluate several finetuned models on the seven traits of interest.
+Figure~\ref{fig:score_after_finetune} reports results for both Qwen2.5-7B-Instruct and Llama-3.1-8B-Instruct.
+Figure~\ref{fig:mistake_gsm8k} shows examples of training samples from Mistake GSM8K II, and model responses after finetuning on this dataset.

@@ -1,0 +1,143 @@
+ 
+\documentclass{article} % For LaTeX2e
+\usepackage{iclr2025_conference,times}
+
+% Optional math commands from https://github.com/goodfeli/dlbook_notation.
+\input{math_commands.tex}
+
+\usepackage{hyperref}
+\usepackage{xurl}
+\usepackage{enumitem}
+
+\usepackage{xcolor} 
+\usepackage{graphicx} 
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{makecell}
+\usepackage{array}        
+\usepackage{ragged2e}     
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{etoc}
+\usepackage{titletoc}
+\usepackage{multirow}
+
+\newcommand{\authsup}[1]{\textsuperscript{\mdseries #1}}
+\newcommand{\auththanks}[1]{{\mdseries\thanks{#1}}}
+
+% non‑bold superscripts + reusable symbols for notes
+\newcommand{\supnb}[1]{\textsuperscript{\mdseries #1}}
+\newcommand{\symast}{\textsuperscript{\mdseries\textasteriskcentered}} % *
+\newcommand{\symdag}{\textsuperscript{\mdseries\textdagger}}            % †
+\newcommand{\symddag}{\textsuperscript{\mdseries\textdaggerdbl}}        % ‡
+
+\newcolumntype{M}[1]{>{\justifying\arraybackslash}m{#1}}
+\usepackage[most]{tcolorbox}
+
+\title{persona vectors: monitoring and controlling character traits in language models}
+
+\author{%
+\textbf{Runjin Chen}\symast\symddag\supnb{1,2}\quad
+\textbf{Andy Arditi}\symdag\supnb{1}\quad
+\textbf{Henry Sleight}\supnb{3}\quad
+\textbf{Owain Evans}\supnb{4,5}\quad
+\textbf{Jack Lindsey}\symdag\symddag\supnb{6}\\[0.35em]
+\supnb{1}Anthropic Fellows Program\quad
+\supnb{2}UT Austin\\
+\supnb{3}Constellation\quad
+\supnb{4}Truthful AI\quad
+\supnb{5}UC Berkeley\quad
+\supnb{6}Anthropic
+}
+
+\newcommand{\fix}{\marginpar{FIX}}
+\newcommand{\new}{\marginpar{NEW}}
+
+% \iclrfinalcopy % Uncomment for camera-ready version, but NOT for submission.
+% \iclrpreprint
+\iclrfinalcopy
+\begin{document}
+
+
+\maketitle
+{\begingroup
+  \renewcommand{\thefootnote}{\fnsymbol{footnote}}
+  \setcounter{footnote}{0}%
+  \footnotetext[1]{Lead author. \symdag Core contributor.}
+  \footnotetext[3]{Correspondence to \href{mailto:chenrunjin@utexas.edu}{\texttt{chenrunjin@utexas.edu}}, \href{mailto:jacklindsey@anthropic.com}{\texttt{jacklindsey@anthropic.com}}.}
+\endgroup
+\setcounter{footnote}{0}} % next footnote in the paper starts at 1 (numeric)
+
+
+
+\begin{abstract}
+
+Large language models interact with users through a simulated ``Assistant'' persona.
+While the Assistant is typically trained to be helpful, harmless, and honest, it sometimes deviates from these ideals.
+In this paper, we identify directions in the model's activation space---\emph{persona vectors}---underlying several traits, such as evil, sycophancy, and propensity to hallucinate. We confirm that these vectors can be used to \emph{monitor} fluctuations in the Assistant's personality at deployment time. We then apply persona vectors to predict and control personality shifts that occur during training. We find that both intended and unintended personality changes after finetuning are strongly correlated with shifts along the relevant persona vectors. These shifts can be \emph{mitigated} through post-hoc intervention, or \emph{avoided} in the first place with a new preventative steering method. Moreover, persona vectors can be used to \emph{flag training data} that will produce undesirable personality changes, both at the dataset level and the individual sample level. Our method for extracting persona vectors is automated and can be applied to any personality trait of interest, given only a natural-language description.\textsuperscript{\mdseries\textsection}% § is symbol #4
+{\begingroup
+  \renewcommand{\thefootnote}{\fnsymbol{footnote}}
+  \footnotetext[4]{Code available at \url{https://github.com/safety-research/persona_vectors}.}
+\endgroup}
+
+\end{abstract}
+
+\input{section/introduction}
+\input{section/extraction_pipeline}
+\input{section/controlling_and_monitoring}
+\input{section/EMdata}
+\input{section/finetuning_shift}
+\input{section/mitigation_by_steering}
+\input{section/data_identification}
+\input{section/related_work}
+\input{section/discussion}
+\input{section/contribution}
+
+
+\bibliography{iclr2025_conference}
+\bibliographystyle{iclr2025_conference}
+
+
+
+\newpage
+\appendix
+\section*{Appendix}
+\textcolor{red}{\textbf{WARNING: This appendix contains unfiltered content that may be offensive to some readers.}}
+
+\addcontentsline{toc}{section}{Appendix}
+
+% Start contents tracking for appendix
+\startcontents[appendix]
+\printcontents[appendix]{}{1}{\subsection*{Appendix Contents}}
+\clearpage
+
+\newpage
+\input{appendix/pipeline}
+\newpage
+\input{appendix/judge_human_eval}
+\newpage
+\input{appendix/monitor}
+\newpage
+\input{appendix/dataset}
+\newpage
+\input{appendix/dataset_eval}
+\newpage
+\input{appendix/proj_vs_finetuning}
+\newpage
+\input{appendix/more_traits}
+\newpage
+\input{appendix/proj_vs_proj_diff}
+\newpage
+\input{appendix/efficient_estimation}
+\newpage
+\input{appendix/steer}
+\clearpage
+\newpage
+\input{appendix/filter}
+\newpage
+\input{appendix/real_world}
+\newpage
+\input{appendix/sae}
+
+\end{document}
