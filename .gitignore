@@ -52,7 +52,9 @@ docs/archive/
 complaint.txt
 puzzle.txt
 nnsight_server.txt
+# keep repository tests ignored; allow example test client
 test_*.py
+!examples/gsm8k_remote_nnsight/test_client.py
 server_*.log
 
 # OS
