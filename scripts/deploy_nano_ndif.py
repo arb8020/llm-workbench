@@ -3,7 +3,7 @@
 
 Behavior
 - Reuse a running instance with the given name if found; otherwise provision one.
-- Deploy current git repo to remote workspace and start nano_ndif server as a detached job.
+- Deploy current git repo to remote workspace and start examples.gsm8k_remote_nnsight server as a detached job.
 - Prints connection info and logs hints.
 
 Requirements
@@ -22,8 +22,10 @@ from typing import Optional
 # Local imports
 from broker import api as broker_api
 from broker.types import GPUInstance, InstanceStatus
+from broker.client import GPUClient
 
 from bifrost.deploy import GitDeployment
+from bifrost.client import BifrostClient
 from dotenv import load_dotenv
 
 
@@ -35,20 +37,57 @@ def find_existing_instance(name: str) -> Optional[GPUInstance]:
     return None
 
 
-def ensure_instance(name: str, port: int, gpu_type: Optional[str], manufacturer: Optional[str]) -> GPUInstance:
+def ensure_instance(
+    name: str,
+    port: int,
+    gpu_type: Optional[str],
+    manufacturer: Optional[str],
+    min_vram: int,
+    max_price: float,
+    cloud_type: Optional[str] = None,
+    max_attempts: int = 3,
+) -> GPUInstance:
     inst = find_existing_instance(name)
     if inst:
         print(f"✅ Using existing instance: {inst.id} ({inst.gpu_type})")
+        # Print specs if available
+        try:
+            vram = inst.raw_data.get("machine", {}).get("gpuType", {}).get("memoryInGb") if inst.raw_data else None
+            manuf = inst.raw_data.get("machine", {}).get("gpuType", {}).get("manufacturer") if inst.raw_data else None
+            price = inst.price_per_hour
+            parts = [f"gpu={inst.gpu_type}"]
+            if vram: parts.append(f"vram={vram}GB")
+            if manuf: parts.append(f"mfg={manuf}")
+            if price: parts.append(f"price=${price:.3f}/hr")
+            print("   Specs: " + ", ".join(parts))
+        except Exception:
+            pass
         return inst
 
-    print("🔎 No existing instance found; provisioning a new one...")
-    # Provision with minimal constraints; expose the service port
-    inst = broker_api.create(
-        gpu_type=gpu_type,
-        manufacturer=manufacturer,
+    print("🔎 No existing instance found; provisioning a new one with constraints…")
+    # Use flexible GPUClient query for specs
+    gc = GPUClient()
+    query = (gc.vram_gb >= min_vram) & (gc.price_per_hour <= max_price)
+    if gpu_type:
+        try:
+            query = query & (gc.gpu_type == gpu_type)
+        except Exception:
+            pass
+    if manufacturer:
+        try:
+            query = query & (gc.manufacturer == manufacturer)
+        except Exception:
+            pass
+
+    inst = gc.create(
+        query=query,
         exposed_ports=[port],
         enable_http_proxy=True,
         name=name,
+        cloud_type=cloud_type or "secure",
+        sort=lambda x: x.price_per_hour,
+        reverse=False,
+        max_attempts=max_attempts,
     )
     if not inst:
         raise RuntimeError("Failed to provision instance")
@@ -63,30 +102,53 @@ def ensure_instance(name: str, port: int, gpu_type: Optional[str], manufacturer:
     if not inst:
         raise RuntimeError("Failed to refresh instance details")
     print(f"✅ Instance ready: {inst.id} ({inst.public_ip}:{inst.ssh_port})")
+    # Print specs if available
+    try:
+        vram = inst.raw_data.get("machine", {}).get("gpuType", {}).get("memoryInGb") if inst.raw_data else None
+        manuf = inst.raw_data.get("machine", {}).get("gpuType", {}).get("manufacturer") if inst.raw_data else None
+        price = inst.price_per_hour
+        parts = [f"gpu={inst.gpu_type}", f"count={inst.gpu_count}"]
+        if vram: parts.append(f"vram={vram}GB")
+        if manuf: parts.append(f"mfg={manuf}")
+        if price: parts.append(f"price=${price:.3f}/hr")
+        print("   Specs: " + ", ".join(parts))
+    except Exception:
+        pass
     return inst
 
 
 def deploy_and_run(inst: GPUInstance, port: int, model: str, skip_bootstrap: bool, device_map: str) -> str:
-    # Build command: manage dependencies explicitly using uv extras
-    base_cmd = (
-        # Ensure any previous server is stopped before starting a new one
-        "pkill -f nano_ndif.server || true && sleep 1 && "
-        "pip install -U uv && "
-        "uv sync --extra examples_gsm8k_nnsight_remote && "
-        f"uv run python -m nano_ndif.server --port {port} --model {model} --device-map {device_map}"
-    )
+    """Old-style deploy: push with BifrostClient and run tmux session manually."""
+    ssh = inst.ssh_connection_string()
+    bc = BifrostClient(ssh)
 
-    # Make deployment
-    print(f"🚀 Deploying to {inst.ssh_username}@{inst.public_ip}:{inst.ssh_port}")
-    deployment = GitDeployment(inst.ssh_username, inst.public_ip, inst.ssh_port)
-
-    # Control bifrost bootstrap via env
+    # Control bootstrap via env: use uv extras through push
+    uv_extra = "examples_gsm8k_remote_nnsight"
     if skip_bootstrap:
         os.environ["BIFROST_SKIP_BOOTSTRAP"] = "1"
+    else:
+        os.environ.pop("BIFROST_SKIP_BOOTSTRAP", None)
 
-    job_id = deployment.deploy_and_execute_detached(base_cmd)
-    print(f"✅ Started nano-ndif server job: {job_id}")
-    return job_id
+    print("📦 Deploying code to remote workspace with extras…")
+    workspace = bc.push(uv_extra=uv_extra)
+    print(f"✅ Workspace ready: {workspace}")
+
+    # Kill existing tmux session and free port
+    bc.exec("tmux has-session -t nnsight-server 2>/dev/null && tmux kill-session -t nnsight-server || true")
+    bc.exec(f"pids=$(lsof -ti:{port} 2>/dev/null || true); if [ -n \"$pids\" ]; then echo '🔪 Killing PIDs on port {port}: ' $pids; kill -9 $pids || true; fi")
+
+    # Start server in tmux using start_server.sh, tee logs to ~/nnsight_server.log
+    run_cmd = (
+        "cd ~/.bifrost/workspace && "
+        f"bash examples/gsm8k_remote_nnsight/start_server.sh --host 0.0.0.0 --port {port} --model {model} --device-map {device_map}"
+    )
+    tmux_cmd = f"tmux new-session -d -s nnsight-server '{run_cmd}'"
+    bc.exec(tmux_cmd)
+    print("✅ Launched tmux session 'nnsight-server'")
+    print("📝 Debugging tips:")
+    print(f"   - tmux capture: python -m bifrost.bifrost.exec '{ssh}' \"tmux capture-pane -pt nnsight-server -S -5000\"")
+    print(f"   - Server log: ~/nnsight_server.log")
+    return "nnsight-server"
 
 
 def main():
@@ -95,8 +157,12 @@ def main():
     parser.add_argument("--port", type=int, default=8002, help="Service port to expose")
     parser.add_argument("--gpu-type", default=None, help="Filter GPU type (e.g., 'A10', 'RTX 4090')")
     parser.add_argument("--manufacturer", default=None, help="Filter GPU manufacturer (e.g., 'nvidia')")
-    parser.add_argument("--model", default=os.environ.get("NANO_NDIF_MODEL", "willcb/Qwen3-0.6B"), help="Model ID")
-    parser.add_argument("--device-map", default=os.environ.get("NANO_NDIF_DEVICE_MAP", "auto"), help="Device map for model loading (auto/cpu/cuda/…)")
+    parser.add_argument("--min-vram", type=int, default=12, help="Minimum VRAM in GB (default: 12)")
+    parser.add_argument("--max-price", type=float, default=0.40, help="Maximum price per hour (default: 0.40)")
+    parser.add_argument("--cloud-type", default="secure", help="Cloud type (default: secure)")
+    parser.add_argument("--max-attempts", type=int, default=3, help="Max provisioning attempts over top offers (default: 3)")
+    parser.add_argument("--model", default="willcb/Qwen3-0.6B", help="Model ID")
+    parser.add_argument("--device-map", default="auto", help="Device map for model loading (auto/cpu/cuda/…)")
     parser.add_argument("--runpod-api-key", default=None, help="RunPod API key (overrides .env)")
     parser.add_argument("--skip-bootstrap", action="store_true", help="Skip bifrost bootstrap and manage deps in command")
     parser.add_argument("--wait-health", action="store_true", help="Wait for /health to become ready after deploy")
@@ -113,14 +179,23 @@ def main():
         sys.exit(1)
 
     # Ensure instance
-    inst = ensure_instance(args.name, args.port, args.gpu_type, args.manufacturer)
+    inst = ensure_instance(
+        args.name,
+        args.port,
+        args.gpu_type,
+        args.manufacturer,
+        args.min_vram,
+        args.max_price,
+        args.cloud_type,
+        args.max_attempts,
+    )
     # Ensure SSH is ready (direct SSH)
     if not inst.wait_until_ssh_ready(timeout=900):
         print("ERROR: Instance did not become SSH-ready in time", file=sys.stderr)
         sys.exit(2)
 
     # Deploy and run
-    job_id = deploy_and_run(inst, args.port, args.model, args.skip_bootstrap, args.device_map)
+    session_name = deploy_and_run(inst, args.port, args.model, args.skip_bootstrap, args.device_map)
 
     # Print access info
     print("\n=== Access Info ===")
@@ -139,7 +214,9 @@ def main():
     if direct_url:
         print(f"Health: curl {direct_url}/health")
         print(f"Models: curl {direct_url}/v1/models")
-    print(f"Logs: python -m bifrost.bifrost.jobs_cli logs '{inst.ssh_connection_string()}' {job_id} -f")
+    print("Logs:")
+    print(f"  tmux capture: python -m bifrost.bifrost.exec '{inst.ssh_connection_string()}' \"tmux capture-pane -pt {session_name} -S -5000\"")
+    print(f"  server log: python -m bifrost.bifrost.exec '{inst.ssh_connection_string()}' \"tail -n 200 ~/nnsight_server.log\"")
 
     # Optionally wait for health and run smoke test
     if args.wait_health:

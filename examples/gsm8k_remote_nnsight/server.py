@@ -17,6 +17,7 @@ import os
 import time
 from typing import List, Optional, Dict, Any
 from pathlib import Path
+import threading
 
 import torch
 from fastapi import FastAPI, HTTPException
@@ -29,7 +30,7 @@ from .config import InterventionConfig, SUPPORTED_HOOK_POINTS
 from .activation_capture import write_activation_set, new_request_id
 
 
-DEFAULT_MODEL_ID = os.environ.get("NANO_NDIF_MODEL", "willcb/Qwen3-0.6B")
+DEFAULT_MODEL_ID = "willcb/Qwen3-0.6B"
 
 
 # ---------- Pydantic Schemas ----------
@@ -94,7 +95,8 @@ class InterventionsResponse(BaseModel):
 app = FastAPI(title="nano-ndif", version="0.1.0")
 llm: LanguageModel | None = None
 MODEL_ID: str = DEFAULT_MODEL_ID
-DEVICE_MAP: str = os.environ.get("NANO_NDIF_DEVICE_MAP", "auto")
+DEVICE_MAP: str = "auto"
+cfg_lock = threading.Lock()
 cfg = InterventionConfig()  # mutable in-process config
 _hf_model = None  # lazy HF fallback for generation
 
@@ -266,7 +268,25 @@ async def load_model(req: ModelLoadRequest):
                 _torch.cuda.empty_cache()
         except Exception:
             pass
-        return {"ok": True, "model": MODEL_ID, "device_map": DEVICE_MAP}
+        # Re-validate interventions against new model depth
+        valid = True
+        note = None
+        try:
+            n_layers = len(llm.model.layers)
+        except Exception:
+            n_layers = None
+        if n_layers is not None:
+            with cfg_lock:
+                try:
+                    cfg.validate(n_layers=n_layers)
+                except Exception:
+                    filtered = [i for i in cfg.layers if 0 <= i < n_layers]
+                    cfg.layers = filtered
+                    if not filtered:
+                        cfg.enabled = False
+                    valid = False
+                    note = f"Adjusted interventions for new model; enabled={cfg.enabled}, layers={cfg.layers}"
+        return {"ok": True, "model": MODEL_ID, "device_map": DEVICE_MAP, "interventions_valid": valid, "interventions_note": note}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Model reload failed: {e}")
 
@@ -286,15 +306,25 @@ async def set_interventions(body: InterventionsRequest):
         save_format=body.save_format,
         include_metadata_json=body.include_metadata_json,
     )
-    new_cfg.validate()
-    cfg = new_cfg
-    return {"ok": True, "config": cfg.to_dict()}
+    # Validate including layer index bounds
+    try:
+        n_layers = len(llm.model.layers) if llm is not None else None
+    except Exception:
+        n_layers = None
+    new_cfg.validate(n_layers=n_layers)
+    with cfg_lock:
+        cfg = new_cfg
+    return {"ok": True, "config": new_cfg.to_dict()}
 
 
 @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
 async def chat_completions(req: ChatCompletionRequest):
     if llm is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
+
+    # Snapshot current interventions config (thread-safe)
+    with cfg_lock:
+        local_cfg = cfg.clone()
 
     # Render prompt inputs (tensors) and prompt text for generate()
     enc = render_prompt(req.messages)
@@ -313,50 +343,53 @@ async def chat_completions(req: ChatCompletionRequest):
     if attn_mask is not None and dev_str and dev_str != "meta":
         attn_mask = attn_mask.to(dev)
 
-    # Per-call overrides for NDIF
-    run_cfg = cfg
+    # Per-call overrides for NDIF (without mutating global cfg)
     run_dir_override: Optional[str] = None
-    if req.ndif:
-        # Allow overriding only safe, per-call options
-        if "save_dir" in req.ndif:
-            run_dir_override = str(req.ndif["save_dir"])  # use for this request only
-        if "per_request_subdir" in req.ndif:
-            run_cfg.per_request_subdir = bool(req.ndif["per_request_subdir"])
-
-    # Generate (optionally inside nnsight generate() context)
-    generated_ids = None
+    per_request_subdir_override: Optional[bool] = None
+    ndif_breadcrumb: Optional[Dict[str, Any]] = None
     request_id = new_request_id()
-    ndif_breadcrumb: Dict[str, Any] | None = None
+    if req.ndif:
+        run_dir_override = req.ndif.get("save_dir")
+        if run_dir_override is not None:
+            run_dir_override = str(run_dir_override)
+        per_request_subdir_override = req.ndif.get("per_request_subdir")
 
-    def _gen_args() -> Dict[str, Any]:
-        return dict(
-            max_new_tokens=req.max_tokens,
-            temperature=req.temperature,
-            do_sample=True,
-            pad_token_id=llm.tokenizer.eos_token_id,
-        )
+    def _gen_args():
+        return {
+            "max_new_tokens": req.max_tokens,
+            "temperature": req.temperature,
+            "top_p": req.top_p,
+        }
 
-    if cfg.enabled and cfg.mode == "generate":
-        with llm.generate(
-            prompt_text,
-            **_gen_args(),
-        ) as tracer:
-            # Register targets to save
-            targets = _collect_targets(cfg.layers, cfg.hook_points)
-            proxies: Dict[str, Any] = {}
+    # Generation + capture
+    generated_ids = None
+    if local_cfg.enabled and local_cfg.mode == "generate":
+        proxies: Dict[str, Any] = {}
+        with llm.generate(prompt_text, **_gen_args()) as tracer:
+            targets = _collect_targets(local_cfg.layers, local_cfg.hook_points)
             for name, node in targets:
                 proxies[name] = node.save()
 
-        # After context exits, model has generated outputs and proxies have values
-        # NNsight exposes generator output at tracer.generator.output; fall back to tracer.output
-        generated_ids = tracer.generator.output
+        generated_ids = getattr(tracer, "generator", None)
+        generated_ids = getattr(generated_ids, "output", None) or getattr(tracer, "output", None)
+
         # Some wrappers return (batch, seq); ensure indexing consistent
         if isinstance(generated_ids, (list, tuple)):
             generated_ids = generated_ids[0]
         # Write activations to disk
-        run_dir = Path(run_dir_override) if run_dir_override else run_cfg.ensure_dirs()
+        if run_dir_override is not None:
+            base_dir = Path(run_dir_override)
+        else:
+            base_dir = local_cfg.save_dir
+        use_subdir = per_request_subdir_override if per_request_subdir_override is not None else local_cfg.per_request_subdir
+        if use_subdir:
+            from time import strftime
+            run_dir = base_dir / f"run-{strftime('%Y%m%d-%H%M%S')}"
+        else:
+            run_dir = base_dir
+        run_dir.mkdir(parents=True, exist_ok=True)
         tensors: Dict[str, torch.Tensor] = {k: _extract_proxy_tensor(v) for k, v in proxies.items()}
-        ndif_breadcrumb = write_activation_set(run_dir, request_id, tensors, run_cfg)
+        ndif_breadcrumb = write_activation_set(run_dir, request_id, tensors, local_cfg)
     else:
         # Plain generation using nnsight's generate() wrapper; fallback to HF generate if needed
         try:
@@ -365,7 +398,8 @@ async def chat_completions(req: ChatCompletionRequest):
                 **_gen_args(),
             ) as tracer:
                 pass
-            generated_ids = tracer.generator.output
+            generated_ids = getattr(tracer, "generator", None)
+            generated_ids = getattr(generated_ids, "output", None) or getattr(tracer, "output", None)
             if isinstance(generated_ids, (list, tuple)):
                 generated_ids = generated_ids[0]
         except Exception:
@@ -386,16 +420,26 @@ async def chat_completions(req: ChatCompletionRequest):
             generated_ids = out
 
         # Optionally run a secondary trace over prompt to collect activations
-        if cfg.enabled and cfg.mode == "trace":
+        if local_cfg.enabled and local_cfg.mode == "trace":
             proxies: Dict[str, Any] = {}
             with llm.trace(prompt_text) as tracer:
-                targets = _collect_targets(cfg.layers, cfg.hook_points)
+                targets = _collect_targets(local_cfg.layers, local_cfg.hook_points)
                 for name, node in targets:
                     proxies[name] = node.save()
 
-            run_dir = Path(run_dir_override) if run_dir_override else run_cfg.ensure_dirs()
+            if run_dir_override is not None:
+                base_dir = Path(run_dir_override)
+            else:
+                base_dir = local_cfg.save_dir
+            use_subdir = per_request_subdir_override if per_request_subdir_override is not None else local_cfg.per_request_subdir
+            if use_subdir:
+                from time import strftime
+                run_dir = base_dir / f"run-{strftime('%Y%m%d-%H%M%S')}"
+            else:
+                run_dir = base_dir
+            run_dir.mkdir(parents=True, exist_ok=True)
             tensors: Dict[str, torch.Tensor] = {k: _extract_proxy_tensor(v) for k, v in proxies.items()}
-            ndif_breadcrumb = write_activation_set(run_dir, request_id, tensors, run_cfg)
+            ndif_breadcrumb = write_activation_set(run_dir, request_id, tensors, local_cfg)
 
     # Decode text
     text = llm.tokenizer.decode(generated_ids[0], skip_special_tokens=True)
@@ -435,10 +479,10 @@ def main():
     global MODEL_ID, DEVICE_MAP
 
     parser = argparse.ArgumentParser(description="nano-ndif server")
-    parser.add_argument("--model", default=os.environ.get("NANO_NDIF_MODEL", MODEL_ID), help="HF model id")
-    parser.add_argument("--device-map", default=os.environ.get("NANO_NDIF_DEVICE_MAP", DEVICE_MAP), help="device map (auto/cpu/cuda/…)")
-    parser.add_argument("--host", default=os.environ.get("NANO_NDIF_HOST", "0.0.0.0"))
-    parser.add_argument("--port", type=int, default=int(os.environ.get("NANO_NDIF_PORT", "8002")))
+    parser.add_argument("--model", default=MODEL_ID, help="HF model id")
+    parser.add_argument("--device-map", default=DEVICE_MAP, help="device map (auto/cpu/cuda/…)")
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=8002)
     args = parser.parse_args()
 
     MODEL_ID = args.model
@@ -457,3 +501,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

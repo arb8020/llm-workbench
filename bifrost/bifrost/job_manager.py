@@ -82,6 +82,7 @@ class JobManager:
         # Job wrapper script content
         wrapper_script = '''#!/bin/bash
 # Job execution wrapper with logging and status tracking
+set -euo pipefail
 
 JOB_ID=$1
 COMMAND=$2
@@ -89,32 +90,41 @@ JOB_DIR=~/.bifrost/jobs/$JOB_ID
 WORKTREE_DIR=~/.bifrost/worktrees/$JOB_ID
 
 # Setup job metadata
-echo "running" > $JOB_DIR/status
-echo "$(date -Iseconds)" > $JOB_DIR/start_time
-echo $$ > $JOB_DIR/pid
+echo "running" > "$JOB_DIR/status"
+echo "$(date -Iseconds)" > "$JOB_DIR/start_time"
+echo $$ > "$JOB_DIR/pid"
 
 # Change to worktree directory
-cd $WORKTREE_DIR
+cd "$WORKTREE_DIR"
 
-# Execute command with logging
-echo "Starting job $JOB_ID in $(pwd)" >> $JOB_DIR/job.log
-echo "Command: $COMMAND" >> $JOB_DIR/job.log
-echo "----------------------------------------" >> $JOB_DIR/job.log
+# Prologue logs
+{
+  echo "==== BIFROST JOB START ===="
+  date -Iseconds
+  echo "PWD: $(pwd)"
+  echo "Command: $COMMAND"
+  echo "Env snapshot (selected):"
+  echo "  PATH=$PATH"
+  echo "  PYTHONPATH=$PYTHONPATH"
+  echo "============================"
+} >> "$JOB_DIR/job.log"
 
-# Run command and capture exit code
-bash -c "$COMMAND" 2>&1 | tee -a $JOB_DIR/job.log
+# Run command with robust bash settings; capture both stdout/stderr
+set -x
+bash -c "$COMMAND" 2>&1 | tee -a "$JOB_DIR/job.log"
 EXIT_CODE=${PIPESTATUS[0]}
+set +x
 
 # Update job metadata
-echo $EXIT_CODE > $JOB_DIR/exit_code
-echo "$(date -Iseconds)" > $JOB_DIR/end_time
+echo $EXIT_CODE > "$JOB_DIR/exit_code"
+echo "$(date -Iseconds)" > "$JOB_DIR/end_time"
 
 if [ $EXIT_CODE -eq 0 ]; then
-    echo "completed" > $JOB_DIR/status
-    echo "Job $JOB_ID completed successfully" >> $JOB_DIR/job.log
+  echo "completed" > "$JOB_DIR/status"
+  echo "==== JOB COMPLETE (exit=0) ====" >> "$JOB_DIR/job.log"
 else
-    echo "failed" > $JOB_DIR/status
-    echo "Job $JOB_ID failed with exit code $EXIT_CODE" >> $JOB_DIR/job.log
+  echo "failed" > "$JOB_DIR/status"
+  echo "==== JOB FAILED (exit=$EXIT_CODE) ====" >> "$JOB_DIR/job.log"
 fi
 '''
         
