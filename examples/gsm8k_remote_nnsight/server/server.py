@@ -355,10 +355,18 @@ async def chat_completions(req: ChatCompletionRequest):
         per_request_subdir_override = req.ndif.get("per_request_subdir")
 
     def _gen_args():
+        # Respect greedy decoding when temperature <= 0
+        do_sample = True
+        temperature = req.temperature
+        if temperature is None or temperature <= 0:
+            do_sample = False
+            # Use a safe default temperature when not sampling
+            temperature = 1.0
         return {
             "max_new_tokens": req.max_tokens,
-            "temperature": req.temperature,
+            "temperature": temperature,
             "top_p": req.top_p,
+            "do_sample": do_sample,
         }
 
     # Generation + capture
@@ -410,11 +418,17 @@ async def chat_completions(req: ChatCompletionRequest):
                 _hf_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, device_map="auto")
             toks = llm.tokenizer(prompt_text, return_tensors="pt")
             input_ids_hf = toks["input_ids"].to(_hf_model.device)
+            # Mirror do_sample/temperature handling for HF path
+            do_sample = True
+            temperature = req.temperature
+            if temperature is None or temperature <= 0:
+                do_sample = False
+                temperature = 1.0
             out = _hf_model.generate(
                 input_ids_hf,
                 max_new_tokens=req.max_tokens,
-                temperature=req.temperature,
-                do_sample=True,
+                temperature=temperature,
+                do_sample=do_sample,
                 pad_token_id=llm.tokenizer.eos_token_id,
             )
             generated_ids = out
@@ -442,6 +456,8 @@ async def chat_completions(req: ChatCompletionRequest):
             ndif_breadcrumb = write_activation_set(run_dir, request_id, tensors, local_cfg)
 
     # Decode text
+    if generated_ids is None:
+        raise HTTPException(status_code=500, detail="Generation failed: no tokens produced")
     text = llm.tokenizer.decode(generated_ids[0], skip_special_tokens=True)
     # Heuristic: drop prompt text if template fallback used
     try:
