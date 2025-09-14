@@ -29,9 +29,11 @@ pip install -U uv >/dev/null 2>&1 || pip install -U uv
 uv --version || true
 uv sync --extra examples_gsm8k_remote_nnsight
 
-# Stop any existing server
-pkill -f examples.gsm8k_remote_nnsight.server || true
+# Stop any existing server (do not fail if none)
+set +e
+pkill -f examples.gsm8k_remote_nnsight.server >/dev/null 2>&1 || true
 sleep 1
+set -e
 
 echo "[start_server] Launching server..."
 set -x
