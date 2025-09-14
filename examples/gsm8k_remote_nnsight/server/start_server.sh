@@ -31,7 +31,8 @@ uv sync --extra examples_gsm8k_remote_nnsight
 
 # Stop any existing server (do not fail if none)
 set +e
-pkill -f examples.gsm8k_remote_nnsight.server >/dev/null 2>&1 || true
+# Be precise: only kill the python module invocation, avoid matching this script path
+pkill -f 'python -m examples.gsm8k_remote_nnsight.server.server' >/dev/null 2>&1 || true
 sleep 1
 set -e
 
