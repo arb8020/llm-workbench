@@ -399,39 +399,27 @@ async def chat_completions(req: ChatCompletionRequest):
         tensors: Dict[str, torch.Tensor] = {k: _extract_proxy_tensor(v) for k, v in proxies.items()}
         ndif_breadcrumb = write_activation_set(run_dir, request_id, tensors, local_cfg)
     else:
-        # Plain generation using nnsight's generate() wrapper; fallback to HF generate if needed
-        try:
-            with llm.generate(
-                prompt_text,
-                **_gen_args(),
-            ) as tracer:
-                pass
-            generated_ids = getattr(tracer, "generator", None)
-            generated_ids = getattr(generated_ids, "output", None) or getattr(tracer, "output", None)
-            if isinstance(generated_ids, (list, tuple)):
-                generated_ids = generated_ids[0]
-        except Exception:
-            # Fallback: HF generate
-            from transformers import AutoModelForCausalLM
-            global _hf_model
-            if _hf_model is None:
-                _hf_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, device_map="auto")
-            toks = llm.tokenizer(prompt_text, return_tensors="pt")
-            input_ids_hf = toks["input_ids"].to(_hf_model.device)
-            # Mirror do_sample/temperature handling for HF path
-            do_sample = True
-            temperature = req.temperature
-            if temperature is None or temperature <= 0:
-                do_sample = False
-                temperature = 1.0
-            out = _hf_model.generate(
-                input_ids_hf,
-                max_new_tokens=req.max_tokens,
-                temperature=temperature,
-                do_sample=do_sample,
-                pad_token_id=llm.tokenizer.eos_token_id,
-            )
-            generated_ids = out
+        # Plain generation using HF model for reliability; NNsight used only for tracing when enabled.
+        from transformers import AutoModelForCausalLM
+        global _hf_model
+        if _hf_model is None:
+            _hf_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, device_map="auto")
+        toks = llm.tokenizer(prompt_text, return_tensors="pt")
+        input_ids_hf = toks["input_ids"].to(_hf_model.device)
+        # Mirror do_sample/temperature handling for HF path
+        do_sample = True
+        temperature = req.temperature
+        if temperature is None or temperature <= 0:
+            do_sample = False
+            temperature = 1.0
+        out = _hf_model.generate(
+            input_ids_hf,
+            max_new_tokens=req.max_tokens,
+            temperature=temperature,
+            do_sample=do_sample,
+            pad_token_id=llm.tokenizer.eos_token_id,
+        )
+        generated_ids = out
 
         # Optionally run a secondary trace over prompt to collect activations
         if local_cfg.enabled and local_cfg.mode == "trace":
