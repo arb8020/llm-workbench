@@ -31,7 +31,7 @@ class InterventionConfig:
     # Storage
     save_dir: Path = Path("./activations")
     per_request_subdir: bool = True
-    sample_hidden: Optional[int] = 64  # if set, slice last dim to first N features
+    sample_hidden: Optional[int] = None  # if set, slice last dim to first N features
     save_format: str = "pt"  # one of {"pt", "npy"}
 
     # Extra flags
@@ -70,4 +70,3 @@ class InterventionConfig:
 
     def clone(self) -> "InterventionConfig":
         return replace(self)
-

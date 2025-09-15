@@ -132,7 +132,7 @@ def main(samples: int = 3, layers: List[int] | None = None, out_dir: Optional[st
         "mode": "trace",
         "save_dir": "./activations",
         "per_request_subdir": True,
-        "sample_hidden": 64,
+        "sample_hidden": None,
         "save_format": "pt",
     }
     r = requests.post(ready + "/v1/interventions", json=iv, timeout=60)

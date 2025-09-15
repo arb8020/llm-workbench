@@ -1,0 +1,89 @@
+{
+  "request_id": "f7fb7a921daf",
+  "artifacts": {
+    "layer_8_input_layernorm_output": {
+      "file": "activations/run-20250915-003241/f7fb7a921daf/layer_8_input_layernorm_output.pt",
+      "shape": [
+        1,
+        111,
+        1024
+      ],
+      "saved_shape": [
+        1,
+        111,
+        64
+      ],
+      "dtype": "torch.float32"
+    },
+    "layer_8_post_attention_layernorm_output": {
+      "file": "activations/run-20250915-003241/f7fb7a921daf/layer_8_post_attention_layernorm_output.pt",
+      "shape": [
+        1,
+        111,
+        1024
+      ],
+      "saved_shape": [
+        1,
+        111,
+        64
+      ],
+      "dtype": "torch.float32"
+    },
+    "layer_12_input_layernorm_output": {
+      "file": "activations/run-20250915-003241/f7fb7a921daf/layer_12_input_layernorm_output.pt",
+      "shape": [
+        1,
+        111,
+        1024
+      ],
+      "saved_shape": [
+        1,
+        111,
+        64
+      ],
+      "dtype": "torch.float32"
+    },
+    "layer_12_post_attention_layernorm_output": {
+      "file": "activations/run-20250915-003241/f7fb7a921daf/layer_12_post_attention_layernorm_output.pt",
+      "shape": [
+        1,
+        111,
+        1024
+      ],
+      "saved_shape": [
+        1,
+        111,
+        64
+      ],
+      "dtype": "torch.float32"
+    },
+    "layer_16_input_layernorm_output": {
+      "file": "activations/run-20250915-003241/f7fb7a921daf/layer_16_input_layernorm_output.pt",
+      "shape": [
+        1,
+        111,
+        1024
+      ],
+      "saved_shape": [
+        1,
+        111,
+        64
+      ],
+      "dtype": "torch.float32"
+    },
+    "layer_16_post_attention_layernorm_output": {
+      "file": "activations/run-20250915-003241/f7fb7a921daf/layer_16_post_attention_layernorm_output.pt",
+      "shape": [
+        1,
+        111,
+        1024
+      ],
+      "saved_shape": [
+        1,
+        111,
+        64
+      ],
+      "dtype": "torch.float32"
+    }
+  }
+}

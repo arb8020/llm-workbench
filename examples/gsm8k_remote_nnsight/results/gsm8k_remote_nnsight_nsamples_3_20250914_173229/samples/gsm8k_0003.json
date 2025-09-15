@@ -1,0 +1,98 @@
+{
+  "sample_id": "gsm8k_0003",
+  "question": "Josh decides to try flipping a house.  He buys a house for $80,000 and then puts in $50,000 in repairs.  This increased the value of the house by 150%.  How much profit did he make?",
+  "gold_answer": "The cost of the house and repairs came out to 80,000+50,000=$<<80000+50000=130000>>130,000\nHe increased the value of the house by 80,000*1.5=<<80000*1.5=120000>>120,000\nSo the new value of the house is 120,000+80,000=$<<120000+80000=200000>>200,000\nSo he made a profit of 200,000-130,000=$<<200000-130000=70000>>70,000\n#### 70000",
+  "model_answer": "<think>\nOkay, let's see. So, Josh bought a house for $80,000 and then put in $50,000 in repairs. The problem says that this increased the value of the house by 150%. I need to find out how much profit he made. Hmm, profit... profit usually means the total amount he made after expenses, right? So, profit would be the selling price minus the cost. But wait, the problem mentions the value increased by 150%, so maybe I need to calculate the new value first?\n\nLet me break it down. The original value",
+  "extracted_answer": "",
+  "correct": false,
+  "ndif": {
+    "request_id": "7db36acf4371",
+    "artifacts": {
+      "layer_8_input_layernorm_output": {
+        "file": "activations/run-20250915-003315/7db36acf4371/layer_8_input_layernorm_output.pt",
+        "shape": [
+          1,
+          103,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          103,
+          64
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_8_post_attention_layernorm_output": {
+        "file": "activations/run-20250915-003315/7db36acf4371/layer_8_post_attention_layernorm_output.pt",
+        "shape": [
+          1,
+          103,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          103,
+          64
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_12_input_layernorm_output": {
+        "file": "activations/run-20250915-003315/7db36acf4371/layer_12_input_layernorm_output.pt",
+        "shape": [
+          1,
+          103,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          103,
+          64
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_12_post_attention_layernorm_output": {
+        "file": "activations/run-20250915-003315/7db36acf4371/layer_12_post_attention_layernorm_output.pt",
+        "shape": [
+          1,
+          103,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          103,
+          64
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_16_input_layernorm_output": {
+        "file": "activations/run-20250915-003315/7db36acf4371/layer_16_input_layernorm_output.pt",
+        "shape": [
+          1,
+          103,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          103,
+          64
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_16_post_attention_layernorm_output": {
+        "file": "activations/run-20250915-003315/7db36acf4371/layer_16_post_attention_layernorm_output.pt",
+        "shape": [
+          1,
+          103,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          103,
+          64
+        ],
+        "dtype": "torch.float32"
+      }
+    },
+    "index": "activations/run-20250915-003315/7db36acf4371/metadata.json"
+  }
+}

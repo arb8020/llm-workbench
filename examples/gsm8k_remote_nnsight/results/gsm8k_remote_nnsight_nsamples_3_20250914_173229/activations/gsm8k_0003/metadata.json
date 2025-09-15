@@ -1,0 +1,89 @@
+{
+  "request_id": "7db36acf4371",
+  "artifacts": {
+    "layer_8_input_layernorm_output": {
+      "file": "activations/run-20250915-003315/7db36acf4371/layer_8_input_layernorm_output.pt",
+      "shape": [
+        1,
+        103,
+        1024
+      ],
+      "saved_shape": [
+        1,
+        103,
+        64
+      ],
+      "dtype": "torch.float32"
+    },
+    "layer_8_post_attention_layernorm_output": {
+      "file": "activations/run-20250915-003315/7db36acf4371/layer_8_post_attention_layernorm_output.pt",
+      "shape": [
+        1,
+        103,
+        1024
+      ],
+      "saved_shape": [
+        1,
+        103,
+        64
+      ],
+      "dtype": "torch.float32"
+    },
+    "layer_12_input_layernorm_output": {
+      "file": "activations/run-20250915-003315/7db36acf4371/layer_12_input_layernorm_output.pt",
+      "shape": [
+        1,
+        103,
+        1024
+      ],
+      "saved_shape": [
+        1,
+        103,
+        64
+      ],
+      "dtype": "torch.float32"
+    },
+    "layer_12_post_attention_layernorm_output": {
+      "file": "activations/run-20250915-003315/7db36acf4371/layer_12_post_attention_layernorm_output.pt",
+      "shape": [
+        1,
+        103,
+        1024
+      ],
+      "saved_shape": [
+        1,
+        103,
+        64
+      ],
+      "dtype": "torch.float32"
+    },
+    "layer_16_input_layernorm_output": {
+      "file": "activations/run-20250915-003315/7db36acf4371/layer_16_input_layernorm_output.pt",
+      "shape": [
+        1,
+        103,
+        1024
+      ],
+      "saved_shape": [
+        1,
+        103,
+        64
+      ],
+      "dtype": "torch.float32"
+    },
+    "layer_16_post_attention_layernorm_output": {
+      "file": "activations/run-20250915-003315/7db36acf4371/layer_16_post_attention_layernorm_output.pt",
+      "shape": [
+        1,
+        103,
+        1024
+      ],
+      "saved_shape": [
+        1,
+        103,
+        64
+      ],
+      "dtype": "torch.float32"
+    }
+  }
+}
