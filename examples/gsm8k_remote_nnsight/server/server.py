@@ -49,6 +49,9 @@ class ChatCompletionRequest(BaseModel):
     # Optional per-call NDIF overrides
     ndif: Optional[Dict[str, Any]] = None
 
+    class Config:
+        extra = 'allow'  # allow unknown fields like logprobs/echo from clients
+
 
 class Choice(BaseModel):
     index: int
@@ -75,7 +78,8 @@ class ChatCompletionResponse(BaseModel):
 
 class InterventionsRequest(BaseModel):
     enabled: bool = True
-    layers: List[int] = []
+    # allow either explicit list of indices or the string "all"
+    layers: Any = []
     hook_points: List[str] = list(SUPPORTED_HOOK_POINTS)
     mode: str = "trace"  # or "generate"
     save_dir: Optional[str] = None
@@ -241,6 +245,22 @@ async def health():
     }
 
 
+@app.get("/v1/model/structure")
+async def model_structure():
+    if llm is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    try:
+        n_layers = len(llm.model.layers)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to inspect model: {e}")
+    return {
+        "model": MODEL_ID,
+        "device_map": DEVICE_MAP,
+        "num_layers": n_layers,
+        "hook_points": list(SUPPORTED_HOOK_POINTS),
+    }
+
+
 class ModelLoadRequest(BaseModel):
     model: str
     device_map: Optional[str] = None
@@ -294,10 +314,25 @@ async def load_model(req: ModelLoadRequest):
 @app.post("/v1/interventions", response_model=InterventionsResponse)
 async def set_interventions(body: InterventionsRequest):
     global cfg
+    # Resolve layers
+    resolved_layers: List[int] = []
+    try:
+        n_layers = len(llm.model.layers) if llm is not None else None
+    except Exception:
+        n_layers = None
+    if isinstance(body.layers, str) and body.layers.lower() == "all":
+        if n_layers is None:
+            raise HTTPException(status_code=500, detail="Cannot resolve 'all' without model depth")
+        resolved_layers = list(range(n_layers))
+    elif isinstance(body.layers, list):
+        resolved_layers = body.layers
+    else:
+        resolved_layers = cfg.layers
+
     # Build new config from request
     new_cfg = InterventionConfig(
         enabled=body.enabled,
-        layers=body.layers or cfg.layers,
+        layers=resolved_layers or cfg.layers,
         hook_points=body.hook_points or cfg.hook_points,
         mode=body.mode or cfg.mode,
         save_dir=Path(body.save_dir) if body.save_dir else cfg.save_dir,

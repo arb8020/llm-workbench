@@ -1,0 +1,30 @@
+run:
+  timestamp: '2025-09-16T12:29:02'
+  name: nnsight-gsm8k-demo
+server:
+  instance_id: kzlmwc0h3388v2
+  ssh: root@157.157.221.29:19978
+  base_url: https://kzlmwc0h3388v2-8000.proxy.runpod.net
+  port: 8000
+  model: willcb/Qwen3-0.6B
+dataset:
+  name: gsm8k
+  split: test
+  nsamples: 1
+  seed: 42
+generation:
+  max_tokens: 256
+  temperature: 0.7
+variants:
+- control
+- frustration
+interventions:
+  layers:
+  - 8
+  - 12
+  - 16
+  hook_points:
+  - input_layernorm.output
+  - post_attention_layernorm.output
+  save_dir_base: ./activations
+  per_request_subdir: true

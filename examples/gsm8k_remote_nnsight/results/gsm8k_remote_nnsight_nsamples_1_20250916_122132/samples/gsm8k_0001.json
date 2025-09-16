@@ -1,0 +1,98 @@
+{
+  "sample_id": "gsm8k_0001",
+  "question": "Janet\u2019s ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?",
+  "gold_answer": "Janet sells 16 - 3 - 4 = <<16-3-4=9>>9 duck eggs a day.\nShe makes 9 * 2 = $<<9*2=18>>18 every day at the farmer\u2019s market.\n#### 18",
+  "model_answer": "<think>\nOkay, let's see. I need to figure out how much Janet makes every day at the farmers' market. Let me break down the problem step by step.\n\nFirst, Janet's ducks lay 16 eggs per day. So, that's the base rate. Then she eats three eggs for breakfast every morning. Then she bakes muffins for her friends each day with four eggs. And the remainder is sold at $2 per egg. \n\nWait, let me make sure I have all the numbers right. The problem says she eats three for breakfast and bakes muffins with four. So, does that mean she",
+  "extracted_answer": "",
+  "correct": false,
+  "ndif": {
+    "request_id": "bad4abbc8614",
+    "artifacts": {
+      "layer_8_input_layernorm_output": {
+        "file": "activations/run-20250916-192148/bad4abbc8614/layer_8_input_layernorm_output.pt",
+        "shape": [
+          1,
+          111,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          111,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_8_post_attention_layernorm_output": {
+        "file": "activations/run-20250916-192148/bad4abbc8614/layer_8_post_attention_layernorm_output.pt",
+        "shape": [
+          1,
+          111,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          111,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_12_input_layernorm_output": {
+        "file": "activations/run-20250916-192148/bad4abbc8614/layer_12_input_layernorm_output.pt",
+        "shape": [
+          1,
+          111,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          111,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_12_post_attention_layernorm_output": {
+        "file": "activations/run-20250916-192148/bad4abbc8614/layer_12_post_attention_layernorm_output.pt",
+        "shape": [
+          1,
+          111,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          111,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_16_input_layernorm_output": {
+        "file": "activations/run-20250916-192148/bad4abbc8614/layer_16_input_layernorm_output.pt",
+        "shape": [
+          1,
+          111,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          111,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_16_post_attention_layernorm_output": {
+        "file": "activations/run-20250916-192148/bad4abbc8614/layer_16_post_attention_layernorm_output.pt",
+        "shape": [
+          1,
+          111,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          111,
+          1024
+        ],
+        "dtype": "torch.float32"
+      }
+    },
+    "index": "activations/run-20250916-192148/bad4abbc8614/metadata.json"
+  }
+}

@@ -1,0 +1,182 @@
+{
+  "control/gsm8k_0589": {
+    "request_id": "162572c09da4",
+    "artifacts": {
+      "layer_8_input_layernorm_output": {
+        "file": "activations/run-20250916-193702/162572c09da4/layer_8_input_layernorm_output.pt",
+        "shape": [
+          1,
+          115,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          115,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_8_post_attention_layernorm_output": {
+        "file": "activations/run-20250916-193702/162572c09da4/layer_8_post_attention_layernorm_output.pt",
+        "shape": [
+          1,
+          115,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          115,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_12_input_layernorm_output": {
+        "file": "activations/run-20250916-193702/162572c09da4/layer_12_input_layernorm_output.pt",
+        "shape": [
+          1,
+          115,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          115,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_12_post_attention_layernorm_output": {
+        "file": "activations/run-20250916-193702/162572c09da4/layer_12_post_attention_layernorm_output.pt",
+        "shape": [
+          1,
+          115,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          115,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_16_input_layernorm_output": {
+        "file": "activations/run-20250916-193702/162572c09da4/layer_16_input_layernorm_output.pt",
+        "shape": [
+          1,
+          115,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          115,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_16_post_attention_layernorm_output": {
+        "file": "activations/run-20250916-193702/162572c09da4/layer_16_post_attention_layernorm_output.pt",
+        "shape": [
+          1,
+          115,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          115,
+          1024
+        ],
+        "dtype": "torch.float32"
+      }
+    },
+    "index": "activations/run-20250916-193702/162572c09da4/metadata.json"
+  },
+  "frustration/gsm8k_0589": {
+    "request_id": "abc27987f0ad",
+    "artifacts": {
+      "layer_8_input_layernorm_output": {
+        "file": "activations/run-20250916-193902/abc27987f0ad/layer_8_input_layernorm_output.pt",
+        "shape": [
+          1,
+          136,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          136,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_8_post_attention_layernorm_output": {
+        "file": "activations/run-20250916-193902/abc27987f0ad/layer_8_post_attention_layernorm_output.pt",
+        "shape": [
+          1,
+          136,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          136,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_12_input_layernorm_output": {
+        "file": "activations/run-20250916-193902/abc27987f0ad/layer_12_input_layernorm_output.pt",
+        "shape": [
+          1,
+          136,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          136,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_12_post_attention_layernorm_output": {
+        "file": "activations/run-20250916-193902/abc27987f0ad/layer_12_post_attention_layernorm_output.pt",
+        "shape": [
+          1,
+          136,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          136,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_16_input_layernorm_output": {
+        "file": "activations/run-20250916-193902/abc27987f0ad/layer_16_input_layernorm_output.pt",
+        "shape": [
+          1,
+          136,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          136,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_16_post_attention_layernorm_output": {
+        "file": "activations/run-20250916-193902/abc27987f0ad/layer_16_post_attention_layernorm_output.pt",
+        "shape": [
+          1,
+          136,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          136,
+          1024
+        ],
+        "dtype": "torch.float32"
+      }
+    },
+    "index": "activations/run-20250916-193902/abc27987f0ad/metadata.json"
+  }
+}

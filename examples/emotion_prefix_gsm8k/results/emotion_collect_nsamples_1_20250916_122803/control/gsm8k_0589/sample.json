@@ -1,0 +1,99 @@
+{
+  "sample_id": "gsm8k_0589",
+  "variant": "control",
+  "question": "Jared is trying to increase his typing speed. He starts with 47 words per minute (WPM). After some lessons the next time he tests his typing speed it has increased to 52 WPM. If he continues to increase his typing speed once more by 5 words, what will be the average of the three measurements?",
+  "gold_answer": "Jared types at 52 WPM and increases it by 5 WPM, 52 + 5 = <<52+5=57>>57 WPM.\nHis average over all his measured words-per-minute is 47 + 52 + 57 = <<47+52+57=156>>156.\nHis total is 156 / 3 typing speeds = <<156/3=52>>52 WPM as Jared's average typing speed.\n#### 52",
+  "model_answer": "<think>\nOkay, let's see. So Jared's typing speed started at 47 WPM and then increased to 52 WPM after some lessons. Then he wants to keep increasing it by 5 words each time. The question is asking for the average of the three measurements: the original speed, the increased speed after the first lesson, and the speed after the second increase.\n\nFirst, I need to make sure I understand the problem correctly. Let me break it down. The initial speed is 47 WPM. Then after the first increase, it's 52. Then he increases it another 5 words, so that would be 52 plus 5, which is 57 WPM. Now, we need to find the average of these three numbers: 47, 52, and 57. \n\nTo find the average, I remember that the average is the sum of the numbers divided by the number of measurements. There are three measurements here, so I should add them up and then divide by 3.\n\nLet me add them step by step. Starting with 47 plus 52. Hmm, 47 + 50 is 97, and then plus 2 is",
+  "extracted_answer": "",
+  "correct": false,
+  "ndif": {
+    "request_id": "162572c09da4",
+    "artifacts": {
+      "layer_8_input_layernorm_output": {
+        "file": "activations/run-20250916-193702/162572c09da4/layer_8_input_layernorm_output.pt",
+        "shape": [
+          1,
+          115,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          115,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_8_post_attention_layernorm_output": {
+        "file": "activations/run-20250916-193702/162572c09da4/layer_8_post_attention_layernorm_output.pt",
+        "shape": [
+          1,
+          115,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          115,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_12_input_layernorm_output": {
+        "file": "activations/run-20250916-193702/162572c09da4/layer_12_input_layernorm_output.pt",
+        "shape": [
+          1,
+          115,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          115,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_12_post_attention_layernorm_output": {
+        "file": "activations/run-20250916-193702/162572c09da4/layer_12_post_attention_layernorm_output.pt",
+        "shape": [
+          1,
+          115,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          115,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_16_input_layernorm_output": {
+        "file": "activations/run-20250916-193702/162572c09da4/layer_16_input_layernorm_output.pt",
+        "shape": [
+          1,
+          115,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          115,
+          1024
+        ],
+        "dtype": "torch.float32"
+      },
+      "layer_16_post_attention_layernorm_output": {
+        "file": "activations/run-20250916-193702/162572c09da4/layer_16_post_attention_layernorm_output.pt",
+        "shape": [
+          1,
+          115,
+          1024
+        ],
+        "saved_shape": [
+          1,
+          115,
+          1024
+        ],
+        "dtype": "torch.float32"
+      }
+    },
+    "index": "activations/run-20250916-193702/162572c09da4/metadata.json"
+  }
+}
