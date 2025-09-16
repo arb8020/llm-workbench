@@ -179,6 +179,7 @@ def main():
     ap.add_argument("--temperature", type=float, default=0.7)
     ap.add_argument("--layers", type=str, default="all", help="'all' or comma-separated indices")
     ap.add_argument("--out", type=str, default=None)
+    ap.add_argument("--detach", action="store_true", help="Launch remote evaluation in tmux and return immediately")
     args = ap.parse_args()
 
     exp_dir = Path(args.out or f"examples/emotion_prefix_gsm8k/results/emotion_rollouts_nsamples_{args.samples}_{time.strftime('%Y%m%d_%H%M%S')}")
@@ -229,66 +230,95 @@ def main():
     r.raise_for_status()
     print("✅ Interventions enabled")
 
-    # Dataset
-    rows = _select_gsm8k(args.samples, args.seed)
-    variants = [v.strip() for v in args.variants.split(',') if v.strip()]
-
-    # Rollouts config
-    rcfg = RunConfig(on_chunk=stdout_handler)
-    manifest: Dict[str, Any] = {}
-    correct = 0
-    total = 0
-
-    for row in rows:
-        for variant in variants:
-            base_msgs = _prepare_messages(row)
-            transform = PROMPT_VARIANTS.get(variant)
-            msgs = transform(base_msgs) if transform else base_msgs
-            # Per-request activation override; do not create subdir (we'll append request_id)
-            save_dir = (
-                Path("~/.bifrost/workspace").expanduser()
-                / f"examples/emotion_prefix_gsm8k/results/{exp_dir.name}/activations/{variant}/{row['sample_id']}"
-            )
-            endpoint = Endpoint(
-                provider="vllm",
-                model=args.model,
-                api_base=base.rstrip("/") + "/v1",
-                api_key="dummy",
-                max_tokens=args.max_tokens,
-                temperature=args.temperature,
-                extra_params={"ndif": {"save_dir": str(save_dir), "per_request_subdir": False}},
-            )
-            # Rewards for this sample
-            rewards = [
-                ("correctness", _correctness_reward(row)),
-                ("format", _format_reward),
-                ("efficiency", _efficiency_reward),
-            ]
-            # Run
-            import asyncio
-            async def _go():
-                return await evaluate_sample(row, row["sample_id"], lambda _s: msgs, rewards, type("E", (), {"get_tools": lambda self: []})(), endpoint, rcfg, max_turns=10, verbose=False)
-            res: EvalSample = asyncio.run(_go())
-            # Extract request id from completion id
-            try:
-                completion_id = res.trajectory.completions[-1].id
-                req_id = completion_id.split("chatcmpl-")[-1]
-            except Exception:
-                req_id = "unknown"
-            breadcrumb = {"save_dir": str(save_dir), "request_id": req_id}
-            manifest[f"{variant}/{row['sample_id']}"] = breadcrumb
-            _save_rollouts_outputs(exp_dir, variant, row["sample_id"], res, breadcrumb)
-            ok = res.metrics.get("correctness", 0.0) > 0.5
-            correct += 1 if ok else 0
-            total += 1
-
-    (exp_dir / "activations_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    acc = correct / max(1, total)
-    (exp_dir / "report.json").write_text(json.dumps({"num_samples": total, "accuracy": acc}, indent=2), encoding="utf-8")
-    print(f"🎉 Done. Accuracy={acc:.3f}")
-    print(f"📁 Results: {exp_dir}")
+    if args.detach:
+        # Build remote config and launch tmux worker
+        remote_runs = Path("~/.bifrost/workspace/emotion_runs").expanduser()
+        cfg = {
+            "base_url": base,
+            "model": args.model,
+            "samples": args.samples,
+            "seed": args.seed,
+            "variants": [v.strip() for v in args.variants.split(',') if v.strip()],
+            "max_tokens": args.max_tokens,
+            "temperature": args.temperature,
+            "layers": args.layers,
+            "exp_name": exp_dir.name,
+        }
+        cfg_json = json.dumps(cfg, indent=2)
+        # Write config to remote and launch tmux
+        cfg_path = f"{remote_runs}/{exp_dir.name}.json"
+        log_path = f"{remote_runs}/{exp_dir.name}.log"
+        bc.exec(f"mkdir -p {remote_runs}")
+        bc.exec(f"cat > {cfg_path} << 'EOF'\n{cfg_json}\nEOF")
+        # Ensure dependencies for runner exist (use the same extras group)
+        bc.exec("uv --version || python -m pip install -q uv || true")
+        bc.exec("uv sync --extra examples_gsm8k_remote_nnsight || true")
+        # Launch tmux session
+        session = f"emo-gen-{int(time.time())}"
+        run_cmd = (
+            "cd ~/.bifrost/workspace && "
+            f"uv run python -m examples.emotion_prefix_gsm8k.remote_runner_rollouts {cfg_path} 2>&1 | tee -a {log_path}"
+        )
+        bc.exec(f"tmux new-session -d -s {session} '{run_cmd}'")
+        print("🚀 Launched remote evaluation in tmux")
+        print(f"   Session: {session}")
+        print(f"   Log: {log_path}")
+        print(f"   Monitor: bifrost exec {ssh} 'tail -f {log_path}'")
+        print(f"   Results (remote): ~/.bifrost/workspace/examples/emotion_prefix_gsm8k/results/{exp_dir.name}")
+        print(f"   Results (local mirror dir created): {exp_dir}")
+        return
+    else:
+        # Local (foreground) evaluation
+        rows = _select_gsm8k(args.samples, args.seed)
+        variants = [v.strip() for v in args.variants.split(',') if v.strip()]
+        rcfg = RunConfig(on_chunk=stdout_handler)
+        manifest: Dict[str, Any] = {}
+        correct = 0
+        total = 0
+        for row in rows:
+            for variant in variants:
+                base_msgs = _prepare_messages(row)
+                transform = PROMPT_VARIANTS.get(variant)
+                msgs = transform(base_msgs) if transform else base_msgs
+                save_dir = (
+                    Path("~/.bifrost/workspace").expanduser()
+                    / f"examples/emotion_prefix_gsm8k/results/{exp_dir.name}/activations/{variant}/{row['sample_id']}"
+                )
+                endpoint = Endpoint(
+                    provider="vllm",
+                    model=args.model,
+                    api_base=base.rstrip("/") + "/v1",
+                    api_key="dummy",
+                    max_tokens=args.max_tokens,
+                    temperature=args.temperature,
+                    extra_params={"ndif": {"save_dir": str(save_dir), "per_request_subdir": False}},
+                )
+                rewards = [
+                    ("correctness", _correctness_reward(row)),
+                    ("format", _format_reward),
+                    ("efficiency", _efficiency_reward),
+                ]
+                import asyncio
+                async def _go():
+                    return await evaluate_sample(row, row["sample_id"], lambda _s: msgs, rewards, type("E", (), {"get_tools": lambda self: []})(), endpoint, rcfg, max_turns=10, verbose=False)
+                res: EvalSample = asyncio.run(_go())
+                try:
+                    completion_id = res.trajectory.completions[-1].id
+                    req_id = completion_id.split("chatcmpl-")[-1]
+                except Exception:
+                    req_id = "unknown"
+                breadcrumb = {"save_dir": str(save_dir), "request_id": req_id}
+                manifest[f"{variant}/{row['sample_id']}"] = breadcrumb
+                _save_rollouts_outputs(exp_dir, variant, row["sample_id"], res, breadcrumb)
+                ok = res.metrics.get("correctness", 0.0) > 0.5
+                correct += 1 if ok else 0
+                total += 1
+        (exp_dir / "activations_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        acc = correct / max(1, total)
+        (exp_dir / "report.json").write_text(json.dumps({"num_samples": total, "accuracy": acc}, indent=2), encoding="utf-8")
+        print(f"🎉 Done. Accuracy={acc:.3f}")
+        print(f"📁 Results: {exp_dir}")
 
 
 if __name__ == "__main__":
     main()
-
