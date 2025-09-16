@@ -560,6 +560,8 @@ class Endpoint(SerialDataclass):
     reasoning_effort: Optional[str] = None  # for openai
     max_completion_tokens: Optional[int] = None  # for openai
     thinking: Optional[Dict[str, Any]] = None # for anthropic 
+    # Extra params merged into the raw chat request for custom servers
+    extra_params: Optional[Dict[str, Any]] = None
 
 @dataclass(frozen=True)
 class Actor(SerialDataclass):

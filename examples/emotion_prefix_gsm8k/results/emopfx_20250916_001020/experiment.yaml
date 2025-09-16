@@ -1,0 +1,6 @@
+deploy:
+  instance_id: zdne5am1ni7bgp
+  ssh: root@157.157.221.29:19703
+  ready_url: https://zdne5am1ni7bgp-8000.proxy.runpod.net
+  proxy_url: https://zdne5am1ni7bgp-8000.proxy.runpod.net
+  direct_url: http://157.157.221.29:8000
