@@ -21,6 +21,8 @@ import threading
 
 import torch
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
+import json
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -48,6 +50,8 @@ class ChatCompletionRequest(BaseModel):
     top_p: float = 1.0
     # Optional per-call NDIF overrides
     ndif: Optional[Dict[str, Any]] = None
+    # Optional streaming (SSE) flag
+    stream: Optional[bool] = False
 
     class Config:
         extra = 'allow'  # allow unknown fields like logprobs/echo from clients
@@ -495,7 +499,28 @@ async def chat_completions(req: ChatCompletionRequest):
     completion_tokens = int(generated_ids.shape[-1] - input_ids.shape[-1]) if generated_ids is not None else 0
     created = int(time.time())
 
-    resp = ChatCompletionResponse(
+    # Streaming (SSE) path: emit a single chunk and [DONE]
+    if req.stream:
+        def sse_gen():
+            chunk = {
+                "id": f"chatcmpl-{request_id}",
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": req.model,
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"role": "assistant", "content": text},
+                        "finish_reason": "stop",
+                    }
+                ],
+            }
+            yield f"data: {json.dumps(chunk)}\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(sse_gen(), media_type="text/event-stream")
+
+    # Non-streaming path
+    return ChatCompletionResponse(
         id=f"chatcmpl-{request_id}",
         created=created,
         model=req.model,
@@ -509,8 +534,6 @@ async def chat_completions(req: ChatCompletionRequest):
         ],
         ndif=ndif_breadcrumb,
     )
-
-    return resp
 
 
 def main():
