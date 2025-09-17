@@ -193,16 +193,22 @@ def render_prompt_text(messages: List[Message]) -> str:
 
 def _collect_targets(layers: List[int], hook_points: List[str]):
     assert llm is not None
-    targets = []
+    makers = []
     # Respect a stable hook order; include only requested hooks
     ordered = [hp for hp in HOOK_ORDER if hp in hook_points]
     for layer_idx in layers:
         for hp in ordered:
             if hp == "input_layernorm.output":
-                targets.append((f"layer_{layer_idx}_input_layernorm_output", llm.model.layers[layer_idx].input_layernorm.output))
+                name = f"layer_{layer_idx}_input_layernorm_output"
+                def make(idx=layer_idx):
+                    return llm.model.layers[idx].input_layernorm.output.save()
+                makers.append((name, make))
             elif hp == "post_attention_layernorm.output":
-                targets.append((f"layer_{layer_idx}_post_attention_layernorm_output", llm.model.layers[layer_idx].post_attention_layernorm.output))
-    return targets
+                name = f"layer_{layer_idx}_post_attention_layernorm_output"
+                def make(idx=layer_idx):
+                    return llm.model.layers[idx].post_attention_layernorm.output.save()
+                makers.append((name, make))
+    return makers
 
 
 def _extract_proxy_tensor(proxy) -> torch.Tensor:
@@ -422,8 +428,8 @@ async def chat_completions(req: ChatCompletionRequest):
         proxies: Dict[str, Any] = {}
         with llm.generate(prompt_text, **_gen_args()) as tracer:
             targets = _collect_targets(local_cfg.layers, local_cfg.hook_points)
-            for name, node in targets:
-                proxies[name] = node.save()
+            for name, make in targets:
+                proxies[name] = make()
 
         generated_ids = getattr(tracer, "generator", None)
         generated_ids = getattr(generated_ids, "output", None) or getattr(tracer, "output", None)
@@ -473,8 +479,8 @@ async def chat_completions(req: ChatCompletionRequest):
             proxies: Dict[str, Any] = {}
             with llm.trace(prompt_text) as tracer:
                 targets = _collect_targets(local_cfg.layers, local_cfg.hook_points)
-                for name, node in targets:
-                    proxies[name] = node.save()
+                for name, make in targets:
+                    proxies[name] = make()
 
             if run_dir_override is not None:
                 base_dir = Path(run_dir_override)
