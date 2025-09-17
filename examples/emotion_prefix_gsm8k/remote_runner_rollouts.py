@@ -88,6 +88,7 @@ def main():
     max_tokens = int(cfg["max_tokens"]) 
     temperature = float(cfg["temperature"]) 
     layers = cfg["layers"]
+    mode = cfg.get("mode", "trace")
     exp_name = cfg["exp_name"]
 
     # Ensure structure and configure interventions
@@ -98,7 +99,7 @@ def main():
         "enabled": True,
         "layers": layers,
         "hook_points": struct.get("hook_points", []),
-        "mode": "trace",
+        "mode": mode,
         "save_dir": "./activations",
         "per_request_subdir": True,
         "sample_hidden": None,
@@ -183,4 +184,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

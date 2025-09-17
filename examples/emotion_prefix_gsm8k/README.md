@@ -1,50 +1,59 @@
 Emotion Prefix GSM8K — Rollouts + NNsight
 
-Overview
-- Evaluates GSM8K with emotional prompt prefixes using rollouts, backed by a copied NNsight OpenAI-compatible server.
-- Captures hidden activations on the remote GPU per request; does not download by default.
-- Staged, resumable pipeline with a YAML config saved in results for reproducibility.
+This example evaluates GSM8K with emotional prompt prefixes against the copied NNsight OpenAI-compatible server. It captures hidden activations remotely while keeping a reproducible config for each run.
 
-Core Assumptions
-- One GPU/server at a time during development (see deploy.md and prefer reusing the same instance).
-- Non-streaming chat completions; rollouts uses `provider="vllm"` talking to the server’s `/v1/chat/completions`.
-- Emotional variants prefix the first user message (copied from mats_neel’s basic_prompt_variation_gsm8k).
-- Per-request activation overrides via the `ndif` field in the chat payload; the server allows unknown fields and records an `ndif` breadcrumb.
+How To Run
+- Configure
+  - Edit `examples/emotion_prefix_gsm8k/config.yaml` to set instance name, model, layer capture, samples, and output directory (optional `out`).
+  - Recommended for all-layer capture: `max_tokens: 128`, `mode: generate`.
+- Launch (detached, config-driven)
+  - `python examples/emotion_prefix_gsm8k/emotion_rollouts.py --detach`
+  - The script reads the YAML, provisions or reuses the GPU, deploys the NNsight server in tmux, uploads a remote run config, and starts generation in another tmux session.
+  - Once running it prints the tmux session name, remote log path, and local results directory (`examples/emotion_prefix_gsm8k/results/<exp_name>`).
+- Monitor (logs + progress)
+  - `python examples/emotion_prefix_gsm8k/monitor.py --ssh root@<ip>:<port> --exp <exp_name> --tail 60`
+  - Shows tmux sessions, completed versus expected sample.json counts, and remote log tails.
+- Analyze (summarize accuracy per variant)
+  - `python examples/emotion_prefix_gsm8k/analyze.py examples/emotion_prefix_gsm8k/results/<exp_name>`
+- Cleanup (optional)
+  - Terminate instances when done: `broker instances terminate --yes <instance_id>`
 
-Quick Start
-- Deploy and run generate stage (detached tmux on remote):
-  - `python examples/emotion_prefix_gsm8k/deploy_and_evaluate.py --name nano-emopfx --samples 8 --variants control,frustration,impatience,anxiety,collaborative,patience,calm --stages deploy configure generate`
-- Monitor progress (tail remote logs):
-  - `python examples/emotion_prefix_gsm8k/deploy_and_evaluate.py --stages monitor`
-- Analyze results:
-  - `python examples/emotion_prefix_gsm8k/deploy_and_evaluate.py --stages analyze`
+Config YAML
+- `name`, `port`, `min_vram`, `max_price`: broker provisioning parameters.
+- `model`, `device_map`: vLLM server launch arguments. Defaults to `willcb/Qwen3-0.6B` and `auto`.
+- `samples`, `seed`: GSM8K selection (test split).
+- `variants`: emotional prefixes applied to the first user turn.
+- `max_tokens`, `temperature`: rollout generation parameters.
+- `layers`: `all` or a list such as `[8,12,16]` for targeted capture.
+- `mode`: NNsight capture mode (`generate` for full forward pass, `trace` for faster metadata-only capture).
+- `out`: optional explicit local results directory; otherwise a timestamped folder is created.
 
-Stages (resumable)
-- `deploy`: provision GPU, push code (uv extra: examples_emotion_prefix_gsm8k), start server in tmux.
-- `configure`: query `/v1/model/structure`, enable capture (layers=all, two hook points), and record config.
-- `generate`: run rollouts over selected GSM8K samples × variants. For each request, set `ndif` overrides per-sample to write activations to `~/.bifrost/workspace/examples/emotion_prefix_gsm8k/results/<exp>/activations/<variant>/<sample_id>/<request_id>/`.
-- `analyze`: compute accuracy/format/efficiency and summarize.
-- `download-activations` (optional): pull remote activation dirs locally. Off by default.
-- `monitor`: convenience tail of remote `nnsight_server.log` and job logs.
+Run Pipeline (detached)
+1. `deploy`: provision GPU, push repo (uv extra `examples_gsm8k_remote_nnsight`), launch server in tmux.
+2. `configure`: query `/v1/model/structure`, enable interventions (layers, hook points), and record experiment metadata.
+3. `generate`: run rollouts across selected GSM8K samples × variants; each request writes activations to `~/.bifrost/workspace/examples/emotion_prefix_gsm8k/results/<exp>/activations/...` using `ndif` overrides.
+4. `analyze`: summarize accuracy/format/efficiency metrics and store a report.
+5. `download-activations` (optional): fetch remote activation trees later.
+6. `monitor`: convenience log tail via `monitor.py`.
 
 Results Layout
 - `examples/emotion_prefix_gsm8k/results/<exp>/`
-  - `experiment.yaml` and `experiment_config.json`
-  - `report.json`
-  - `<variant>/<sample_id>/{trajectory.jsonl, agent_state.json, sample.json}`
-  - `activations_manifest.json` (maps `<variant>/<sample_id>` → `{save_dir, request_id}`)
+  - `experiment.yaml` (local run metadata) and `experiment_config.json` (remote mirror).
+  - `report.json` (overall metrics).
+  - `<variant>/<sample_id>/{trajectory.jsonl, agent_state.json, sample.json}` per request.
+  - `activations_manifest.json` mapping `<variant>/<sample_id>` → `{save_dir, request_id}` for remote tensors.
 
-Config Hygiene
-- Records: run info, model, server (including `num_layers` and access info), dataset, generation params, variants, interventions (layers=all, hook points), and pipeline stages.
+Additional Notes
+- The non-detached path in `emotion_rollouts.py` is deprecated; prefer the config + `--detach` flow.
+- `emotion_collect.py` remains for the older foreground HTTP demo but does not use rollouts.
+- The server lives under `examples/gsm8k_remote_nnsight/server`; see `HANDOFF.md` for operational details, troubleshooting tips, and roadmap items.
+- `deploy_and_evaluate.py` accepts `--config <path>` so you can keep multiple YAML presets (CLI flags still override the loaded values).
 
-TODOs
-- Server: add SSE streaming to `/v1/chat/completions`.
-- Storage: helpers to push/pull activation trees to S3/blob storage; support URI manifests.
-- Analysis pipeline: consume activation dirs (local or URI) and run linear probes/SAE/other analyses; emit artifacts next to results.
-- Progress UI: add a proper progress monitor (tqdm or equivalent) that reads from logs/metadata, keeping core stages detached.
+Recommended Settings
+- Capturing all layers is heavy: keep `max_tokens` conservative (≤128) or switch to selective layers (e.g., `[8,12,16]`).
+- Consider setting `sample_hidden` in the config/remote interventions if prompts become large.
 
-Hardest Parts (notes)
-- Ensuring rollouts can pass per-request overrides cleanly: we updated `Endpoint` to accept `extra_params` and the NNsight server to allow unknown fields.
-- Mapping request → activation path without extra round-trips: we rely on the server’s `completion.id = chatcmpl-{request_id}` and a deterministic `save_dir` override.
-- Keeping remote-only activation storage hygienic across runs: the pipeline records breadcrumbs and a manifest to enable later batch downloads or cloud sync.
-
+Server Highlights
+- `/v1/model/structure` returns `num_layers` and available hook points.
+- `/v1/interventions` supports `layers: "all"` and records capture settings.
+- `/v1/chat/completions` accepts `ndif` overrides and supports `stream: true` for SSE (single chunk + `[DONE]`).

@@ -165,28 +165,37 @@ def _save_rollouts_outputs(exp_dir: Path, variant: str, sample_id: str, res: Eva
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Emotion GSM8K via rollouts + NNsight server")
-    ap.add_argument("--name", default="nnsight-gsm8k-demo")
-    ap.add_argument("--port", type=int, default=8000)
-    ap.add_argument("--min-vram", type=int, default=12)
-    ap.add_argument("--max-price", type=float, default=0.40)
-    ap.add_argument("--model", default="willcb/Qwen3-0.6B")
-    ap.add_argument("--device-map", default="auto")
-    ap.add_argument("--samples", type=int, default=4)
-    ap.add_argument("--variants", type=str, default="control,frustration,impatience,anxiety,collaborative,patience,calm")
-    ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--max-tokens", type=int, default=2048)
-    ap.add_argument("--temperature", type=float, default=0.7)
-    ap.add_argument("--layers", type=str, default="all", help="'all' or comma-separated indices")
-    ap.add_argument("--out", type=str, default=None)
+    ap = argparse.ArgumentParser(description="Emotion GSM8K via rollouts + NNsight server (config-driven)")
     ap.add_argument("--detach", action="store_true", help="Launch remote evaluation in tmux and return immediately")
     args = ap.parse_args()
 
-    exp_dir = Path(args.out or f"examples/emotion_prefix_gsm8k/results/emotion_rollouts_nsamples_{args.samples}_{time.strftime('%Y%m%d_%H%M%S')}")
+    # Load config YAML
+    import yaml
+    cfg_path = Path("examples/emotion_prefix_gsm8k/config.yaml")
+    if not cfg_path.exists():
+        raise SystemExit(f"Config YAML not found: {cfg_path}. Please create it and re-run.")
+    cfg = yaml.safe_load(cfg_path.read_text()) or {}
+
+    name = cfg.get("name", "nnsight-gsm8k-demo")
+    port = int(cfg.get("port", 8000))
+    min_vram = int(cfg.get("min_vram", 12))
+    max_price = float(cfg.get("max_price", 0.40))
+    model = cfg.get("model", "willcb/Qwen3-0.6B")
+    device_map = cfg.get("device_map", "auto")
+    samples = int(cfg.get("samples", 4))
+    variants_cfg = cfg.get("variants", ["control","frustration","impatience","anxiety","collaborative","patience","calm"]) or []
+    seed = int(cfg.get("seed", 42))
+    max_tokens = int(cfg.get("max_tokens", 2048))
+    temperature = float(cfg.get("temperature", 0.7))
+    layers_cfg = cfg.get("layers", "all")
+    mode = cfg.get("mode", "trace")
+    out_path = cfg.get("out")
+
+    exp_dir = Path(out_path or f"examples/emotion_prefix_gsm8k/results/emotion_rollouts_nsamples_{samples}_{time.strftime('%Y%m%d_%H%M%S')}")
     exp_dir.mkdir(parents=True, exist_ok=True)
 
     # Ensure server
-    inst = _ensure_instance(args.name, args.port, args.min_vram, args.max_price)
+    inst = _ensure_instance(name, port, min_vram, max_price)
     ssh = inst.ssh_connection_string()
     bc = BifrostClient(ssh)
     workspace = bc.push(uv_extra="examples_gsm8k_remote_nnsight")
@@ -194,15 +203,15 @@ def main():
     bc.exec("tmux kill-session -t nnsight-server 2>/dev/null || true")
     run_cmd = (
         "cd ~/.bifrost/workspace && "
-        f"bash examples/gsm8k_remote_nnsight/server/start_server.sh --host 0.0.0.0 --port {args.port} --model {args.model} --device-map {args.device_map}"
+        f"bash examples/gsm8k_remote_nnsight/server/start_server.sh --host 0.0.0.0 --port {port} --model {model} --device-map {device_map}"
     )
     bc.exec(f"tmux new-session -d -s nnsight-server '{run_cmd}'")
 
     # Wait health
     base_urls = []
-    proxy = inst.get_proxy_url(args.port)
+    proxy = inst.get_proxy_url(port)
     if proxy: base_urls.append(proxy)
-    if inst.public_ip: base_urls.append(f"http://{inst.public_ip}:{args.port}")
+    if inst.public_ip: base_urls.append(f"http://{inst.public_ip}:{port}")
     base = _wait_health(base_urls, timeout=900)
     if not base:
         raise SystemExit("Server did not become healthy in time")
@@ -212,15 +221,15 @@ def main():
     st = _structure(base)
     print(f"🔧 Model structure: num_layers={st.get('num_layers')} hook_points={st.get('hook_points')}")
     layers_payload: Any
-    if args.layers.strip().lower() == 'all':
+    if isinstance(layers_cfg, str) and layers_cfg.strip().lower() == 'all':
         layers_payload = 'all'
     else:
-        layers_payload = [int(x.strip()) for x in args.layers.split(',') if x.strip()]
+        layers_payload = layers_cfg if isinstance(layers_cfg, list) else [int(x.strip()) for x in str(layers_cfg).split(',') if x.strip()]
     iv = {
         "enabled": True,
         "layers": layers_payload,
         "hook_points": st.get("hook_points", []),
-        "mode": "trace",
+        "mode": mode,
         "save_dir": "./activations",
         "per_request_subdir": True,
         "sample_hidden": None,
@@ -232,19 +241,55 @@ def main():
 
     if args.detach:
         # Build remote config and launch tmux worker
-        remote_runs = Path("~/.bifrost/workspace/emotion_runs").expanduser()
+        remote_runs = "~/.bifrost/workspace/emotion_runs"
         cfg = {
             "base_url": base,
-            "model": args.model,
-            "samples": args.samples,
-            "seed": args.seed,
-            "variants": [v.strip() for v in args.variants.split(',') if v.strip()],
-            "max_tokens": args.max_tokens,
-            "temperature": args.temperature,
-            "layers": args.layers,
+            "model": model,
+            "samples": samples,
+            "seed": seed,
+            "variants": [str(v).strip() for v in variants_cfg if str(v).strip()],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "layers": layers_cfg,
+            "mode": mode,
             "exp_name": exp_dir.name,
         }
         cfg_json = json.dumps(cfg, indent=2)
+        # Write local experiment.yaml mirror for hygiene
+        try:
+            import yaml  # type: ignore
+            local_yaml = {
+                "run": {
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "name": name,
+                },
+                "server": {
+                    "base_url": base,
+                    "port": port,
+                    "model": model,
+                },
+                "dataset": {
+                    "name": "gsm8k",
+                    "split": "test",
+                    "nsamples": samples,
+                    "seed": seed,
+                },
+                "generation": {
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                },
+                "variants": cfg["variants"],
+                "interventions": {
+                    "layers": layers_cfg,
+                    "hook_points": ["input_layernorm.output", "post_attention_layernorm.output"],
+                    "mode": mode,
+                    "save_dir_base": "./activations",
+                    "per_request_subdir": True,
+                },
+            }
+            (exp_dir / "experiment.yaml").write_text(yaml.safe_dump(local_yaml, sort_keys=False), encoding="utf-8")
+        except Exception:
+            pass
         # Write config to remote and launch tmux
         cfg_path = f"{remote_runs}/{exp_dir.name}.json"
         log_path = f"{remote_runs}/{exp_dir.name}.log"
@@ -268,9 +313,9 @@ def main():
         print(f"   Results (local mirror dir created): {exp_dir}")
         return
     else:
-        # Local (foreground) evaluation
-        rows = _select_gsm8k(args.samples, args.seed)
-        variants = [v.strip() for v in args.variants.split(',') if v.strip()]
+        # Local (foreground) evaluation — DEPRECATED. Plan to remove.
+        rows = _select_gsm8k(samples, seed)
+        variants = [str(v).strip() for v in variants_cfg if str(v).strip()]
         rcfg = RunConfig(on_chunk=stdout_handler)
         manifest: Dict[str, Any] = {}
         correct = 0
@@ -286,11 +331,11 @@ def main():
                 )
                 endpoint = Endpoint(
                     provider="vllm",
-                    model=args.model,
+                    model=model,
                     api_base=base.rstrip("/") + "/v1",
                     api_key="dummy",
-                    max_tokens=args.max_tokens,
-                    temperature=args.temperature,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
                     extra_params={"ndif": {"save_dir": str(save_dir), "per_request_subdir": False}},
                 )
                 rewards = [

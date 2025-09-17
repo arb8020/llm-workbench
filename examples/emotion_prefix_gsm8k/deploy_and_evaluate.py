@@ -130,6 +130,22 @@ def _variants_list(s: str) -> List[str]:
     return [v.strip() for v in s.split(',') if v.strip()]
 
 
+def _normalize_config_defaults(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Prepare config defaults so argparse can consume them safely."""
+    out: Dict[str, Any] = {}
+    for key, value in data.items():
+        # Allow variants as list or comma-separated string
+        if key == "variants" and isinstance(value, list):
+            out[key] = ",".join(str(v).strip() for v in value)
+            continue
+        # Allow stages as comma or list
+        if key == "stages" and isinstance(value, str):
+            out[key] = [p for p in value.replace(',', ' ').split() if p]
+            continue
+        out[key] = value
+    return out
+
+
 def _ensure_instance(name: str, port: int, min_vram: int, max_price: float, gpu_type: Optional[str], manufacturer: Optional[str]):
     # Try reuse running instance with same name (runpod)
     try:
@@ -389,7 +405,23 @@ def stage_monitor(args, deploy_info: Dict[str, Any]) -> None:
 
 
 def main():
+    # Parse --config first so we can seed argparse defaults from YAML
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--config", type=str, help="YAML file with argument defaults")
+    pre_args, remaining_argv = pre.parse_known_args()
+
+    config_defaults: Dict[str, Any] = {}
+    if pre_args.config:
+        cfg_path = Path(pre_args.config)
+        if not cfg_path.exists():
+            raise SystemExit(f"Config not found: {cfg_path}")
+        loaded = yaml.safe_load(cfg_path.read_text()) or {}
+        if not isinstance(loaded, dict):
+            raise SystemExit(f"Config must be a mapping: {cfg_path}")
+        config_defaults = _normalize_config_defaults(loaded)
+
     ap = argparse.ArgumentParser(description="Deploy NNsight server and evaluate GSM8K with emotional prefixes")
+    ap.add_argument("--config", type=str, default=None, help="YAML file with argument defaults")
     ap.add_argument("--stages", nargs="*", default=["deploy", "configure", "generate"], help="Stages to run")
     ap.add_argument("--name", default="emopfx")
     ap.add_argument("--port", type=int, default=8000)
@@ -406,7 +438,15 @@ def main():
     ap.add_argument("--temperature", type=float, default=0.7)
     ap.add_argument("--out", type=str, default=None)
     ap.add_argument("--no-wait-health", action="store_true")
-    args = ap.parse_args()
+    if config_defaults:
+        valid_dests = {action.dest for action in ap._actions}
+        filtered_defaults = {k: v for k, v in config_defaults.items() if k in valid_dests}
+        ap.set_defaults(**filtered_defaults)
+        if "config" not in filtered_defaults and pre_args.config:
+            ap.set_defaults(config=str(pre_args.config))
+    args = ap.parse_args(remaining_argv)
+    if pre_args.config and not args.config:
+        args.config = pre_args.config
 
     variants = _variants_list(args.variants)
     if args.out:

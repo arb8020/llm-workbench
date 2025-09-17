@@ -23,7 +23,7 @@ import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 import json
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 import uvicorn
 
 from nnsight import LanguageModel
@@ -59,8 +59,7 @@ class ChatCompletionRequest(BaseModel):
     # Optional streaming (SSE) flag
     stream: Optional[bool] = False
 
-    class Config:
-        extra = 'allow'  # allow unknown fields like logprobs/echo from clients
+    model_config = ConfigDict(extra='allow')  # allow unknown fields like logprobs/echo
 
 
 class Choice(BaseModel):
@@ -190,6 +189,20 @@ def render_prompt_text(messages: List[Message]) -> str:
 
 
 # ---------- Capture helpers ----------
+
+# GOTCHA 1: Call .save() INSIDE the trace/generate context.
+# - Accessing `.output` (or saving a handle to it) OUTSIDE the `with llm.trace(...)` /
+#   `with llm.generate(...)` block can cause NNsight's interleaver to miss values,
+#   especially for the very first hook (layer 0 input_layernorm.output), yielding:
+#   OutOfOrderError: Value was missed for model.model.layers.0.input_layernorm.output.i0
+# - Solution: Defer creating the capture proxies until we are inside the context.
+#   We return small "maker" callables that, when invoked inside the context,
+#   call `.save()` on the correct node, ensuring ordering.
+#
+# GOTCHA 2: Hook order matters.
+# - Evaluating input_layernorm before post_attention_layernorm for each layer gives
+#   a stable access order that avoids interleaver surprises.
+# - We enforce a stable order via HOOK_ORDER, then filter to requested hooks.
 
 def _collect_targets(layers: List[int], hook_points: List[str]):
     assert llm is not None
@@ -426,6 +439,7 @@ async def chat_completions(req: ChatCompletionRequest):
     generated_ids = None
     if local_cfg.enabled and local_cfg.mode == "generate":
         proxies: Dict[str, Any] = {}
+        # IMPORTANT: create capture proxies INSIDE the generate context
         with llm.generate(prompt_text, **_gen_args()) as tracer:
             targets = _collect_targets(local_cfg.layers, local_cfg.hook_points)
             for name, make in targets:
@@ -451,6 +465,17 @@ async def chat_completions(req: ChatCompletionRequest):
         run_dir.mkdir(parents=True, exist_ok=True)
         tensors: Dict[str, torch.Tensor] = {k: _extract_proxy_tensor(v) for k, v in proxies.items()}
         ndif_breadcrumb = write_activation_set(run_dir, request_id, tensors, local_cfg)
+
+        # Fallback: if for any reason no proxies were captured in generate mode,
+        # run a secondary trace pass to ensure we always emit ndif artifacts.
+        if (not proxies) and local_cfg.enabled:
+            proxies = {}
+            with llm.trace(prompt_text) as tracer:
+                targets = _collect_targets(local_cfg.layers, local_cfg.hook_points)
+                for name, make in targets:
+                    proxies[name] = make()
+            tensors = {k: _extract_proxy_tensor(v) for k, v in proxies.items()}
+            ndif_breadcrumb = write_activation_set(run_dir, request_id, tensors, local_cfg)
     else:
         # Plain generation using HF model for reliability; NNsight used only for tracing when enabled.
         from transformers import AutoModelForCausalLM
@@ -477,6 +502,7 @@ async def chat_completions(req: ChatCompletionRequest):
         # Optionally run a secondary trace over prompt to collect activations
         if local_cfg.enabled and local_cfg.mode == "trace":
             proxies: Dict[str, Any] = {}
+            # IMPORTANT: create capture proxies INSIDE the trace context
             with llm.trace(prompt_text) as tracer:
                 targets = _collect_targets(local_cfg.layers, local_cfg.hook_points)
                 for name, make in targets:
@@ -514,6 +540,8 @@ async def chat_completions(req: ChatCompletionRequest):
     created = int(time.time())
 
     # Streaming (SSE) path: emit a single chunk and [DONE]
+    # NOTE: Minimal SSE to support clients that set stream=true. For now we
+    # emit the whole completion as a single delta, then [DONE].
     if req.stream:
         def sse_gen():
             chunk = {
