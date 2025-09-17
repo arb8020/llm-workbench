@@ -14,7 +14,7 @@ import time
 import yaml
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import requests
 
@@ -27,7 +27,7 @@ from rollouts.dtypes import Message, Endpoint, RunConfig
 from rollouts.evaluation import evaluate_sample, EvalSample
 from rollouts.agents import stdout_handler
 
-from datasets import load_dataset
+from datasets import load_dataset, Dataset
 
 from examples.emotion_prefix_gsm8k.prompt_variants import PROMPT_VARIANTS
 
@@ -259,7 +259,7 @@ def stage_configure(args, exp_dir: Path, deploy_info: Dict[str, Any]) -> Dict[st
 
 def _select_gsm8k(nsamples: int, seed: int) -> List[Dict[str, Any]]:
     ds = load_dataset("gsm8k", "main")
-    test = ds["test"]
+    test = cast(Dataset, ds["test"])
     # deterministic selection
     import random
     rng = random.Random(seed)

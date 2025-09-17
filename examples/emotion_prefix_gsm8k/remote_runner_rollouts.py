@@ -5,10 +5,10 @@ import json
 import time
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 import requests
-from datasets import load_dataset
+from datasets import load_dataset, Dataset
 
 from rollouts.dtypes import Message, Endpoint, RunConfig
 from rollouts.evaluation import evaluate_sample
@@ -111,7 +111,7 @@ def main():
 
     # Dataset selection
     ds = load_dataset("gsm8k", "main")
-    test = ds["test"]
+    test = cast(Dataset, ds["test"])
     import random
     rng = random.Random(seed)
     idxs = list(range(len(test)))

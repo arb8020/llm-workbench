@@ -11,7 +11,7 @@ import argparse
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import requests
 
@@ -20,7 +20,7 @@ from broker import api as broker_api
 from broker.types import InstanceStatus
 from bifrost.client import BifrostClient
 
-from datasets import load_dataset
+from datasets import load_dataset, Dataset
 
 from rollouts.dtypes import Message, Endpoint, RunConfig
 from rollouts.evaluation import evaluate_sample, EvalSample
@@ -128,7 +128,7 @@ def _efficiency_reward(traj) -> float:
 
 def _select_gsm8k(nsamples: int, seed: int) -> List[Dict[str, Any]]:
     ds = load_dataset("gsm8k", "main")
-    test = ds["test"]
+    test = cast(Dataset, ds["test"])  # ensure sequence typing for checkers
     import random
     rng = random.Random(seed)
     idxs = list(range(len(test)))
