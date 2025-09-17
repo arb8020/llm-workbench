@@ -17,10 +17,10 @@ import time
 
 import torch
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
-try:
-    from pydantic import ConfigDict  # pydantic v2
-except Exception:  # pragma: no cover
+try:  # prefer pydantic v2 but support v1
+    from pydantic import BaseModel, Field, ConfigDict
+except ImportError:  # pragma: no cover - pydantic<2
+    from pydantic import BaseModel, Field  # type: ignore
     ConfigDict = None  # type: ignore
 import uvicorn
 
@@ -56,10 +56,10 @@ class ChatCompletionRequest(BaseModel):
 
     # Allow unknown fields (rollouts may pass extras like logprobs/echo)
     if ConfigDict is not None:  # pydantic v2
-        model_config = ConfigDict(extra="allow")  # type: ignore
-
-    class Config:  # pydantic v1 fallback
-        extra = "allow"
+        model_config = ConfigDict(extra="allow")
+    else:  # pydantic v1 fallback
+        class Config:
+            extra = "allow"
 
 
 class Choice(BaseModel):
@@ -424,4 +424,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
