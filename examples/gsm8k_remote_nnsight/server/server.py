@@ -29,6 +29,12 @@ import uvicorn
 from nnsight import LanguageModel
 
 from .config import InterventionConfig, SUPPORTED_HOOK_POINTS
+
+# Enforce a stable hook evaluation order to avoid out-of-order capture
+HOOK_ORDER = [
+    "input_layernorm.output",
+    "post_attention_layernorm.output",
+]
 from .activation_capture import write_activation_set, new_request_id
 
 
@@ -188,8 +194,10 @@ def render_prompt_text(messages: List[Message]) -> str:
 def _collect_targets(layers: List[int], hook_points: List[str]):
     assert llm is not None
     targets = []
+    # Respect a stable hook order; include only requested hooks
+    ordered = [hp for hp in HOOK_ORDER if hp in hook_points]
     for layer_idx in layers:
-        for hp in hook_points:
+        for hp in ordered:
             if hp == "input_layernorm.output":
                 targets.append((f"layer_{layer_idx}_input_layernorm_output", llm.model.layers[layer_idx].input_layernorm.output))
             elif hp == "post_attention_layernorm.output":
