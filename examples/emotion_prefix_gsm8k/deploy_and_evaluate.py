@@ -14,7 +14,7 @@ import time
 import yaml
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 import requests
 
@@ -87,22 +87,29 @@ def _correctness_reward(sample: Dict[str, Any]):
     return check
 
 
-def _format_reward(traj) -> float:
+def _format_reward(_sample=None) -> Callable[[Any], float]:
     import re
-    asst = [m for m in traj.messages if m.role == "assistant"]
-    if not asst:
-        return 0.0
-    text = " ".join(m.content or "" for m in asst)
-    return 1.0 if re.search(r"Answer:\s*[^\n]+", text, re.IGNORECASE) else 0.0
+
+    def fn(traj) -> float:
+        asst = [m for m in traj.messages if m.role == "assistant"]
+        if not asst:
+            return 0.0
+        text = " ".join(m.content or "" for m in asst)
+        return 1.0 if re.search(r"Answer:\s*[^\n]+", text, re.IGNORECASE) else 0.0
+
+    return fn
 
 
-def _efficiency_reward(traj) -> float:
-    total = sum(len(m.content or "") for m in traj.messages)
-    if total < 500:
-        return 1.0
-    if total > 2000:
-        return 0.0
-    return 1.0 - (total - 500) / 1500
+def _efficiency_reward(_sample=None) -> Callable[[Any], float]:
+    def fn(traj) -> float:
+        total = sum(len(m.content or "") for m in traj.messages)
+        if total < 500:
+            return 1.0
+        if total > 2000:
+            return 0.0
+        return 1.0 - (total - 500) / 1500
+
+    return fn
 
 
 def _wait_health(urls: List[str], timeout: int = 900) -> Optional[str]:
@@ -319,8 +326,6 @@ def stage_generate(args, exp_dir: Path, deploy_info: Dict[str, Any], structure: 
     print(f"📚 Selected {len(rows)} GSM8K samples")
     report: Dict[str, Any] = {"correct": 0, "total": 0}
     manifest: Dict[str, Any] = {}
-    # Rewards
-    rewards = [("correctness", _correctness_reward), ("format", _format_reward), ("efficiency", _efficiency_reward)]
     rcfg = RunConfig(on_chunk=stdout_handler, inline_thinking=None, user_message_for_thinking=None)
 
     for row in rows:
@@ -342,7 +347,12 @@ def stage_generate(args, exp_dir: Path, deploy_info: Dict[str, Any], structure: 
                     return []
             env = NoEnv()
             # Evaluate single sample
-            res = asyncio_run_evaluate(msgs, row, rewards, env, endpoint, rcfg)
+            reward_fns = [
+                ("correctness", _correctness_reward(row)),
+                ("format", _format_reward(row)),
+                ("efficiency", _efficiency_reward(row)),
+            ]
+            res = asyncio_run_evaluate(msgs, row, reward_fns, env, endpoint, rcfg)
             # Extract request_id from completion id
             try:
                 completion_id = res.trajectory.completions[-1].id
@@ -364,11 +374,9 @@ def stage_generate(args, exp_dir: Path, deploy_info: Dict[str, Any], structure: 
     return {"accuracy": acc}
 
 
-def asyncio_run_evaluate(msgs: List[Message], row: Dict[str, Any], rewards, env, endpoint: Endpoint, rcfg: RunConfig) -> EvalSample:
+def asyncio_run_evaluate(msgs: List[Message], row: Dict[str, Any], reward_fns, env, endpoint: Endpoint, rcfg: RunConfig) -> EvalSample:
     import asyncio
     async def _go():
-        # Bind rewards to sample
-        reward_fns = [(name, fn(row)) if callable(fn) else (name, fn) for name, fn in rewards]
         return await evaluate_sample(row, row["sample_id"], lambda _s: msgs, reward_fns, env, endpoint, rcfg, max_turns=10, verbose=False)
     return asyncio.run(_go())
 

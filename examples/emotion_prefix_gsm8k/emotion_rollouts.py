@@ -11,7 +11,7 @@ import argparse
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Callable, Dict, List, Optional, cast
 
 import requests
 
@@ -113,17 +113,26 @@ def _correctness_reward(sample: Dict[str, Any]):
     return fn
 
 
-def _format_reward(traj) -> float:
+def _format_reward(_sample=None) -> Callable[[Any], float]:
     import re
-    texts = [m.content or "" for m in traj.messages if m.role == "assistant"]
-    return 1.0 if re.search(r"Answer:\s*[^\n]+", " ".join(texts), re.IGNORECASE) else 0.0
+
+    def fn(traj) -> float:
+        texts = [m.content or "" for m in traj.messages if m.role == "assistant"]
+        return 1.0 if re.search(r"Answer:\s*[^\n]+", " ".join(texts), re.IGNORECASE) else 0.0
+
+    return fn
 
 
-def _efficiency_reward(traj) -> float:
-    total = sum(len(m.content or "") for m in traj.messages)
-    if total < 500: return 1.0
-    if total > 2000: return 0.0
-    return 1.0 - (total - 500) / 1500
+def _efficiency_reward(_sample=None) -> Callable[[Any], float]:
+    def fn(traj) -> float:
+        total = sum(len(m.content or "") for m in traj.messages)
+        if total < 500:
+            return 1.0
+        if total > 2000:
+            return 0.0
+        return 1.0 - (total - 500) / 1500
+
+    return fn
 
 
 def _select_gsm8k(nsamples: int, seed: int) -> List[Dict[str, Any]]:
@@ -340,8 +349,8 @@ def main():
                 )
                 rewards = [
                     ("correctness", _correctness_reward(row)),
-                    ("format", _format_reward),
-                    ("efficiency", _efficiency_reward),
+                    ("format", _format_reward(row)),
+                    ("efficiency", _efficiency_reward(row)),
                 ]
                 import asyncio
                 async def _go():

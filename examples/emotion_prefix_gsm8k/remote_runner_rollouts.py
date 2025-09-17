@@ -5,7 +5,7 @@ import json
 import time
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, cast
+from typing import Any, Callable, Dict, List, cast
 
 import requests
 from datasets import load_dataset, Dataset
@@ -60,17 +60,26 @@ def _correctness_reward(sample: Dict[str, Any]):
     return fn
 
 
-def _format_reward(traj) -> float:
+def _format_reward(_sample=None) -> Callable[[Any], float]:
     import re
-    texts = [m.content or "" for m in traj.messages if m.role == "assistant"]
-    return 1.0 if re.search(r"Answer:\s*[^\n]+", " ".join(texts), re.IGNORECASE) else 0.0
+
+    def fn(traj) -> float:
+        texts = [m.content or "" for m in traj.messages if m.role == "assistant"]
+        return 1.0 if re.search(r"Answer:\s*[^\n]+", " ".join(texts), re.IGNORECASE) else 0.0
+
+    return fn
 
 
-def _efficiency_reward(traj) -> float:
-    total = sum(len(m.content or "") for m in traj.messages)
-    if total < 500: return 1.0
-    if total > 2000: return 0.0
-    return 1.0 - (total - 500) / 1500
+def _efficiency_reward(_sample=None) -> Callable[[Any], float]:
+    def fn(traj) -> float:
+        total = sum(len(m.content or "") for m in traj.messages)
+        if total < 500:
+            return 1.0
+        if total > 2000:
+            return 0.0
+        return 1.0 - (total - 500) / 1500
+
+    return fn
 
 
 def main():
@@ -148,7 +157,11 @@ def main():
                 temperature=temperature,
                 extra_params={"ndif": {"save_dir": str(save_dir), "per_request_subdir": False}},
             )
-            rewards = [("correctness", _correctness_reward(row)), ("format", _format_reward), ("efficiency", _efficiency_reward)]
+            rewards = [
+                ("correctness", _correctness_reward(row)),
+                ("format", _format_reward(row)),
+                ("efficiency", _efficiency_reward(row)),
+            ]
             import asyncio
             async def _go():
                 return await evaluate_sample(row, row["sample_id"], lambda _s: msgs, rewards, type("E", (), {"get_tools": lambda self: []})(), endpoint, rcfg, max_turns=10, verbose=False)
