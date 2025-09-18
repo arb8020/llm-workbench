@@ -1,8 +1,8 @@
 deploy:
-  instance_id: 3h5bba8j2hu1ok
-  ssh: root@157.157.221.29:19526
-  ready_url: https://3h5bba8j2hu1ok-8000.proxy.runpod.net
-  proxy_url: https://3h5bba8j2hu1ok-8000.proxy.runpod.net
+  instance_id: c5f5nkjgia16fu
+  ssh: root@157.157.221.29:21131
+  ready_url: https://c5f5nkjgia16fu-8000.proxy.runpod.net
+  proxy_url: https://c5f5nkjgia16fu-8000.proxy.runpod.net
   direct_url: http://157.157.221.29:8000
 configure:
   structure:

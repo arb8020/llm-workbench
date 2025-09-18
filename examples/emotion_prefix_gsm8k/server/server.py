@@ -362,13 +362,28 @@ async def chat_completions(req: ChatCompletionRequest):
         torch.cuda.reset_peak_memory_stats()
         before_alloc = torch.cuda.memory_allocated() / (1024 ** 2)
         before_reserved = torch.cuda.memory_reserved() / (1024 ** 2)
-    out = _hf_model.generate(
-        input_ids_hf,
-        max_new_tokens=req.max_tokens,
-        temperature=temperature,
-        do_sample=do_sample,
-        pad_token_id=llm.tokenizer.eos_token_id,
-    )
+    try:
+        out = _hf_model.generate(
+            input_ids_hf,
+            max_new_tokens=req.max_tokens,
+            temperature=temperature,
+            do_sample=do_sample,
+            pad_token_id=llm.tokenizer.eos_token_id,
+        )
+    except Exception as exc:  # pragma: no cover - logging path
+        if torch.cuda.is_available():
+            alloc = torch.cuda.memory_allocated() / (1024 ** 2)
+            reserved = torch.cuda.memory_reserved() / (1024 ** 2)
+            peak = torch.cuda.max_memory_allocated() / (1024 ** 2)
+            logger.error(
+                "[memory] generate failed: allocated=%.1fMiB reserved=%.1fMiB peak=%.1fMiB max_new_tokens=%s",
+                alloc,
+                reserved,
+                peak,
+                req.max_tokens,
+            )
+        logger.exception("chat_completions generate failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     generated_ids = out
     if torch.cuda.is_available():
         after_alloc = torch.cuda.memory_allocated() / (1024 ** 2)
