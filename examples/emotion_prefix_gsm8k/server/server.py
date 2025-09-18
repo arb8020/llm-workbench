@@ -14,6 +14,7 @@ from typing import List, Optional, Dict, Any
 from pathlib import Path
 import threading
 import time
+import logging
 
 import torch
 from fastapi import FastAPI, HTTPException
@@ -33,6 +34,7 @@ from .activation_capture import write_activation_set, new_request_id
 DEFAULT_MODEL_ID = "willcb/Qwen3-0.6B"
 
 app = FastAPI(title="emotion-prefix-ndif", version="0.1.0")
+logger = logging.getLogger(__name__)
 llm: LanguageModel | None = None
 MODEL_ID: str = DEFAULT_MODEL_ID
 DEVICE_MAP: str = "auto"
