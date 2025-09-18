@@ -346,6 +346,11 @@ async def chat_completions(req: ChatCompletionRequest):
     global _hf_model
     if _hf_model is None:
         _hf_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, device_map="auto")
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats()
+            alloc = torch.cuda.memory_allocated() / (1024 ** 2)
+            reserved = torch.cuda.memory_reserved() / (1024 ** 2)
+            logger.info(f"[memory] model loaded: allocated={alloc:.1f}MiB reserved={reserved:.1f}MiB")
     toks = llm.tokenizer(prompt_text, return_tensors="pt")
     input_ids_hf = toks["input_ids"].to(_hf_model.device)
     do_sample = True
@@ -353,6 +358,10 @@ async def chat_completions(req: ChatCompletionRequest):
     if temperature is None or temperature <= 0:
         do_sample = False
         temperature = 1.0
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+        before_alloc = torch.cuda.memory_allocated() / (1024 ** 2)
+        before_reserved = torch.cuda.memory_reserved() / (1024 ** 2)
     out = _hf_model.generate(
         input_ids_hf,
         max_new_tokens=req.max_tokens,
@@ -361,6 +370,18 @@ async def chat_completions(req: ChatCompletionRequest):
         pad_token_id=llm.tokenizer.eos_token_id,
     )
     generated_ids = out
+    if torch.cuda.is_available():
+        after_alloc = torch.cuda.memory_allocated() / (1024 ** 2)
+        after_reserved = torch.cuda.memory_reserved() / (1024 ** 2)
+        peak_alloc = torch.cuda.max_memory_allocated() / (1024 ** 2)
+        logger.info(
+            "[memory] generate: before=%.1fMiB after=%.1fMiB reserved=%.1fMiB peak=%.1fMiB max_new_tokens=%s",
+            before_alloc,
+            after_alloc,
+            after_reserved,
+            peak_alloc,
+            req.max_tokens,
+        )
 
     if local_cfg.enabled and local_cfg.mode in {"trace", "generate"}:
         proxies: Dict[str, Any] = {}
