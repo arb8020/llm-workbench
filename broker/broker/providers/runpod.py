@@ -53,18 +53,32 @@ def _get_api_key() -> str:
 
 def _make_graphql_request(query: str, variables: Optional[Dict] = None) -> Dict[str, Any]:
     """Make a GraphQL request to RunPod API"""
+    api_key = _get_api_key()
     headers = {
-        "Authorization": f"Bearer {_get_api_key()}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
+    logger.debug("RunPod GraphQL request %s (api key ...%s)", query.split("\n")[0][:60], api_key[-4:] if api_key else "none")
     
     payload = {"query": query}
     if variables:
         payload["variables"] = variables
     
-    response = requests.post(RUNPOD_API_URL, json=payload, headers=headers)
-    response.raise_for_status()
-    
+    try:
+        response = requests.post(
+            RUNPOD_API_URL,
+            json=payload,
+            headers=headers,
+            timeout=(5, 5),
+        )
+        response.raise_for_status()
+    except requests.Timeout as exc:
+        logger.error("RunPod GraphQL request timed out")
+        raise
+    except requests.RequestException as exc:
+        logger.error(f"RunPod GraphQL request failed: {exc}")
+        raise
+
     data = response.json()
     if "errors" in data:
         raise Exception(f"GraphQL errors: {data['errors']}")
