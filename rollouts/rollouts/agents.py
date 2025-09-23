@@ -24,6 +24,16 @@ import copy
 from .dtypes import (
     Tool, ToolCall, ToolResult, ToolConfirmResult, StopReason, StreamChunk, Message, Usage, Choice, ChatCompletion, Actor, AgentState, RunConfig
 )
+from .providers import (
+    add_cache_control_to_last_content,
+    aggregate_anthropic_stream,
+    aggregate_stream,
+    rollout_anthropic,
+    rollout_moonshot,
+    rollout_openai,
+    rollout_vllm,
+    verbose,
+)
 
 # ── Core Design Philosophy ────────────────────────────────────────────────────
 #

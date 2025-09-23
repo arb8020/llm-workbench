@@ -6,7 +6,7 @@ Debug Gemini stream parsing by monkey patching aggregate_stream
 import os
 import asyncio
 import json
-from typing import AsyncIterator, Callable, Awaitable
+from typing import AsyncIterator, Callable, Awaitable, Any
 from rollouts.dtypes import (
     Endpoint, Actor, Trajectory, Message, StreamChunk, ChatCompletion, 
     Choice, Usage, ToolCall
@@ -37,7 +37,7 @@ async def debug_aggregate_stream(
     created = None
     
     # Tool call buffer for partial accumulation
-    call_buf: dict[int, dict[str, any]] = {}
+    call_buf: dict[int, dict[str, Any]] = {}
     
     chunk_count = 0
     

@@ -5,7 +5,7 @@ Proposed fix for Gemini multi-tool parsing issue
 
 import json
 import asyncio
-from typing import AsyncIterator, Callable, Awaitable
+from typing import AsyncIterator, Callable, Awaitable, Any
 from rollouts.dtypes import StreamChunk, ChatCompletion, Choice, Usage, ToolCall, Message
 
 
@@ -22,7 +22,7 @@ async def fixed_aggregate_stream(
     created = None
     
     # Tool call buffer - FIXED: Use auto-incrementing index when None
-    call_buf: dict[int, dict[str, any]] = {}
+    call_buf: dict[int, dict[str, Any]] = {}
     next_auto_index = 0  # Auto-assign indexes when tool_call.index is None
     
     async for chunk in stream:
