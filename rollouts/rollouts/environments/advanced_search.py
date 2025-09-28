@@ -169,7 +169,8 @@ def create_search_config(context_passer_name: str, **kwargs) -> SearchConfig:
 
 # ── Search Environment ────────────────────────────────────────────────────────
 
-class SearchEnvironment(Environment):
+@dataclass
+class SearchEnvironment:
     """
     Environment wrapper that adds search capabilities to any inner environment.
     
@@ -178,10 +179,10 @@ class SearchEnvironment(Environment):
     - 'decompose': Break into subproblems (conjunctive - all must succeed)
     """
     
-    def __init__(self, inner_env: Environment, search_config: SearchConfig, depth: int = 0):
-        self.inner_env = inner_env
-        self.search_config = search_config
-        self.depth = depth
+    """Environment wrapper that adds search capabilities via composition."""
+    inner_env: Environment
+    search_config: SearchConfig
+    depth: int = 0
     
     async def serialize(self) -> dict:
         """Serialize inner environment state and SearchConfig."""

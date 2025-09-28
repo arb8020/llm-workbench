@@ -1,22 +1,27 @@
 import asyncio
 from typing import List
-
+from dataclasses import dataclass
 
 from ..dtypes import (
-    Tool, ToolFunction, ToolFunctionParameter, 
+    Tool, ToolFunction, ToolFunctionParameter,
     ToolCall, ToolResult, StopReason, AgentState, RunConfig, Environment
 )
 
-class CalculatorEnvironment(Environment):
-    def __init__(self, current_value: float = 0.0):
-        self.current_value = current_value
+@dataclass
+class CalculatorEnvironment:
+    """Calculator environment with numeric operations."""
+    current_value: float = 0.0
     
     async def serialize(self) -> dict:
         return {"current_value": self.current_value}
-    
+
     @staticmethod
     async def deserialize(data: dict) -> 'CalculatorEnvironment':
         return CalculatorEnvironment(current_value=data["current_value"])
+
+    def requires_confirmation(self, tool_call: ToolCall) -> bool:
+        """Calculator tools don't require confirmation by default."""
+        return False
     
     def get_tools(self) -> List[Tool]:
         return [

@@ -5,7 +5,7 @@ import os
 import asyncio
 from abc import ABC
 from dataclasses import dataclass, field, asdict, fields
-from typing import Any, Dict, List, Optional, Mapping, Union, TypeVar, Type, Iterator, Callable, Awaitable, Tuple
+from typing import Any, Dict, List, Optional, Mapping, Union, TypeVar, Type, Iterator, Callable, Awaitable, Tuple, Protocol, runtime_checkable
 from datetime import datetime, timezone
 import dacite
 
@@ -526,26 +526,31 @@ class ToolConfirmResult(SerialDataclass):
 
 # ── Core Agent Framework Types ────────────────────────────────────────────────
 
-class Environment(ABC):
-    """Base class for environments managing external resources."""
-    
+@runtime_checkable
+class Environment(Protocol):
+    """Protocol that all environments must satisfy for composition over inheritance."""
+
     def get_tools(self) -> List[Tool]:
-        return []
-    
+        """Return available tools for this environment."""
+        ...
+
     async def exec_tool(self, tool_call: ToolCall, current_state: 'AgentState',
                        run_config: 'RunConfig', checkpoint_store = None) -> ToolResult:
-        return ToolResult()
-    
+        """Execute a tool call in this environment."""
+        ...
+
     def requires_confirmation(self, tool_call: ToolCall) -> bool:
-        """By default, no tool requires confirmation."""
-        return False
+        """Check if tool requires confirmation."""
+        ...
 
     async def serialize(self) -> dict:
-        return {}
-    
+        """Serialize environment state to dictionary."""
+        ...
+
     @staticmethod
     async def deserialize(data: dict) -> 'Environment':
-        raise NotImplementedError
+        """Deserialize environment from dictionary."""
+        ...
 
 @dataclass(frozen=True)
 class Endpoint(SerialDataclass):

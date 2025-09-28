@@ -5,7 +5,7 @@ Simple calculator demo using the extracted agent framework
 import asyncio
 import os
 from rollouts import (
-    Endpoint, Actor, AgentState, RunConfig, stdout_handler, 
+    Endpoint, Actor, AgentState, RunConfig, stdout_handler,
     Message, Trajectory, CalculatorEnvironment,
     run_agent
 )
@@ -73,7 +73,12 @@ async def main():
     print("📊 Demo Summary")
     print("="*40)
     print(f"✅ Turns completed: {final_state.turn_idx}")
-    print(f"🧮 Final calculator value: {final_state.environment.current_value}")
+    # User handles type narrowing for their specific environment
+    final_env = final_state.environment
+    if isinstance(final_env, CalculatorEnvironment):
+        print(f"🧮 Final calculator value: {final_env.current_value}")
+    else:
+        print("✅ Task completed")
     if final_state.stop:
         print(f"🛑 Stopped because: {final_state.stop.value}")
 

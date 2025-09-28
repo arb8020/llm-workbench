@@ -11,9 +11,11 @@ Example usage:
 """
 
 from typing import List
-from ..dtypes import Tool, Environment
+from dataclasses import dataclass
+from ..dtypes import Tool, Environment, ToolCall, ToolResult, AgentState, RunConfig
 
-class BasicEnvironment(Environment):
+@dataclass
+class BasicEnvironment:
     """
     Simple environment with no tools - just for clean AI responses.
     
@@ -39,6 +41,15 @@ class BasicEnvironment(Environment):
     async def deserialize(data: dict) -> 'BasicEnvironment':
         """Deserialize environment state."""
         return BasicEnvironment()
+
+    def requires_confirmation(self, tool_call: ToolCall) -> bool:
+        """No tools, so no confirmation needed."""
+        return False
+
+    async def exec_tool(self, tool_call: ToolCall, current_state: AgentState,
+                       run_config: RunConfig, checkpoint_store=None) -> ToolResult:
+        """No tools available in basic environment."""
+        return ToolResult(content="No tools available in basic environment")
 
 # Backward compatibility alias
 NoToolsEnvironment = BasicEnvironment

@@ -73,7 +73,14 @@ async def main():
     print("📊 Controlled Search Demo Summary")
     print("="*50)
     print(f"✅ Turns completed: {final_state.turn_idx}")
-    print(f"🧮 Final calculator value: {final_state.environment.inner_env.current_value}")
+    # User handles type narrowing for search composition
+    final_env = final_state.environment
+    if hasattr(final_env, 'inner_env') and hasattr(final_env.inner_env, 'current_value'):
+        print(f"🧮 Final calculator value: {final_env.inner_env.current_value}")
+    elif hasattr(final_env, 'current_value'):
+        print(f"🧮 Final calculator value: {final_env.current_value}")
+    else:
+        print("✅ Task completed")
     if final_state.stop:
         print(f"🛑 Stopped because: {final_state.stop.value}")
 

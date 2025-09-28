@@ -75,6 +75,22 @@ environment = CalculatorEnvironment()
 
 ## Environment Usage Patterns
 
+### Type-Safe Environment Access
+
+After running your agent, access environment-specific data using type narrowing:
+
+```python
+# For calculator environments
+final_state = states[-1]
+if isinstance(final_state.environment, CalculatorEnvironment):
+    print(f"Result: {final_state.environment.current_value}")
+
+# For search environments wrapping calculator
+if hasattr(final_state.environment, 'inner_env') and \
+   isinstance(final_state.environment.inner_env, CalculatorEnvironment):
+    print(f"Result: {final_state.environment.inner_env.current_value}")
+```
+
 ### When to use BasicEnvironment
 ```python
 from rollouts import BasicEnvironment
@@ -95,6 +111,17 @@ environment = CalculatorEnvironment()
 - Data calculations
 - Financial computations
 - Any task requiring arithmetic
+
+### When to use SearchEnvironment
+```python
+from rollouts import SearchEnvironment, create_search_config
+calc_env = CalculatorEnvironment()
+search_config = create_search_config(max_depth=2)
+environment = SearchEnvironment(calc_env, search_config)
+```
+- Complex problem decomposition
+- Multi-step reasoning tasks
+- Exploring alternative solution paths
 
 The key insight: **Choose your environment based on whether you want the AI to have access to tools or just provide text responses.**
 
@@ -120,12 +147,44 @@ from rollouts import (
 Rollouts follows a clean functional architecture:
 
 1. **Messages** → **Trajectory** (conversation history)
-2. **Trajectory** + **Endpoint** → **Actor** (AI agent) 
+2. **Trajectory** + **Endpoint** → **Actor** (AI agent)
 3. **Actor** + **Environment** → **AgentState** (complete state)
 4. **AgentState** + **RunConfig** → **run_agent()** (execution)
+
+### Protocol-Based Environments
+
+Environments use Python Protocols for composition over inheritance:
+
+```python
+from typing import Protocol
+from dataclasses import dataclass
+
+# Define your custom environment
+@dataclass
+class MyCustomEnvironment:
+    """Custom environment following the Environment Protocol."""
+    my_state: str = "initial"
+
+    def get_tools(self) -> List[Tool]:
+        return [my_custom_tool()]
+
+    async def exec_tool(self, tool_call, state, config, store=None):
+        # Handle your custom tools
+        pass
+
+    # ... implement other Protocol methods
+
+# Use with type-safe access
+final_env = final_state.environment
+if isinstance(final_env, MyCustomEnvironment):
+    print(f"My state: {final_env.my_state}")  # ✅ Type-safe
+```
 
 This design makes it easy to:
 - Checkpoint and resume conversations
 - Test with different AI models
 - Add/remove tools via environments
 - Handle complex multi-turn interactions
+- **Create custom environments without inheritance**
+- **Compose environments together (SearchEnvironment wrapping others)**
+- **Access environment state in a type-safe way**

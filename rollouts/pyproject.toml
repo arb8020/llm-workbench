@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "rollouts"
 version = "0.1.0"
 description = "A clean agent framework"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = [
     "anthropic>=0.25.0",
     "openai>=1.0.0",

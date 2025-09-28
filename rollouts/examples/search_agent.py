@@ -712,7 +712,17 @@ Be systematic and verify your answers."""
     else:
         print(f"🛑 Stopped due to: {final_state.stop}")
     
-    print(f"🔢 Final calculator value: {final_state.environment.inner_env.current_value}")
+    # User handles type narrowing for their composition
+    final_env = final_state.environment
+    if isinstance(final_env, SearchEnvironment):
+        if isinstance(final_env.inner_env, CalculatorEnvironment):
+            print(f"🔢 Final calculator value: {final_env.inner_env.current_value}")
+        else:
+            print(f"🔍 Search completed with: {type(final_env.inner_env).__name__}")
+    elif isinstance(final_env, CalculatorEnvironment):
+        print(f"🔢 Final calculator value: {final_env.current_value}")
+    else:
+        print("✅ Task completed")
     print(f"💬 Total conversation turns: {final_state.turn_idx}")
     print(f"📝 Total messages: {len(final_state.actor.trajectory.messages)}")
     
