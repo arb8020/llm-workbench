@@ -373,40 +373,48 @@ class ClientGPUInstance:
     
     def exec_streaming(self, command: str, output_callback=None, ssh_key_path: Optional[str] = None, timeout: int = 30):
         """Execute command with real-time output streaming
-        
+
         Args:
             command: Command to execute
             output_callback: Optional callback function(line, is_stderr) for real-time output
             ssh_key_path: SSH private key path (uses client's if not provided)
             timeout: Command timeout in seconds
-        
+
         Returns:
-            Tuple of (success, stdout, stderr)
-        
+            Tuple of (exit_code, stdout, stderr)
+
         Example:
             def print_output(line, is_stderr):
                 prefix = "ERR" if is_stderr else "OUT"
                 print(f"[{prefix}] {line}")
-            
-            success, stdout, stderr = instance.exec_streaming("nvidia-smi", print_output)
+
+            exit_code, stdout, stderr = instance.exec_streaming("nvidia-smi", print_output)
         """
         if ssh_key_path is None:
             ssh_key_path = self._client.get_ssh_key_path()
-        
-        # Use the streaming SSH client directly
-        from .ssh_clients import ParamikoSSHClient, get_ssh_connection_info
-        
+
+        # Use the streaming SSH client from compat module
+        from .ssh_clients_compat import execute_command_streaming
+
         try:
-            hostname, port, username = get_ssh_connection_info(self._instance)
-            client = ParamikoSSHClient()
-            
-            if client.connect(hostname, port, username, ssh_key_path, timeout):
-                return client.execute_streaming(command, timeout, output_callback)
-            else:
-                return False, "", "SSH connection failed"
-                
+            # Load private key if path provided
+            private_key = None
+            if ssh_key_path:
+                with open(ssh_key_path, 'r') as f:
+                    private_key = f.read()
+
+            # execute_command_streaming takes (instance, command, private_key, timeout, output_callback)
+            exit_code, stdout, stderr = execute_command_streaming(
+                self._instance,
+                command,
+                private_key,
+                timeout,
+                output_callback
+            )
+            return exit_code, stdout, stderr
+
         except Exception as e:
-            return False, "", f"Streaming execution failed: {e}"
+            return -1, "", f"Streaming execution failed: {e}"
     
     def wait_until_ready(self, timeout: int = 300) -> bool:
         """Wait until instance is running"""

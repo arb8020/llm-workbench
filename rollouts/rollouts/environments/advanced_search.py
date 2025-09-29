@@ -362,20 +362,24 @@ class SearchEnvironment:
                     )
                     
                     final_sub_state = sub_states[-1]
-                    
-                    # Check if successful (didn't stop due to error)
-                    if not final_sub_state.stop or final_sub_state.stop in [StopReason.MAX_TURNS, StopReason.TASK_COMPLETED]:
+
+                    # Check if successful - only TASK_COMPLETED or no stop reason counts as success
+                    # MAX_TURNS means the agent timed out without completing, which is a failure
+                    if not final_sub_state.stop or final_sub_state.stop == StopReason.TASK_COMPLETED:
                         print(f"  ✅ Approach '{approach['name']}' succeeded!")
-                        
+
                         # Extract result from sub-agent
                         last_message = final_sub_state.actor.trajectory.messages[-1]
                         result_content = last_message.content if last_message.role == "assistant" else f"Completed approach: {approach['name']}"
-                        
+
                         return ToolResult(
                             call_id=tool_call.id,
                             ok=True,
                             content=f"Branch '{approach['name']}' succeeded: {result_content}"
                         )
+                    elif final_sub_state.stop == StopReason.MAX_TURNS:
+                        print(f"  ⏰ Approach '{approach['name']}' hit max turns without completing")
+                        continue
                 
                 except asyncio.TimeoutError:
                     print(f"  ⏰ Approach '{approach['name']}' timed out")
@@ -441,17 +445,25 @@ class SearchEnvironment:
                     )
                     
                     final_sub_state = sub_states[-1]
-                    
+
                     # Extract result
                     last_message = final_sub_state.actor.trajectory.messages[-1]
                     result_content = last_message.content if last_message.role == "assistant" else f"Completed subproblem: {subproblem['name']}"
-                    
+
+                    # Only TASK_COMPLETED or no stop reason counts as success
+                    # MAX_TURNS means timeout without completing, which is a failure
+                    is_success = not final_sub_state.stop or final_sub_state.stop == StopReason.TASK_COMPLETED
+
+                    if final_sub_state.stop == StopReason.MAX_TURNS:
+                        result_content = "Hit max turns without completing"
+                        is_success = False
+
                     results.append({
                         "name": subproblem["name"],
                         "result": result_content,
-                        "success": not final_sub_state.stop or final_sub_state.stop in [StopReason.MAX_TURNS, StopReason.TASK_COMPLETED]
+                        "success": is_success
                     })
-                    
+
                     if results[-1]["success"]:
                         print(f"  ✅ Subproblem '{subproblem['name']}' completed")
                     else:

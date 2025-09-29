@@ -20,10 +20,10 @@ For every TODO you will find:
 6. ✅ TODO 9 – Harden GPU provisioning error paths
 7. ✅ TODO 11 – Wait for vLLM readiness before evaluation
 
-**Phase 3: Security & Isolated Fixes**
+**Phase 3: Security & Isolated Fixes** ← IN PROGRESS
 8. TODO 1 – Replace unsafe `eval` in calculator tool
-9. TODO 3 – Treat `MAX_TURNS` as failure inside search tools
-10. TODO 7 – Restore streaming SSH support in broker
+9. ✅ TODO 3 – Treat `MAX_TURNS` as failure inside search tools
+10. ✅ TODO 7 – Restore streaming SSH support in broker
 
 ---
 
@@ -98,30 +98,33 @@ For every TODO you will find:
 
 ---
 
-## TODO 3 – Treat `MAX_TURNS` as failure inside search tools
+## ✅ TODO 3 – Treat `MAX_TURNS` as failure inside search tools (COMPLETED)
 - **Severity:** High (incorrect success reporting)
 - **Primary Location:** `rollouts/rollouts/environments/advanced_search.py:334-387` & `412-470`
 - **Problem:** When a branch or decompose sub-agent times out (`StopReason.MAX_TURNS`), the wrapper reports success. The parent agent receives no signal that work failed.
+- **Solution Implemented:** Changed success condition to only accept `StopReason.TASK_COMPLETED` (or no stop reason) as success. MAX_TURNS now correctly treated as failure in both `_exec_branch` and `_exec_decompose` methods.
+- **Files Modified:**
+  - `rollouts/rollouts/environments/advanced_search.py`:
+    - Lines 368-382: Branch tool now checks `stop == StopReason.TASK_COMPLETED` and explicitly handles MAX_TURNS case
+    - Lines 453-459: Decompose tool now checks `stop == StopReason.TASK_COMPLETED` and sets explicit failure message for MAX_TURNS
+- **Testing:**
+  - Created `rollouts/tests/test_max_turns_fix.py` with integration tests
+  - Tests verify branch tries all approaches when first hits MAX_TURNS
+  - Tests verify decompose reports 0/N succeeded when subproblems hit MAX_TURNS
+  - All tests passing ✅
 - **Context Snippets:**
   ```python
-  # rollouts/rollouts/environments/advanced_search.py:365-377
+  # OLD CODE (incorrect)
   if not final_sub_state.stop or final_sub_state.stop in [StopReason.MAX_TURNS, StopReason.TASK_COMPLETED]:
-      print(f"  ✅ Approach '{approach['name']}' succeeded!")
-      return ToolResult(ok=True, content=...)
+      return ToolResult(ok=True, ...)  # ❌ Success on timeout
+
+  # NEW CODE (correct)
+  if not final_sub_state.stop or final_sub_state.stop == StopReason.TASK_COMPLETED:
+      return ToolResult(ok=True, ...)  # ✅ Success only on completion
+  elif final_sub_state.stop == StopReason.MAX_TURNS:
+      print(f"  ⏰ Approach '{approach['name']}' hit max turns without completing")
+      continue  # Try next approach
   ```
-  ```python
-  # rollouts/rollouts/environments/advanced_search.py:440-458
-  results.append({
-      "name": subproblem['name'],
-      "success": not final_sub_state.stop or final_sub_state.stop in [StopReason.MAX_TURNS, StopReason.TASK_COMPLETED],
-      "summary": result_content,
-  })
-  ```
-- **Potential Approaches & Tradeoffs:**
-  - *Reclassify timeouts as failures and bubble detailed reasons back.* Straightforward but might break existing consumers relying on the current (incorrect) semantics—validate downstream usages.
-  - *Expose a configurable allowlist of “success” stop reasons.* Adds flexibility and backward compatibility but increases API surface and cognitive overhead.
-  - *Return partial success data plus explicit `timeout` metadata.* Provides richer telemetry but requires updating serialization/storage formats.
-  - Regardless, add tests covering branch/decompose scenarios where subagents exhaust turns to assert failures propagate properly.
 
 ---
 
@@ -248,27 +251,38 @@ For every TODO you will find:
 
 ---
 
-## TODO 7 – Restore streaming SSH support in broker
+## ✅ TODO 7 – Restore streaming SSH support in broker (COMPLETED)
 - **Severity:** High (runtime crash on streaming commands)
 - **Primary Location:** `broker/broker/client.py:368-418`
 - **Problem:** `exec_streaming` imports `.ssh_clients`, but only `ssh_clients_compat.py` exists. Attempting to stream logs raises `ModuleNotFoundError`.
+- **Solution Implemented:** Updated import to use `ssh_clients_compat` and refactored `exec_streaming()` to use the compat module's function-based API instead of class-based API.
+- **Files Modified:**
+  - `broker/broker/client.py`:
+    - Line 397: Changed import from `.ssh_clients` to `.ssh_clients_compat`
+    - Lines 374-417: Refactored `exec_streaming()` method to:
+      - Import `execute_command_streaming` function from compat module
+      - Load SSH key content from path (compat expects content, not path)
+      - Call `execute_command_streaming(instance, command, private_key, timeout, callback)`
+      - Return `(exit_code, stdout, stderr)` tuple consistently with compat API
+- **Testing:**
+  - Created `broker/tests/test_streaming_ssh_manual.py` for manual integration testing with real GPU
+  - Import verification: Method successfully imports without `ModuleNotFoundError` ✅
+  - API verification: Function signature matches compat module expectations ✅
+  - Integration testing blocked by RunPod API outage (pricing service down - confirmed via Discord)
 - **Context Snippets:**
   ```python
-  # broker/broker/client.py:395-407
-  from .ssh_clients import ParamikoSSHClient, get_ssh_connection_info  # ImportError
-  ...
-  hostname, port, username = get_ssh_connection_info(self._instance)
+  # OLD CODE (broken)
+  from .ssh_clients import ParamikoSSHClient, get_ssh_connection_info  # ❌ ModuleNotFoundError
   client = ParamikoSSHClient()
+  client.connect(...)
+
+  # NEW CODE (working)
+  from .ssh_clients_compat import execute_command_streaming  # ✅ Works
+  private_key = open(ssh_key_path).read() if ssh_key_path else None
+  exit_code, stdout, stderr = execute_command_streaming(
+      self._instance, command, private_key, timeout, output_callback
+  )
   ```
-  ```python
-  # repo structure
-  broker/broker/ssh_clients_compat.py
-  ```
-- **Potential Approaches & Tradeoffs:**
-  - *Update the import to reference `ssh_clients_compat`.* Fastest path but evaluate whether the compat module exposes the same API.
-  - *Restore the original module name (add a shim file).* Maintains backwards compatibility for any external imports but slightly increases maintenance burden.
-  - *Re-export the desired symbols from `__init__.py`.* Keeps import sites unchanged but may mask missing functionality if compat layer is incomplete.
-  - Add a smoke test calling `exec_streaming` with a mocked SSH backend to ensure no import errors remain.
 
 ---
 
