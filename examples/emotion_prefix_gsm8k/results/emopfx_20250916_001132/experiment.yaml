@@ -1,8 +1,8 @@
 deploy:
-  instance_id: c5f5nkjgia16fu
-  ssh: root@157.157.221.29:21131
-  ready_url: https://c5f5nkjgia16fu-8000.proxy.runpod.net
-  proxy_url: https://c5f5nkjgia16fu-8000.proxy.runpod.net
+  instance_id: g4p2yuj4k1xvcp
+  ssh: root@157.157.221.29:20041
+  ready_url: https://g4p2yuj4k1xvcp-8000.proxy.runpod.net
+  proxy_url: https://g4p2yuj4k1xvcp-8000.proxy.runpod.net
   direct_url: http://157.157.221.29:8000
 configure:
   structure:
@@ -10,5 +10,5 @@ configure:
     device_map: auto
     num_layers: 28
     hook_points:
-    - input_layernorm.output
     - post_attention_layernorm.output
+    - input_layernorm.output

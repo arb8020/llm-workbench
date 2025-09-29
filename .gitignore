@@ -57,6 +57,9 @@ test_*.py
 !examples/gsm8k_remote_nnsight/test_client.py
 server_*.log
 
+# HTML files (may contain third-party API keys)
+*.html
+
 # OS
 .DS_Store
 Thumbs.db

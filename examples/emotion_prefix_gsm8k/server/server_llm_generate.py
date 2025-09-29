@@ -349,15 +349,14 @@ async def chat_completions(req: ChatCompletionRequest):
         before_alloc = torch.cuda.memory_allocated() / (1024 ** 2)
         before_reserved = torch.cuda.memory_reserved() / (1024 ** 2)
     try:
-        with llm.generate(prompt_text, **_gen_args()) as tracer:
-            if local_cfg.enabled:
-                targets = _collect_targets(local_cfg.layers, local_cfg.hook_points)
-                for name, node in targets:
-                    proxies[name] = node.save()
-        generated_ids = getattr(tracer, "generator", None)
-        generated_ids = getattr(generated_ids, "output", None) or getattr(tracer, "output", None)
-        if isinstance(generated_ids, (list, tuple)):
-            generated_ids = generated_ids[0]
+        with torch.inference_mode():
+            gen_kwargs = _gen_args()
+            generated_ids = llm.model.generate(
+                input_ids,
+                attention_mask=attn_mask,
+                pad_token_id=llm.tokenizer.eos_token_id,
+                **gen_kwargs,
+            )
     except Exception as exc:
         if torch.cuda.is_available():
             alloc = torch.cuda.memory_allocated() / (1024 ** 2)
@@ -388,14 +387,9 @@ async def chat_completions(req: ChatCompletionRequest):
         )
 
     if local_cfg.enabled:
-        if local_cfg.mode == "generate":
-            pass  # proxies already captured during llm.generate
-        else:
-            proxies = {}
-            with llm.trace(prompt_text) as tracer:
-                targets = _collect_targets(local_cfg.layers, local_cfg.hook_points)
-                for name, node in targets:
-                    proxies[name] = node.save()
+        with llm.trace(prompt_text) as tracer:
+            targets = _collect_targets(local_cfg.layers, local_cfg.hook_points)
+            proxies = {name: node.save() for name, node in targets}
         base_dir = Path(run_dir_override) if run_dir_override is not None else local_cfg.save_dir
         use_subdir = per_request_subdir_override if per_request_subdir_override is not None else local_cfg.per_request_subdir
         if use_subdir:
