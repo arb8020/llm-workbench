@@ -64,3 +64,14 @@ After fixing, verify:
 1. Run script and let it fail → GPU should be terminated
 2. Check `broker instances list` → Should show 0 instances
 3. Run with `--keep-running` → GPU should stay running
+
+## Update: Confirmed Not Working
+
+**Tested on 2025-09-29:**
+- Script completed successfully
+- Logged: "✅ Cleanup complete"
+- But GPU `ks7zjrhkt5z1cc` was still running
+- Had to manually terminate with `broker instances terminate`
+- **Confirmed: Cleanup code does NOT actually terminate instances**
+
+This is a critical bug - every run leaves a GPU running.

@@ -1,0 +1,16 @@
+{
+  "sample_data": {
+    "question": "Every day, Wendi feeds each of her chickens three cups of mixed chicken feed, containing seeds, mealworms and vegetables to help keep them healthy.  She gives the chickens their feed in three separate meals. In the morning, she gives her flock of chickens 15 cups of feed.  In the afternoon, she gives her chickens another 25 cups of feed.  How many cups of feed does she need to give her chickens in the final meal of the day if the size of Wendi's flock is 20 chickens?",
+    "answer": "20",
+    "sample_id": "gsm8k_0005"
+  },
+  "sample_id": "gsm8k_0005",
+  "variant": "collaborative",
+  "metrics": {
+    "correctness": 0.0,
+    "format": 0.0,
+    "efficiency": 0.0
+  },
+  "worker_id": "worker_1",
+  "processing_time": 3.1245927810668945
+}

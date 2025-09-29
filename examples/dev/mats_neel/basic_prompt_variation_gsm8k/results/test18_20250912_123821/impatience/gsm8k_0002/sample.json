@@ -1,0 +1,16 @@
+{
+  "sample_data": {
+    "question": "A robe takes 2 bolts of blue fiber and half that much white fiber.  How many bolts in total does it take?",
+    "answer": "3",
+    "sample_id": "gsm8k_0002"
+  },
+  "sample_id": "gsm8k_0002",
+  "variant": "impatience",
+  "metrics": {
+    "correctness": 1.0,
+    "format": 1.0,
+    "efficiency": 0.28
+  },
+  "worker_id": "worker_1",
+  "processing_time": 1.746185064315796
+}

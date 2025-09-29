@@ -1,0 +1,16 @@
+{
+  "sample_data": {
+    "question": "James decides to run 3 sprints 3 times a week.  He runs 60 meters each sprint.  How many total meters does he run a week?",
+    "answer": "540",
+    "sample_id": "gsm8k_0004"
+  },
+  "sample_id": "gsm8k_0004",
+  "variant": "control",
+  "metrics": {
+    "correctness": 0.0,
+    "format": 1.0,
+    "efficiency": 0.32066666666666666
+  },
+  "worker_id": "worker_1",
+  "processing_time": 2.0892348289489746
+}

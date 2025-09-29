@@ -1,0 +1,14 @@
+name: nnsight-gsm8k-demo
+port: 8000
+min_vram: 12
+max_price: 0.40
+model: willcb/Qwen3-0.6B
+device_map: auto
+samples: 1
+variants: [control, frustration]
+seed: 42
+max_tokens: 1024
+temperature: 0.7
+layers: all   # or [8,12,16]
+mode: generate  # trace or generate
+# out: examples/emotion_prefix_gsm8k/results/custom_exp_name  # optional explicit output dir

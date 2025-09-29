@@ -1,0 +1,39 @@
+{
+  "experiment_name": "tau_pilot",
+  "timestamp": "20250912_125528",
+  "tasks": 2,
+  "environment": "retail",
+  "variants": [
+    "control",
+    "frustration"
+  ],
+  "workers": 1,
+  "random_seed": 42,
+  "vllm_config": {
+    "min_vram": 12,
+    "max_price": 0.4,
+    "gpu_memory_utilization": 0.6,
+    "max_model_len": 2048
+  },
+  "workers_info": [
+    {
+      "worker_id": "worker_1",
+      "connection_info": {
+        "url": "https://bcxsua5dqgonct-8000.proxy.runpod.net",
+        "instance_id": "bcxsua5dqgonct",
+        "ssh": "root@69.30.85.191:22078",
+        "provider": "runpod",
+        "status": "ready",
+        "model": "willcb/Qwen3-0.6B"
+      },
+      "ssh_connection": "root@69.30.85.191:22078",
+      "endpoint_url": "https://bcxsua5dqgonct-8000.proxy.runpod.net",
+      "task_indices": [
+        1,
+        2
+      ],
+      "status": "deployed"
+    }
+  ],
+  "output_dir": "/Users/chiraagbalu/llm-workbench/examples/mats_neel/tau_bench_variation/results/tau_pilot_20250912_125528"
+}

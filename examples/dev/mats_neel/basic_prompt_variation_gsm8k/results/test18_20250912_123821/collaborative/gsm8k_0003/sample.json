@@ -1,0 +1,16 @@
+{
+  "sample_data": {
+    "question": "Josh decides to try flipping a house.  He buys a house for $80,000 and then puts in $50,000 in repairs.  This increased the value of the house by 150%.  How much profit did he make?",
+    "answer": "70000",
+    "sample_id": "gsm8k_0003"
+  },
+  "sample_id": "gsm8k_0003",
+  "variant": "collaborative",
+  "metrics": {
+    "correctness": 0.0,
+    "format": 1.0,
+    "efficiency": 0.020000000000000018
+  },
+  "worker_id": "worker_1",
+  "processing_time": 3.095846652984619
+}

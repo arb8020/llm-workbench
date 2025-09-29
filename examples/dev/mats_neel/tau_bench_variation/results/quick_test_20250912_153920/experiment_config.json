@@ -1,0 +1,39 @@
+{
+  "experiment_name": "quick_test",
+  "timestamp": "20250912_153920",
+  "tasks": 2,
+  "environment": "retail",
+  "variants": [
+    "control",
+    "frustration"
+  ],
+  "workers": 1,
+  "random_seed": 42,
+  "vllm_config": {
+    "min_vram": 12,
+    "max_price": 0.4,
+    "gpu_memory_utilization": 0.6,
+    "max_model_len": 2048
+  },
+  "workers_info": [
+    {
+      "worker_id": "worker_1",
+      "connection_info": {
+        "url": "https://dfgkz4w4redz02-8000.proxy.runpod.net",
+        "instance_id": "dfgkz4w4redz02",
+        "ssh": "root@194.68.245.133:22148",
+        "provider": "runpod",
+        "status": "ready",
+        "model": "willcb/Qwen3-0.6B"
+      },
+      "ssh_connection": "root@194.68.245.133:22148",
+      "endpoint_url": "https://dfgkz4w4redz02-8000.proxy.runpod.net",
+      "task_indices": [
+        1,
+        2
+      ],
+      "status": "deployed"
+    }
+  ],
+  "output_dir": "/Users/chiraagbalu/llm-workbench/examples/mats_neel/tau_bench_variation/results/quick_test_20250912_153920"
+}
