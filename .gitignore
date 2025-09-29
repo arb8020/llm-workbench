@@ -60,6 +60,33 @@ server_*.log
 # HTML files (may contain third-party API keys)
 *.html
 
+# Binary and large files - should never be in git
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.safetensors
+
+# Archives
+*.tar.gz
+*.zip
+*.tar
+*.gz
+
+# PDFs (research papers, figures)
+*.pdf
+
+# Result directories (comprehensive)
+**/results/
+**/activations/
+**/checkpoints/
+
 # OS
 .DS_Store
 Thumbs.db
