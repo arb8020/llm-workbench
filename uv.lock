@@ -1765,6 +1765,7 @@ source = { editable = "." }
 dependencies = [
     { name = "bifrost" },
     { name = "broker" },
+    { name = "datasets" },
     { name = "rollouts" },
 ]
 
@@ -1910,6 +1911,7 @@ requires-dist = [
     { name = "broker", marker = "extra == 'outlier'", editable = "broker" },
     { name = "dacite", marker = "extra == 'examples-gsm8k-remote'", specifier = ">=1.8.0" },
     { name = "dacite", marker = "extra == 'examples-tau-bench'", specifier = ">=1.8.0" },
+    { name = "datasets", specifier = ">=4.0.0" },
     { name = "datasets", marker = "extra == 'examples-emotion-prefix-gsm8k'", specifier = ">=4.0.0" },
     { name = "datasets", marker = "extra == 'examples-gsm8k-remote'", specifier = ">=4.0.0" },
     { name = "datasets", marker = "extra == 'examples-gsm8k-remote-nnsight'", specifier = ">=4.0.0" },

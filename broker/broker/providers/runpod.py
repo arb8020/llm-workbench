@@ -243,7 +243,8 @@ def provision_instance(request: ProvisionRequest, ssh_startup_script: Optional[s
             gpu_count=request.gpu_count,
             name=request.name,  # Fix: Use name from request
             price_per_hour=0.0,  # We'll get this from a separate query
-            raw_data=pod_data
+            raw_data=pod_data,
+            api_key=api_key  # Store API key for instance methods
         )
         
     except Exception as e:
@@ -419,7 +420,8 @@ def get_instance_details(instance_id: str, api_key: Optional[str] = None) -> Opt
             public_ip=public_ip,
             ssh_port=ssh_port,
             ssh_username=ssh_username,
-            raw_data=pod
+            raw_data=pod,
+            api_key=api_key  # Store API key for instance methods
         )
         
     except Exception as e:
@@ -427,9 +429,9 @@ def get_instance_details(instance_id: str, api_key: Optional[str] = None) -> Opt
         return None
 
 
-def _parse_pod_to_instance(pod: Dict[str, Any]) -> GPUInstance:
+def _parse_pod_to_instance(pod: Dict[str, Any], api_key: Optional[str] = None) -> GPUInstance:
     """Parse a pod dictionary into a GPUInstance"""
-    
+
     # Map RunPod statuses to our enum
     status_map = {
         "PENDING": InstanceStatus.PENDING,
@@ -439,36 +441,36 @@ def _parse_pod_to_instance(pod: Dict[str, Any]) -> GPUInstance:
         "FAILED": InstanceStatus.FAILED
     }
     status = status_map.get(pod.get("desiredStatus", ""), InstanceStatus.PENDING)
-    
+
     # Extract SSH connection info - Try direct SSH first, fallback to proxy
     public_ip = None
     ssh_port = 22
     ssh_username = "root"  # Default for direct SSH
-    
+
     # Method 1: Check for direct SSH via runtime.ports (preferred)
     runtime = pod.get("runtime")
     if runtime and runtime.get("ports"):
         for port in runtime["ports"]:
-            if (port.get("privatePort") == 22 and 
-                port.get("isIpPublic") and 
+            if (port.get("privatePort") == 22 and
+                port.get("isIpPublic") and
                 port.get("type") == "tcp"):
                 public_ip = port.get("ip")
                 ssh_port = port.get("publicPort")
                 ssh_username = "root"  # Direct connection uses root
                 break
-    
+
     # Method 2: Fallback to proxy SSH if no direct SSH available
     if not public_ip and pod.get("machine") and pod["machine"].get("podHostId"):
         pod_host_id = pod["machine"]["podHostId"]
         public_ip = "ssh.runpod.io"
         ssh_port = 22
         ssh_username = pod_host_id  # Proxy uses podHostId as username
-    
+
     # Extract GPU type from machine details
     gpu_type = "unknown"
     if pod.get("machine") and pod["machine"].get("gpuType") and pod["machine"]["gpuType"].get("displayName"):
         gpu_type = pod["machine"]["gpuType"]["displayName"]
-    
+
     return GPUInstance(
         id=pod["id"],
         provider="runpod",
@@ -480,7 +482,8 @@ def _parse_pod_to_instance(pod: Dict[str, Any]) -> GPUInstance:
         public_ip=public_ip,
         ssh_port=ssh_port,
         ssh_username=ssh_username,
-        raw_data=pod
+        raw_data=pod,
+        api_key=api_key  # Store API key for instance methods
     )
 
 
@@ -540,7 +543,7 @@ def list_instances(api_key: Optional[str] = None) -> List[GPUInstance]:
         instances = []
         for pod in pods:
             try:
-                instance = _parse_pod_to_instance(pod)
+                instance = _parse_pod_to_instance(pod, api_key=api_key)
                 if instance:
                     instances.append(instance)
             except Exception as e:

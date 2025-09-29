@@ -754,7 +754,7 @@ if __name__ == "__main__":
     # Setup logging with dual output: human-readable stdout + JSONL file
     # Create timestamped log file in logs directory
     from datetime import datetime
-    log_dir = Path("examples/gsm8k_remote/logs")
+    log_dir = Path("logs")  # Relative to script location
     log_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = log_dir / f"gsm8k_remote_{args.mode}_{timestamp}.jsonl"

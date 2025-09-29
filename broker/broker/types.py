@@ -56,7 +56,7 @@ class GPUOffer:
     manufacturer: Optional[str] = None
 
 
-@dataclass 
+@dataclass
 class GPUInstance:
     """A provisioned GPU instance with convenience methods"""
     id: str
@@ -70,6 +70,7 @@ class GPUInstance:
     ssh_port: Optional[int] = None
     ssh_username: Optional[str] = None
     raw_data: Optional[Dict[str, Any]] = None
+    api_key: Optional[str] = None  # Store API key for internal API calls
     
     def exec(self, command: str, ssh_key_path: Optional[str] = None, timeout: int = 30) -> 'SSHResult':
         """Execute command via SSH using configured key (synchronous)"""
@@ -158,18 +159,18 @@ class GPUInstance:
     def terminate(self) -> bool:
         """Terminate this instance"""
         from .api import terminate_instance
-        return terminate_instance(self.id, self.provider)
+        return terminate_instance(self.id, self.provider, api_key=self.api_key)
     
     def wait_until_ready(self, timeout: int = 300) -> bool:
         """Wait until instance status is RUNNING"""
         import time
 
         from .api import get_instance
-        
+
         start_time = time.time()
-        
+
         while time.time() - start_time < timeout:
-            updated_instance = get_instance(self.id, self.provider)
+            updated_instance = get_instance(self.id, self.provider, api_key=self.api_key)
             if not updated_instance:
                 return False
                 
@@ -204,15 +205,17 @@ class GPUInstance:
     def _wait_for_ssh_assignment(self, start_time: float, timeout: int) -> bool:
         """Wait for direct SSH to be assigned (not proxy)."""
         import time
+        import logging
 
+        logger = logging.getLogger(__name__)
         from .providers.runpod import get_instance_details
-        
-        print("Waiting for direct SSH to be assigned...")
-        print("Note: This may take up to 10 minutes. Proxy SSH will be ignored.")
-        
+
+        logger.info("Waiting for direct SSH to be assigned...")
+        logger.info("Note: This may take up to 10 minutes. Proxy SSH will be ignored.")
+
         while time.time() - start_time < timeout:
             # Get fresh data directly from API (like broker list does)
-            fresh_instance = get_instance_details(self.id)
+            fresh_instance = get_instance_details(self.id, api_key=self.api_key)
             
             if fresh_instance and fresh_instance.public_ip and fresh_instance.ssh_port:
                 if fresh_instance.public_ip != "ssh.runpod.io":
