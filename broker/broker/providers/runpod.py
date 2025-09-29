@@ -40,20 +40,17 @@ def _build_ports_string(exposed_ports: Optional[List[int]], enable_http_proxy: b
     return ",".join(ports)
 
 
-def _get_api_key() -> str:
-    """Get RunPod API key from environment"""
-    # Load .env file if it exists
-    load_dotenv()
-    
-    api_key = os.environ.get("RUNPOD_API_KEY")
+def _make_graphql_request(query: str, variables: Optional[Dict] = None, api_key: Optional[str] = None) -> Dict[str, Any]:
+    """Make a GraphQL request to RunPod API
+
+    Args:
+        query: GraphQL query string
+        variables: Optional GraphQL variables
+        api_key: RunPod API key (required)
+    """
     if not api_key:
-        raise ValueError("RUNPOD_API_KEY environment variable not set")
-    return api_key
+        raise ValueError("RunPod API key is required but was not provided")
 
-
-def _make_graphql_request(query: str, variables: Optional[Dict] = None) -> Dict[str, Any]:
-    """Make a GraphQL request to RunPod API"""
-    api_key = _get_api_key()
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
@@ -86,8 +83,9 @@ def _make_graphql_request(query: str, variables: Optional[Dict] = None) -> Dict[
     return data["data"]
 
 
-def search_gpu_offers(cuda_version: Optional[str] = None, manufacturer: Optional[str] = None, 
-                      memory_gb: Optional[int] = None, container_disk_gb: Optional[int] = None) -> List[GPUOffer]:
+def search_gpu_offers(cuda_version: Optional[str] = None, manufacturer: Optional[str] = None,
+                      memory_gb: Optional[int] = None, container_disk_gb: Optional[int] = None,
+                      api_key: Optional[str] = None) -> List[GPUOffer]:
     """Search for available GPU offers on RunPod with optional CUDA version and manufacturer filtering"""
     # Build lowestPrice input - RunPod API only supports basic parameters
     lowest_price_input = "{ gpuCount: 1 }"
@@ -113,7 +111,7 @@ def search_gpu_offers(cuda_version: Optional[str] = None, manufacturer: Optional
     """
     
     try:
-        data = _make_graphql_request(query)
+        data = _make_graphql_request(query, api_key=api_key)
         offers = []
         
         for gpu_type in data.get("gpuTypes", []):
@@ -171,7 +169,7 @@ def search_gpu_offers(cuda_version: Optional[str] = None, manufacturer: Optional
         return []
 
 
-def provision_instance(request: ProvisionRequest, ssh_startup_script: Optional[str] = None) -> Optional[GPUInstance]:
+def provision_instance(request: ProvisionRequest, ssh_startup_script: Optional[str] = None, api_key: Optional[str] = None) -> Optional[GPUInstance]:
     """Provision a GPU instance on RunPod"""
     # First, we need to find a suitable GPU type
     # For now, let's implement a simple approach using podFindAndDeployOnDemand
@@ -229,7 +227,7 @@ def provision_instance(request: ProvisionRequest, ssh_startup_script: Optional[s
     variables = {"input": pod_input}
     
     try:
-        data = _make_graphql_request(mutation, variables)
+        data = _make_graphql_request(mutation, variables, api_key=api_key)
         pod_data = data.get("podFindAndDeployOnDemand")
         
         if not pod_data:
@@ -253,7 +251,7 @@ def provision_instance(request: ProvisionRequest, ssh_startup_script: Optional[s
         return None
 
 
-def get_instance_details_enhanced(instance_id: str) -> Optional[dict]:
+def get_instance_details_enhanced(instance_id: str, api_key: Optional[str] = None) -> Optional[dict]:
     """Get comprehensive details of a specific instance with all available fields"""
     query = """
     query pod($input: PodFilter!) {
@@ -302,7 +300,7 @@ def get_instance_details_enhanced(instance_id: str) -> Optional[dict]:
     variables = {"input": {"podId": instance_id}}
     
     try:
-        response = _make_graphql_request(query, variables)
+        response = _make_graphql_request(query, variables, api_key=api_key)
         pod_data = response.get("pod")
         
         if not pod_data:
@@ -315,7 +313,7 @@ def get_instance_details_enhanced(instance_id: str) -> Optional[dict]:
         return None
 
 
-def get_instance_details(instance_id: str) -> Optional[GPUInstance]:
+def get_instance_details(instance_id: str, api_key: Optional[str] = None) -> Optional[GPUInstance]:
     """Get details of a specific instance"""
     query = """
     query pod($input: PodFilter!) {
@@ -365,7 +363,7 @@ def get_instance_details(instance_id: str) -> Optional[GPUInstance]:
     variables = {"input": {"podId": instance_id}}
     
     try:
-        data = _make_graphql_request(query, variables)
+        data = _make_graphql_request(query, variables, api_key=api_key)
         pod = data.get("pod")
         
         if not pod:
@@ -486,7 +484,7 @@ def _parse_pod_to_instance(pod: Dict[str, Any]) -> GPUInstance:
     )
 
 
-def list_instances() -> List[GPUInstance]:
+def list_instances(api_key: Optional[str] = None) -> List[GPUInstance]:
     """List all user's instances"""
     query = """
     query {
@@ -536,7 +534,7 @@ def list_instances() -> List[GPUInstance]:
     """
     
     try:
-        data = _make_graphql_request(query)
+        data = _make_graphql_request(query, api_key=api_key)
         pods = data.get("myself", {}).get("pods", [])
         
         instances = []
@@ -556,7 +554,7 @@ def list_instances() -> List[GPUInstance]:
         return []
 
 
-def get_user_balance() -> Optional[Dict[str, Any]]:
+def get_user_balance(api_key: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Get user balance and spending information from RunPod"""
     query = """
     query {
@@ -572,7 +570,7 @@ def get_user_balance() -> Optional[Dict[str, Any]]:
     """
     
     try:
-        data = _make_graphql_request(query)
+        data = _make_graphql_request(query, api_key=api_key)
         user_data = data.get("myself")
         
         if not user_data:
@@ -597,7 +595,7 @@ def get_user_balance() -> Optional[Dict[str, Any]]:
         return None
 
 
-def terminate_instance(instance_id: str) -> bool:
+def terminate_instance(instance_id: str, api_key: Optional[str] = None) -> bool:
     """Terminate a RunPod instance"""
     # Use simple schema - RunPod API might return different types
     mutation = """
@@ -609,7 +607,7 @@ def terminate_instance(instance_id: str) -> bool:
     variables = {"input": {"podId": instance_id}}
     
     try:
-        data = _make_graphql_request(mutation, variables)
+        data = _make_graphql_request(mutation, variables, api_key=api_key)
         result = data.get("podTerminate")
         logger.info(f"RunPod terminate response: {result} (type: {type(result)})")
         logger.info(f"Expected instance_id: {instance_id}")

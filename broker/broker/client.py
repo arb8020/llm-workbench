@@ -216,7 +216,8 @@ class GPUClient:
             cuda_version=cuda_version,
             manufacturer=manufacturer,
             sort=sort,
-            reverse=reverse
+            reverse=reverse,
+            api_key=self._api_key
         )
     
     def create(
@@ -295,6 +296,7 @@ class GPUClient:
             exposed_ports=exposed_ports,
             enable_http_proxy=enable_http_proxy,
             max_attempts=max_attempts,
+            api_key=self._api_key,
             **kwargs
         )
         
@@ -305,18 +307,18 @@ class GPUClient:
     
     def get_instance(self, instance_id: str, provider: Optional[str] = None) -> Optional['ClientGPUInstance']:
         """Get instance details"""
-        instance = api.get_instance(instance_id, provider)
+        instance = api.get_instance(instance_id, provider, api_key=self._api_key)
         if instance:
             return ClientGPUInstance(instance, self)
         return None
     
     def terminate_instance(self, instance_id: str, provider: Optional[str] = None) -> bool:
         """Terminate instance"""
-        return api.terminate_instance(instance_id, provider)
+        return api.terminate_instance(instance_id, provider, api_key=self._api_key)
     
     def list_instances(self, provider: Optional[str] = None) -> List['ClientGPUInstance']:
         """List all user's instances"""
-        instances = api.list_instances(provider)
+        instances = api.list_instances(provider, api_key=self._api_key)
         return [ClientGPUInstance(instance, self) for instance in instances]
 
 

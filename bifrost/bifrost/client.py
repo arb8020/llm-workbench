@@ -151,17 +151,20 @@ class BifrostClient:
             JobError: Code deployment failed
         """
         try:
+            # Get configured SSH client (with credentials)
+            client = self._get_ssh_client()
+
             deployment = GitDeployment(self.ssh.user, self.ssh.host, self.ssh.port)
-            
+
             if isolated:
                 # Use existing isolated worktree deployment
-                worktree_path = deployment.deploy_code_only(target_dir, uv_extra)
+                worktree_path = deployment.deploy_code_only(client, target_dir, uv_extra)
                 self.logger.info(f"Code deployed to isolated worktree: {worktree_path}")
                 return worktree_path
             else:
                 # Use workspace deployment (shared directory)
                 workspace_path = target_dir or "~/.bifrost/workspace"
-                deployment.deploy_to_workspace(workspace_path, uv_extra)
+                deployment.deploy_to_workspace(client, workspace_path, uv_extra)
                 self.logger.info(f"Code deployed to workspace: {workspace_path}")
                 return workspace_path
         except Exception as e:
@@ -325,10 +328,13 @@ class BifrostClient:
         """
         try:
             if not no_deploy:
+                # Get configured SSH client (with credentials)
+                client = self._get_ssh_client()
+
                 # Use GitDeployment for detached execution
                 deployment = GitDeployment(self.ssh.user, self.ssh.host, self.ssh.port)
                 env_list = [f"{k}={v}" for k, v in (env or {}).items()]
-                job_id = deployment.deploy_and_execute_detached(command, env_list)
+                job_id = deployment.deploy_and_execute_detached(client, command, env_list)
             else:
                 # TODO: Implement legacy detached mode
                 raise JobError("Legacy detached mode not yet implemented in SDK")

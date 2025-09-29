@@ -5,13 +5,20 @@ GPU Broker Minimal - Client Interface Example
 Shows the new client-based approach (recommended)
 """
 
+import os
+from dotenv import load_dotenv
+
 from broker import GPUClient
 from broker.types import CloudType
+
+# Load environment variables from .env file
+load_dotenv()
+RUNPOD_API_KEY = os.environ.get('RUNPOD_API_KEY')
 
 # Step 1: Create configured client
 client = GPUClient(
     ssh_key_path="~/.ssh/id_ed25519",  # Your SSH key
-    api_key=None  # Uses RUNPOD_API_KEY env var
+    api_key=RUNPOD_API_KEY  # Explicitly pass API key from environment
 )
 
 print("✅ Client configured")

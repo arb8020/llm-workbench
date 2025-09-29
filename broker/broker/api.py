@@ -25,7 +25,9 @@ def search(
     container_disk_gb: Optional[int] = None,
     # New sorting parameters
     sort: Optional[Callable[[Any], Any]] = None,
-    reverse: bool = False
+    reverse: bool = False,
+    # API credentials
+    api_key: Optional[str] = None
 ) -> List[GPUOffer]:
     """
     Search for available GPU offers across providers
@@ -47,8 +49,9 @@ def search(
     
     # Get all offers from providers
     if provider is None or provider == "runpod":
-        runpod_offers = runpod.search_gpu_offers(cuda_version=cuda_version, manufacturer=manufacturer, 
-                                                 memory_gb=memory_gb, container_disk_gb=container_disk_gb)
+        runpod_offers = runpod.search_gpu_offers(cuda_version=cuda_version, manufacturer=manufacturer,
+                                                 memory_gb=memory_gb, container_disk_gb=container_disk_gb,
+                                                 api_key=api_key)
         offers.extend(runpod_offers)
     
     # Apply pandas-style query if provided
@@ -72,42 +75,44 @@ def search(
     return offers
 
 
-def get_instance(instance_id: str, provider: Optional[str] = None) -> Optional[GPUInstance]:
+def get_instance(instance_id: str, provider: Optional[str] = None, api_key: Optional[str] = None) -> Optional[GPUInstance]:
     """
     Get details of a specific instance
-    
+
     Args:
         instance_id: Instance ID
         provider: Provider name (if known, for optimization)
-    
+        api_key: API key for authentication
+
     Returns:
         Instance details or None if not found
     """
     # Try RunPod first (for now, it's our only provider)
     if provider is None or provider == "runpod":
-        instance = runpod.get_instance_details(instance_id)
+        instance = runpod.get_instance_details(instance_id, api_key=api_key)
         if instance:
             return instance
-    
+
     return None
 
 
-def terminate_instance(instance_id: str, provider: Optional[str] = None) -> bool:
+def terminate_instance(instance_id: str, provider: Optional[str] = None, api_key: Optional[str] = None) -> bool:
     """
     Terminate a GPU instance
-    
+
     Args:
         instance_id: Instance ID
         provider: Provider name (if known, for optimization)
-    
+        api_key: API key for authentication
+
     Returns:
         True if termination was successful
     """
     # Try RunPod first
     if provider is None or provider == "runpod":
-        if runpod.terminate_instance(instance_id):
+        if runpod.terminate_instance(instance_id, api_key=api_key):
             return True
-    
+
     return False
 
 
@@ -127,11 +132,13 @@ def create(
     # Port exposure configuration
     exposed_ports: Optional[List[int]] = None,
     enable_http_proxy: bool = True,
-    # Jupyter configuration  
+    # Jupyter configuration
     start_jupyter: bool = False,
     jupyter_password: Optional[str] = None,
     # Retry parameters
     max_attempts: int = 3,
+    # API credentials
+    api_key: Optional[str] = None,
     **kwargs
 ) -> Optional[GPUInstance]:
     """
@@ -189,7 +196,8 @@ def create(
             memory_gb=memory_gb,
             container_disk_gb=container_disk_gb,
             sort=sort,
-            reverse=reverse
+            reverse=reverse,
+            api_key=api_key
         )
         if not suitable_offers:
             raise ValueError("No GPUs found matching criteria")
@@ -226,7 +234,7 @@ def create(
             
             # Provision using the appropriate provider
             if offer.provider == "runpod":
-                instance = runpod.provision_instance(request, request.ssh_startup_script)
+                instance = runpod.provision_instance(request, request.ssh_startup_script, api_key=api_key)
                 if instance:
                     logger.info(f"✅ Successfully provisioned GPU instance: {instance.id}")
                     logger.info(f"   GPU: {instance.gpu_type} x{instance.gpu_count}")  
@@ -251,21 +259,22 @@ def create(
     return None
 
 
-def list_instances(provider: Optional[str] = None) -> List[GPUInstance]:
+def list_instances(provider: Optional[str] = None, api_key: Optional[str] = None) -> List[GPUInstance]:
     """
     List all user's instances across providers
-    
+
     Args:
         provider: Specific provider to list from (default: all providers)
-    
+        api_key: API key for authentication
+
     Returns:
         List of user's GPU instances
     """
     instances = []
-    
+
     # Get instances from providers
     if provider is None or provider == "runpod":
-        runpod_instances = runpod.list_instances()
+        runpod_instances = runpod.list_instances(api_key=api_key)
         instances.extend(runpod_instances)
-    
+
     return instances

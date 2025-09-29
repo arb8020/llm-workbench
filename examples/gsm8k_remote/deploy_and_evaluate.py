@@ -20,6 +20,9 @@ import time
 from pathlib import Path
 from typing import Dict, Any, List
 
+import requests
+from dotenv import load_dotenv
+
 from shared.logging_config import setup_logging
 
 # Import broker and bifrost for deployment
@@ -31,6 +34,62 @@ from rollouts.evaluation import evaluate, load_jsonl, RewardFunction
 from rollouts.dtypes import Message, Endpoint, Environment, Trajectory, Tool, ToolFunction, ToolFunctionParameter, ToolCall, ToolResult, AgentState, RunConfig
 
 logger = logging.getLogger(__name__)
+
+
+def wait_for_vllm_ready(server_url: str, timeout: int = 300) -> bool:
+    """Wait for vLLM server to be ready by polling /v1/models endpoint.
+
+    Args:
+        server_url: Base URL of the vLLM server (e.g., http://proxy-url)
+        timeout: Maximum time to wait in seconds (default: 300 = 5 minutes)
+
+    Returns:
+        True if server becomes ready, False if timeout
+    """
+    models_endpoint = f"{server_url}/v1/models"
+    start_time = time.time()
+    poll_interval = 5  # Check every 5 seconds
+
+    print(f"⏳ Waiting for vLLM server to be ready (timeout: {timeout}s)...")
+    print(f"   Polling: {models_endpoint}")
+
+    attempt = 0
+    while time.time() - start_time < timeout:
+        attempt += 1
+        elapsed = int(time.time() - start_time)
+
+        try:
+            # Try to reach the /v1/models endpoint
+            response = requests.get(models_endpoint, timeout=10)
+
+            if response.status_code == 200:
+                # Check if the response looks valid (has models)
+                data = response.json()
+                if "data" in data and len(data["data"]) > 0:
+                    print(f"✅ vLLM server ready! (took {elapsed}s, {attempt} attempts)")
+                    print(f"   Available model: {data['data'][0].get('id', 'unknown')}")
+                    return True
+                else:
+                    print(f"   [{elapsed}s] Server responding but no models loaded yet...")
+            else:
+                print(f"   [{elapsed}s] Server returned status {response.status_code}, waiting...")
+
+        except requests.exceptions.ConnectionError:
+            # Server not accepting connections yet
+            print(f"   [{elapsed}s] Connection refused, server still starting...")
+        except requests.exceptions.Timeout:
+            # Server too slow to respond
+            print(f"   [{elapsed}s] Request timeout, server still loading...")
+        except Exception as e:
+            # Other errors
+            print(f"   [{elapsed}s] Unexpected error: {e}")
+
+        # Wait before next attempt
+        time.sleep(poll_interval)
+
+    # Timeout reached
+    print(f"❌ vLLM server did not become ready within {timeout}s")
+    return False
 
 
 def load_gsm8k_dataset(output_path: Path, sample_count: int = None) -> None:
@@ -71,19 +130,28 @@ def load_gsm8k_dataset(output_path: Path, sample_count: int = None) -> None:
         raise
 
 
-def deploy_qwen_vllm_server(min_vram: int = 12, max_price: float = 0.40, 
+def deploy_qwen_vllm_server(min_vram: int = 12, max_price: float = 0.40,
                            gpu_memory_utilization: float = 0.6, max_model_len: int = 2048) -> dict:
     """Deploy Qwen3-0.6B vLLM server on GPU and return connection info."""
-    
+
     print("🚀 Starting Qwen3-0.6B vLLM deployment...")
-    
+
+    # Load environment variables (for RUNPOD_API_KEY, SSH keys, etc.)
+    load_dotenv()
+    RUNPOD_API_KEY = os.environ.get('RUNPOD_API_KEY')
+    if not RUNPOD_API_KEY:
+        print("❌ RUNPOD_API_KEY not found in environment")
+        print("   Set it with: export RUNPOD_API_KEY=your-key")
+        print("   Or add to .env file: RUNPOD_API_KEY=your-key")
+        sys.exit(1)
+
     # 1. PROVISION GPU
     print(f"📡 Creating GPU instance (min {min_vram}GB VRAM, max ${max_price}/hr)...")
-    gpu_client = GPUClient()
-    
+    gpu_client = GPUClient(api_key=RUNPOD_API_KEY)
+
     # Build query for GPU with minimum VRAM and max price
     query = (gpu_client.vram_gb >= min_vram) & (gpu_client.price_per_hour <= max_price)
-    
+
     gpu_instance = gpu_client.create(
         query=query,
         exposed_ports=[8000],  # Expose port 8000 for vLLM
@@ -93,82 +161,116 @@ def deploy_qwen_vllm_server(min_vram: int = 12, max_price: float = 0.40,
         sort=lambda x: x.price_per_hour,  # Sort by price (cheapest first)
         reverse=False
     )
-    
-    print(f"✅ GPU ready: {gpu_instance.id}")
-    
-    # Wait for SSH to be ready
-    print("⏳ Waiting for SSH connection to be ready...")
-    if not gpu_instance.wait_until_ssh_ready(timeout=300):  # 5 minutes
-        print("❌ Failed to get SSH connection ready")
+
+    # ERROR HANDLING: Check if provisioning succeeded
+    # gpu_client.create() returns None when no GPUs match criteria or all attempts fail.
+    # We check early and exit cleanly - no GPU to clean up yet.
+    if not gpu_instance:
+        print("❌ Failed to provision GPU instance")
+        print(f"   No instances available matching: {min_vram}GB VRAM, max ${max_price}/hr")
+        print("   Try adjusting --min-vram or --max-price parameters")
         sys.exit(1)
-    
-    ssh_connection = gpu_instance.ssh_connection_string()
-    print(f"✅ SSH ready: {ssh_connection}")
-    
-    # 2. DEPLOY CODE WITH DEPENDENCIES
-    print("📦 Deploying codebase with GSM8K dependencies...")
-    bifrost_client = BifrostClient(ssh_connection)
-    
-    # Deploy the codebase to remote workspace with GSM8K remote dependencies
-    workspace_path = bifrost_client.push(uv_extra="examples_gsm8k_remote")
-    print(f"✅ Code deployed and dependencies installed: {workspace_path}")
-    
-    # 3. START QWEN VLLM SERVER IN TMUX
-    print("🌟 Starting Qwen3-0.6B vLLM server in tmux session...")
-    
-    # Create custom vLLM command for Qwen3-0.6B
-    vllm_cmd = f"""uv run python -m vllm.entrypoints.openai.api_server \\
-        --model willcb/Qwen3-0.6B \\
-        --host 0.0.0.0 \\
-        --port 8000 \\
-        --gpu-memory-utilization {gpu_memory_utilization} \\
-        --max-model-len {max_model_len} \\
-        --disable-log-stats"""
-    
-    # Create tmux session and start server with persistent logging
-    tmux_cmd = f"tmux new-session -d -s qwen-vllm 'cd ~/.bifrost/workspace && {vllm_cmd} 2>&1 | tee ~/qwen_vllm_server.log'"
-    bifrost_client.exec(tmux_cmd)
-    
-    print("✅ Qwen3-0.6B vLLM server starting in tmux session 'qwen-vllm'")
-    print("📋 Server will be ready in 2-3 minutes for model loading")
-    print("   Check server status: bifrost exec {ssh_connection} 'curl -s http://localhost:8000/v1/models'")
-    print("   View logs: bifrost exec {ssh_connection} 'cat ~/qwen_vllm_server.log'")
-    
-    # 4. CONSTRUCT PROXY URL  
-    proxy_url = gpu_instance.get_proxy_url(8000)
-    
-    if not proxy_url:
-        print("⚠️  No proxy URL available - instance may not be RunPod")
-        proxy_url = f"http://{gpu_instance.public_ip}:8000"
-    
-    # 5. RETURN CONNECTION INFO
-    connection_info = {
-        "url": proxy_url,
-        "instance_id": gpu_instance.id,
-        "ssh": ssh_connection,
-        "provider": gpu_instance.provider,
-        "status": "ready",
-        "model": "willcb/Qwen3-0.6B"
-    }
-    
-    print("\n🎉 Qwen3-0.6B vLLM deployment complete!")
-    print(f"   Server URL: {proxy_url}")
-    print(f"   Instance ID: {gpu_instance.id}")
-    print(f"   SSH: {ssh_connection}")
-    
-    print("\n🧪 Test your server:")
-    print(f"   curl -X POST {proxy_url}/v1/completions \\")
-    print('     -H "Content-Type: application/json" \\')
-    print('     -d \'{"model":"willcb/Qwen3-0.6B","prompt":"Hello!","max_tokens":20}\'')
-    
-    print("\n🔧 Management commands:")
-    print(f"   # View tmux session: bifrost exec {ssh_connection} 'tmux attach -t qwen-vllm'")
-    print(f"   # Check persistent logs: bifrost exec {ssh_connection} 'cat ~/qwen_vllm_server.log'")
-    print(f"   # Check tmux session: bifrost exec {ssh_connection} 'tmux capture-pane -t qwen-vllm -p'")
-    print(f"   # Stop server: bifrost exec {ssh_connection} 'tmux kill-session -t qwen-vllm'")
-    print(f"   # Terminate GPU: broker terminate {gpu_instance.id}")
-    
-    return connection_info
+
+    print(f"✅ GPU provisioned: {gpu_instance.id}")
+
+    # ERROR HANDLING: Use try/finally pattern for guaranteed cleanup
+    # Once we have a GPU instance, we must terminate it on any error to prevent billing leaks.
+    # This pattern ensures cleanup happens whether we hit SSH timeout, deployment failure,
+    # or any unexpected exception. We use try/finally (not try/except) so errors propagate
+    # to the caller while still guaranteeing cleanup.
+    try:
+        # Wait for SSH to be ready
+        print("⏳ Waiting for SSH connection to be ready...")
+        if not gpu_instance.wait_until_ssh_ready(timeout=300):  # 5 minutes
+            # Raise exception to trigger cleanup in finally block
+            raise RuntimeError("SSH connection timeout after 5 minutes")
+
+        ssh_connection = gpu_instance.ssh_connection_string()
+        print(f"✅ SSH ready: {ssh_connection}")
+
+        # 2. DEPLOY CODE WITH DEPENDENCIES
+        print("📦 Deploying codebase with GSM8K dependencies...")
+        bifrost_client = BifrostClient(ssh_connection)
+
+        # Deploy the codebase to remote workspace with GSM8K remote dependencies
+        workspace_path = bifrost_client.push(uv_extra="examples_gsm8k_remote")
+        print(f"✅ Code deployed and dependencies installed: {workspace_path}")
+
+        # 3. START QWEN VLLM SERVER IN TMUX
+        print("🌟 Starting Qwen3-0.6B vLLM server in tmux session...")
+
+        # Create custom vLLM command for Qwen3-0.6B
+        vllm_cmd = f"""uv run python -m vllm.entrypoints.openai.api_server \\
+            --model willcb/Qwen3-0.6B \\
+            --host 0.0.0.0 \\
+            --port 8000 \\
+            --gpu-memory-utilization {gpu_memory_utilization} \\
+            --max-model-len {max_model_len} \\
+            --disable-log-stats"""
+
+        # Create tmux session and start server with persistent logging
+        tmux_cmd = f"tmux new-session -d -s qwen-vllm 'cd ~/.bifrost/workspace && {vllm_cmd} 2>&1 | tee ~/qwen_vllm_server.log'"
+        bifrost_client.exec(tmux_cmd)
+
+        print("✅ Qwen3-0.6B vLLM server starting in tmux session 'qwen-vllm'")
+        print("📋 Server will be ready in 2-3 minutes for model loading")
+        print("   Check server status: bifrost exec {ssh_connection} 'curl -s http://localhost:8000/v1/models'")
+        print("   View logs: bifrost exec {ssh_connection} 'cat ~/qwen_vllm_server.log'")
+
+        # 4. CONSTRUCT PROXY URL
+        proxy_url = gpu_instance.get_proxy_url(8000)
+
+        if not proxy_url:
+            print("⚠️  No proxy URL available - instance may not be RunPod")
+            proxy_url = f"http://{gpu_instance.public_ip}:8000"
+
+        # 5. RETURN CONNECTION INFO
+        connection_info = {
+            "url": proxy_url,
+            "instance_id": gpu_instance.id,
+            "ssh": ssh_connection,
+            "provider": gpu_instance.provider,
+            "status": "ready",
+            "model": "willcb/Qwen3-0.6B"
+        }
+
+        print("\n🎉 Qwen3-0.6B vLLM deployment complete!")
+        print(f"   Server URL: {proxy_url}")
+        print(f"   Instance ID: {gpu_instance.id}")
+        print(f"   SSH: {ssh_connection}")
+
+        print("\n🧪 Test your server:")
+        print(f"   curl -X POST {proxy_url}/v1/completions \\")
+        print('     -H "Content-Type: application/json" \\')
+        print('     -d \'{"model":"willcb/Qwen3-0.6B","prompt":"Hello!","max_tokens":20}\'')
+
+        print("\n🔧 Management commands:")
+        print(f"   # View tmux session: bifrost exec {ssh_connection} 'tmux attach -t qwen-vllm'")
+        print(f"   # Check persistent logs: bifrost exec {ssh_connection} 'cat ~/qwen_vllm_server.log'")
+        print(f"   # Check tmux session: bifrost exec {ssh_connection} 'tmux capture-pane -t qwen-vllm -p'")
+        print(f"   # Stop server: bifrost exec {ssh_connection} 'tmux kill-session -t qwen-vllm'")
+        print(f"   # Terminate GPU: broker terminate {gpu_instance.id}")
+
+        return connection_info
+
+    except Exception as e:
+        # ERROR HANDLING: Clean up GPU on any failure
+        # If we get here, something went wrong (SSH timeout, deployment failure, etc.)
+        # We must terminate the GPU instance to prevent it from continuing to bill.
+        print(f"\n❌ Deployment failed: {e}")
+        print("🧹 Terminating GPU instance to prevent billing...")
+
+        try:
+            gpu_instance.terminate()
+            print("✅ GPU instance terminated successfully")
+        except Exception as cleanup_error:
+            # If cleanup fails, at least tell the user how to clean up manually
+            print(f"⚠️  Failed to terminate GPU instance: {cleanup_error}")
+            print(f"   IMPORTANT: Manually terminate to stop billing:")
+            print(f"   broker terminate {gpu_instance.id}")
+
+        # Re-raise the original exception so caller (main()) knows deployment failed
+        raise
 
 
 def prepare_gsm8k_messages_no_tools(sample: Dict[str, Any]) -> List[Message]:
@@ -320,39 +422,40 @@ def check_equality(predicted: str, expected: str) -> bool:
     return False
 
 
-def make_correctness_reward(sample: Dict[str, Any]) -> RewardFunction:
-    """Create a reward function that checks correctness for this sample."""
-    def check_correctness(trajectory: Trajectory) -> float:
-        # Get final response
-        assistant_messages = [m for m in trajectory.messages if m.role == "assistant"]
-        if not assistant_messages:
-            return 0.0
-        
-        response = " ".join(m.content for m in assistant_messages if m.content)
-        
-        # Extract and check answer
-        extracted_answer = extract_answer(response)
-        expected_answer = str(sample["answer"]).strip()
-        
-        is_correct = check_equality(extracted_answer, expected_answer) if extracted_answer else False
-        return 1.0 if is_correct else 0.0
-    
-    return check_correctness
+def correctness_reward(trajectory: Trajectory, sample: Dict[str, Any]) -> float:
+    """Check if the extracted answer matches the expected answer."""
+    assert "answer" in sample, "Sample must have 'answer' key"
 
-
-def format_reward(trajectory: Trajectory) -> float:
-    """Reward for following the answer format."""
+    # Get final response
     assistant_messages = [m for m in trajectory.messages if m.role == "assistant"]
     if not assistant_messages:
         return 0.0
-    
+
+    response = " ".join(m.content for m in assistant_messages if m.content)
+
+    # Extract and check answer
+    extracted_answer = extract_answer(response)
+    expected_answer = str(sample["answer"]).strip()
+
+    is_correct = check_equality(extracted_answer, expected_answer) if extracted_answer else False
+    return 1.0 if is_correct else 0.0
+
+
+def format_reward(trajectory: Trajectory, sample: Dict[str, Any]) -> float:
+    """Reward for following the answer format."""
+    # Sample parameter included for consistency (not used in this reward)
+    assistant_messages = [m for m in trajectory.messages if m.role == "assistant"]
+    if not assistant_messages:
+        return 0.0
+
     response = " ".join(m.content for m in assistant_messages if m.content)
     has_answer_format = bool(re.search(r'Answer:\s*[^\n]+', response, re.IGNORECASE))
     return 1.0 if has_answer_format else 0.0
 
 
-def efficiency_reward(trajectory: Trajectory) -> float:
+def efficiency_reward(trajectory: Trajectory, sample: Dict[str, Any]) -> float:
     """Reward for being concise (fewer tokens)."""
+    # Sample parameter included for consistency (not used in this reward)
     total_tokens = sum(len(m.content or "") for m in trajectory.messages)
     # Normalize: 1.0 for <500 tokens, 0.0 for >2000 tokens
     if total_tokens < 500:
@@ -363,8 +466,9 @@ def efficiency_reward(trajectory: Trajectory) -> float:
         return 1.0 - (total_tokens - 500) / 1500
 
 
-def tool_usage_reward(trajectory: Trajectory) -> float:
+def tool_usage_reward(trajectory: Trajectory, sample: Dict[str, Any]) -> float:
     """Reward for appropriate tool usage (only meaningful with calculator environment)."""
+    # Sample parameter included for consistency (not used in this reward)
     tool_calls = sum(len(m.tool_calls or []) for m in trajectory.messages)
     # Reward 1.0 for 1-3 tool calls, 0.5 for 4-6, 0.0 for 7+
     if tool_calls == 0:
@@ -403,12 +507,16 @@ async def save_results_to_remote(bifrost_client: BifrostClient, local_output_dir
     print(f"✅ Results synced to remote: {remote_results_dir}")
 
 
-async def main(samples: int = 3, mode: str = "no-tools", parallel: int = 1, 
+async def main(samples: int = 3, mode: str = "no-tools", parallel: int = 1,
                keep_running: bool = False, min_vram: int = 12, max_price: float = 0.40,
                gpu_memory_utilization: float = 0.6, max_model_len: int = 2048):
     """Run GSM8K evaluation using remote Qwen3-0.6B vLLM server."""
     from datetime import datetime
-    
+
+    # Load environment variables at the start so they're available throughout
+    load_dotenv()
+    RUNPOD_API_KEY = os.environ.get('RUNPOD_API_KEY')
+
     # Create timestamped experiment name
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     experiment_name = f"gsm8k_remote_{mode.replace('-', '_')}_nsamples_{samples}_{timestamp}"
@@ -420,15 +528,22 @@ async def main(samples: int = 3, mode: str = "no-tools", parallel: int = 1,
     
     # 1. DEPLOY QWEN VLLM SERVER
     print("🚀 Step 1: Deploying Qwen3-0.6B vLLM server...")
-    connection_info = deploy_qwen_vllm_server(
-        min_vram=min_vram,
-        max_price=max_price,
-        gpu_memory_utilization=gpu_memory_utilization,
-        max_model_len=max_model_len
-    )
-    
+    try:
+        connection_info = deploy_qwen_vllm_server(
+            min_vram=min_vram,
+            max_price=max_price,
+            gpu_memory_utilization=gpu_memory_utilization,
+            max_model_len=max_model_len
+        )
+    except Exception as e:
+        # If deployment fails, deploy_qwen_vllm_server() already cleaned up the GPU
+        # We just need to exit gracefully here
+        print(f"\n💥 Fatal: Could not deploy vLLM server")
+        print(f"   Error: {e}")
+        sys.exit(1)
+
     bifrost_client = BifrostClient(connection_info["ssh"])
-    
+
     try:
         # 2. PREPARE DATASET
         print("\n📚 Step 2: Preparing GSM8K dataset...")
@@ -459,7 +574,7 @@ async def main(samples: int = 3, mode: str = "no-tools", parallel: int = 1,
         # 4. CHOOSE ENVIRONMENT AND SETTINGS
         print(f"\n⚙️  Step 4: Setting up evaluation environment...")
         if mode == "no-tools":
-            environment = NoToolsEnvironment()
+            environment_factory = lambda: NoToolsEnvironment()
             prepare_messages = prepare_gsm8k_messages_no_tools
             max_turns = 1
             print("📝 Mode: Zero-shot chain-of-thought")
@@ -471,7 +586,7 @@ async def main(samples: int = 3, mode: str = "no-tools", parallel: int = 1,
                 ("efficiency", efficiency_reward),
             ]
         else:
-            environment = CalculatorEnvironment()
+            environment_factory = lambda: CalculatorEnvironment()
             prepare_messages = prepare_gsm8k_messages_with_tools
             max_turns = 6
             print("🔧 Mode: Tool-assisted reasoning")
@@ -486,25 +601,49 @@ async def main(samples: int = 3, mode: str = "no-tools", parallel: int = 1,
         
         # 5. LOAD DATASET AND PREPARE EVALUATION
         print("\n📊 Step 5: Loading dataset samples...")
-        dataset_samples = list(load_jsonl(dataset_path))
-        
-        # Create sample-specific reward functions
-        def create_reward_functions_for_sample(sample: Dict[str, Any]):
-            correctness_fn = make_correctness_reward(sample)
-            sample_rewards = [
-                ("correctness", correctness_fn),
-                ("format", format_reward),
-                ("efficiency", efficiency_reward),
-            ]
-            if mode == "with-tools":
-                sample_rewards.append(("tool_usage", tool_usage_reward))
-            return sample_rewards
-        
-        # Use first sample's reward function as demo (TODO: make this sample-specific)
-        demo_rewards = create_reward_functions_for_sample(dataset_samples[0])
-        
-        # 6. RUN EVALUATION WITH STREAMING
-        print(f"\n🎯 Step 6: Running evaluation on {len(dataset_samples)} samples...")
+
+        # Load and validate dataset
+        try:
+            dataset_samples = list(load_jsonl(dataset_path))
+        except FileNotFoundError:
+            print(f"❌ Error: Dataset file not found at {dataset_path}")
+            sys.exit(1)
+        except Exception as e:
+            print(f"❌ Error: Failed to load dataset from {dataset_path}: {e}")
+            sys.exit(1)
+
+        # Check if dataset is empty or samples=0 was requested
+        if samples == 0:
+            print("❌ Error: Cannot run evaluation with --samples 0")
+            print("   Please specify a positive number of samples to evaluate.")
+            sys.exit(1)
+
+        if len(dataset_samples) == 0:
+            print(f"❌ Error: Dataset at {dataset_path} is empty")
+            print("   The dataset file exists but contains no samples.")
+            sys.exit(1)
+
+        print(f"   Loaded {len(dataset_samples)} samples from dataset")
+
+        # Define reward functions (now take trajectory AND sample as parameters)
+        reward_functions = [
+            ("correctness", correctness_reward),
+            ("format", format_reward),
+            ("efficiency", efficiency_reward),
+        ]
+        if mode == "with-tools":
+            reward_functions.append(("tool_usage", tool_usage_reward))
+
+        # 6. WAIT FOR VLLM SERVER TO BE READY
+        print(f"\n⏰ Step 6: Waiting for vLLM server to be ready...")
+        if not wait_for_vllm_ready(connection_info["url"], timeout=300):
+            print("❌ vLLM server did not become ready in time")
+            print("   Check server logs for errors:")
+            print(f"   bifrost exec {connection_info['ssh']} 'cat ~/qwen_vllm_server.log'")
+            sys.exit(1)
+
+        # 7. RUN EVALUATION WITH STREAMING
+        print(f"\n🎯 Step 7: Running evaluation on {len(dataset_samples)} samples...")
         print("   🔄 Streaming enabled - results saved as evaluation progresses")
         
         from rollouts.agents import stdout_handler
@@ -517,8 +656,8 @@ async def main(samples: int = 3, mode: str = "no-tools", parallel: int = 1,
         report = await evaluate(
             dataset=iter(dataset_samples),
             prepare_messages=prepare_messages,
-            reward_functions=demo_rewards,
-            environment=environment,
+            reward_functions=reward_functions,
+            environment_factory=environment_factory,
             endpoint=endpoint,  # Points to remote Qwen3-0.6B vLLM server
             run_config=run_config,
             eval_name=experiment_name,
@@ -532,11 +671,11 @@ async def main(samples: int = 3, mode: str = "no-tools", parallel: int = 1,
         )
         
         # 7. SAVE RESULTS TO REMOTE GPU
-        print("\n💾 Step 7: Syncing results to remote GPU...")
+        print("\n💾 Step 8: Syncing results to remote GPU...")
         await save_results_to_remote(bifrost_client, output_dir)
         
         # 8. PRINT RESULTS SUMMARY
-        print(f"\n🔍 Step 8: Results Summary:")
+        print(f"\n🔍 Step 9: Results Summary:")
         for sample in report.sample_results:
             status = "✅" if sample.metrics.get("correctness", 0.0) > 0.5 else "❌"
             correctness = sample.metrics.get("correctness", 0.0)
@@ -553,27 +692,32 @@ async def main(samples: int = 3, mode: str = "no-tools", parallel: int = 1,
     finally:
         # 9. CLEANUP (CONDITIONAL)
         if not keep_running:
-            print(f"\n🧹 Step 9: Cleaning up GPU instance...")
-            gpu_client = GPUClient()
-            
-            try:
-                # Stop the vLLM server
-                print("   Stopping vLLM server...")
-                bifrost_client.exec("tmux kill-session -t qwen-vllm 2>/dev/null || true")
-                
-                # Terminate the GPU instance
-                print(f"   Terminating GPU instance {connection_info['instance_id']}...")
-                # Note: We need to implement terminate method or use existing patterns
-                # For now, print the command
-                print(f"   Run: broker terminate {connection_info['instance_id']}")
-                
-                print("✅ Cleanup complete")
-                
-            except Exception as e:
-                print(f"⚠️ Cleanup error (instance may still be running): {e}")
-                print(f"   Manual cleanup: broker terminate {connection_info['instance_id']}")
+            print(f"\n🧹 Step 10: Cleaning up GPU instance...")
+            if RUNPOD_API_KEY:
+                gpu_client = GPUClient(api_key=RUNPOD_API_KEY)
+            else:
+                print("⚠️  Warning: RUNPOD_API_KEY not available, skipping cleanup")
+                gpu_client = None
+
+            if gpu_client:
+                try:
+                    # Stop the vLLM server
+                    print("   Stopping vLLM server...")
+                    bifrost_client.exec("tmux kill-session -t qwen-vllm 2>/dev/null || true")
+
+                    # Terminate the GPU instance
+                    print(f"   Terminating GPU instance {connection_info['instance_id']}...")
+                    # Note: We need to implement terminate method or use existing patterns
+                    # For now, print the command
+                    print(f"   Run: broker terminate {connection_info['instance_id']}")
+
+                    print("✅ Cleanup complete")
+
+                except Exception as e:
+                    print(f"⚠️ Cleanup error (instance may still be running): {e}")
+                    print(f"   Manual cleanup: broker terminate {connection_info['instance_id']}")
         else:
-            print(f"\n🎯 Step 9: Keeping GPU instance running (--keep-running flag)")
+            print(f"\n🎯 Step 10: Keeping GPU instance running (--keep-running flag)")
             print(f"   Instance ID: {connection_info['instance_id']}")
             print(f"   Server URL: {connection_info['url']}")
             print(f"   SSH: {connection_info['ssh']}")

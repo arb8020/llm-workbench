@@ -4,19 +4,28 @@ GPU Broker Minimal - Simple Example
 
 The fastest way to get started:
 1. Search for GPUs
-2. Create an instance  
+2. Create an instance
 3. Use it
 4. Clean up
 """
 
+import os
+from dotenv import load_dotenv
 
-import broker as gpus
+from broker import GPUClient
 from broker.types import CloudType
+
+# Load environment variables
+load_dotenv()
+RUNPOD_API_KEY = os.environ.get('RUNPOD_API_KEY')
+
+# Create client with explicit API key
+client = GPUClient(api_key=RUNPOD_API_KEY)
 
 # Step 1: Find best value GPU under $0.40/hr in secure cloud
 # Secure cloud has better availability and direct SSH
-offers = gpus.search(
-    (gpus.cloud_type == CloudType.SECURE) & (gpus.price_per_hour < 0.40),
+offers = client.search(
+    (client.cloud_type == CloudType.SECURE) & (client.price_per_hour < 0.40),
     sort=lambda x: x.memory_gb / x.price_per_hour,  # Best GB per dollar
     reverse=True
 )
@@ -27,7 +36,7 @@ if not offers:
     exit(1)
 
 # Step 2: Create instance (tries multiple offers automatically)
-instance = gpus.create(offers[:3])  # Try top 3 offers
+instance = client.create(offers[:3])  # Try top 3 offers
 if not instance:
     print("Failed to provision - all offers unavailable")
     exit(1)
