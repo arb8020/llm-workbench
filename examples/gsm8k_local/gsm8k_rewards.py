@@ -213,39 +213,40 @@ def check_equality(predicted: str, expected: str) -> bool:
     return False
 
 
-def make_correctness_reward(sample: Dict[str, Any]) -> RewardFunction:
-    """Create a reward function that checks correctness for this sample."""
-    def check_correctness(trajectory: Trajectory) -> float:
-        # Get final response
-        assistant_messages = [m for m in trajectory.messages if m.role == "assistant"]
-        if not assistant_messages:
-            return 0.0
-        
-        response = " ".join(m.content for m in assistant_messages if m.content)
-        
-        # Extract and check answer
-        extracted_answer = extract_answer(response)
-        expected_answer = str(sample["answer"]).strip()
-        
-        is_correct = check_equality(extracted_answer, expected_answer) if extracted_answer else False
-        return 1.0 if is_correct else 0.0
-    
-    return check_correctness
+def correctness_reward(trajectory: Trajectory, sample: Dict[str, Any]) -> float:
+    """Check if the extracted answer matches the expected answer."""
+    assert "answer" in sample, "Sample must have 'answer' key"
 
-
-def format_reward(trajectory: Trajectory) -> float:
-    """Reward for following the answer format."""
+    # Get final response
     assistant_messages = [m for m in trajectory.messages if m.role == "assistant"]
     if not assistant_messages:
         return 0.0
-    
+
+    response = " ".join(m.content for m in assistant_messages if m.content)
+
+    # Extract and check answer
+    extracted_answer = extract_answer(response)
+    expected_answer = str(sample["answer"]).strip()
+
+    is_correct = check_equality(extracted_answer, expected_answer) if extracted_answer else False
+    return 1.0 if is_correct else 0.0
+
+
+def format_reward(trajectory: Trajectory, sample: Dict[str, Any]) -> float:
+    """Reward for following the answer format."""
+    # Sample parameter included for consistency (not used in this reward)
+    assistant_messages = [m for m in trajectory.messages if m.role == "assistant"]
+    if not assistant_messages:
+        return 0.0
+
     response = " ".join(m.content for m in assistant_messages if m.content)
     has_answer_format = bool(re.search(r'Answer:\s*[^\n]+', response, re.IGNORECASE))
     return 1.0 if has_answer_format else 0.0
 
 
-def efficiency_reward(trajectory: Trajectory) -> float:
+def efficiency_reward(trajectory: Trajectory, sample: Dict[str, Any]) -> float:
     """Reward for being concise (fewer tokens)."""
+    # Sample parameter included for consistency (not used in this reward)
     total_tokens = sum(len(m.content or "") for m in trajectory.messages)
     # Normalize: 1.0 for <500 tokens, 0.0 for >2000 tokens
     if total_tokens < 500:
@@ -256,8 +257,9 @@ def efficiency_reward(trajectory: Trajectory) -> float:
         return 1.0 - (total_tokens - 500) / 1500
 
 
-def tool_usage_reward(trajectory: Trajectory) -> float:
+def tool_usage_reward(trajectory: Trajectory, sample: Dict[str, Any]) -> float:
     """Reward for appropriate tool usage (only meaningful with calculator environment)."""
+    # Sample parameter included for consistency (not used in this reward)
     tool_calls = sum(len(m.tool_calls or []) for m in trajectory.messages)
     # Reward 1.0 for 1-3 tool calls, 0.5 for 4-6, 0.0 for 7+
     if tool_calls == 0:
@@ -308,7 +310,7 @@ async def main(samples: int = 3, mode: str = "no-tools", parallel: int = 1):
     
     # Choose environment and settings based on mode
     if mode == "no-tools":
-        environment = NoToolsEnvironment()
+        environment_factory = lambda: NoToolsEnvironment()
         prepare_messages = prepare_gsm8k_messages_no_tools
         max_turns = 1
         print("📝 Mode: Zero-shot chain-of-thought")
@@ -320,7 +322,7 @@ async def main(samples: int = 3, mode: str = "no-tools", parallel: int = 1):
             ("efficiency", efficiency_reward),
         ]
     else:
-        environment = CalculatorEnvironment()
+        environment_factory = lambda: CalculatorEnvironment()
         prepare_messages = prepare_gsm8k_messages_with_tools
         max_turns = 6
         print("🔧 Mode: Tool-assisted reasoning")
@@ -333,34 +335,47 @@ async def main(samples: int = 3, mode: str = "no-tools", parallel: int = 1):
             ("tool_usage", tool_usage_reward),
         ]
     
-    # Load dataset to create sample-specific reward functions
-    dataset_samples = list(load_jsonl(dataset_path))
-    
-    # Create sample-specific reward functions
-    def create_reward_functions_for_sample(sample: Dict[str, Any]):
-        correctness_fn = make_correctness_reward(sample)
-        sample_rewards = [
-            ("correctness", correctness_fn),
-            ("format", format_reward),
-            ("efficiency", efficiency_reward),
-        ]
-        if mode == "with-tools":
-            sample_rewards.append(("tool_usage", tool_usage_reward))
-        return sample_rewards
-    
-    # For now, we'll use the first sample's reward function as a demo
-    # (In practice, you'd want to pass sample-specific rewards to evaluate_sample)
-    demo_rewards = create_reward_functions_for_sample(dataset_samples[0])
-    
+    # Load and validate dataset
+    try:
+        dataset_samples = list(load_jsonl(dataset_path))
+    except FileNotFoundError:
+        print(f"❌ Error: Dataset file not found at {dataset_path}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Error: Failed to load dataset from {dataset_path}: {e}")
+        sys.exit(1)
+
+    # Check if dataset is empty or samples=0 was requested
+    if samples == 0:
+        print("❌ Error: Cannot run evaluation with --samples 0")
+        print("   Please specify a positive number of samples to evaluate.")
+        sys.exit(1)
+
+    if len(dataset_samples) == 0:
+        print(f"❌ Error: Dataset at {dataset_path} is empty")
+        print("   The dataset file exists but contains no samples.")
+        sys.exit(1)
+
+    print(f"   Loaded {len(dataset_samples)} samples from dataset")
+
+    # Define reward functions (now take trajectory AND sample as parameters)
+    reward_functions = [
+        ("correctness", correctness_reward),
+        ("format", format_reward),
+        ("efficiency", efficiency_reward),
+    ]
+    if mode == "with-tools":
+        reward_functions.append(("tool_usage", tool_usage_reward))
+
     # Run evaluation using new framework
     from rollouts.agents import stdout_handler
     run_config = RunConfig(on_chunk=stdout_handler)
-    
+
     report = await evaluate(
         dataset=iter(dataset_samples),
         prepare_messages=prepare_messages,
-        reward_functions=demo_rewards,
-        environment=environment,
+        reward_functions=reward_functions,
+        environment_factory=environment_factory,
         endpoint=endpoint,
         run_config=run_config,
         eval_name=experiment_name,

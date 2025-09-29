@@ -115,7 +115,7 @@ class EvalReport:
 
 
 # Type for reward/metric functions
-RewardFunction = Callable[[Trajectory], float]
+RewardFunction = Callable[[Trajectory, Dict[str, Any]], float]
 
 
 def sanitize_api_keys(data: Any) -> Any:
@@ -147,20 +147,22 @@ async def evaluate_sample(
 ) -> EvalSample:
     """
     Evaluate a single sample - analogous to run_agent_step.
-    
+
     This is the atomic unit of evaluation that can be easily parallelized.
-    
+    Each call should receive a fresh environment instance to ensure state isolation.
+
     Args:
         sample_data: The raw sample data
         sample_id: Unique identifier for this sample
         prepare_messages: Function to create initial messages
         reward_functions: List of (name, function) pairs for computing metrics
-        environment: Environment to use
+        environment: Fresh Environment instance for this sample (typically created
+                    by the environment_factory in evaluate())
         endpoint: LLM endpoint
         run_config: Agent run configuration
         max_turns: Maximum turns allowed
         verbose: Whether to print progress
-    
+
     Returns:
         EvalSample with trajectory and computed metrics
     """
@@ -191,7 +193,7 @@ async def evaluate_sample(
     metrics = {}
     for metric_name, reward_fn in reward_functions:
         try:
-            metrics[metric_name] = reward_fn(final_trajectory)
+            metrics[metric_name] = reward_fn(final_trajectory, sample_data)
         except Exception as e:
             if verbose:
                 print(f"   ⚠️ Error computing {metric_name}: {e}")
@@ -223,7 +225,7 @@ async def evaluate(
     dataset: Iterator[Dict[str, Any]],
     prepare_messages: Callable[[Dict[str, Any]], List[Message]],
     reward_functions: List[Tuple[str, RewardFunction]],
-    environment: Environment,
+    environment_factory: Callable[[], Environment],
     endpoint: Endpoint,
     run_config: Optional[RunConfig] = None,
     eval_name: str = "evaluation",
@@ -237,14 +239,17 @@ async def evaluate(
 ) -> EvalReport:
     """
     Run evaluation on a dataset - analogous to run_agent.
-    
+
     This orchestrates evaluate_sample calls, potentially in parallel.
-    
+    Each sample gets a fresh environment instance to ensure state isolation.
+
     Args:
         dataset: Iterator of sample dictionaries
         prepare_messages: Function to create initial messages from sample
         reward_functions: List of (name, function) pairs for computing metrics
-        environment: Environment to use for evaluation
+        environment_factory: Factory function that returns a fresh Environment
+                           instance for each sample. Example: `lambda: CalculatorEnvironment()`
+                           This ensures each sample has isolated environment state.
         endpoint: LLM endpoint configuration
         run_config: Run configuration for agent (default: silent)
         eval_name: Name for this evaluation
@@ -285,14 +290,15 @@ async def evaluate(
     results = []
     
     if max_concurrent == 1:
-        # Sequential evaluation
+        # Sequential evaluation - create fresh environment for each sample
         for sample_id, sample_data in samples_to_eval:
+            env = environment_factory()
             result = await evaluate_sample(
                 sample_data=sample_data,
                 sample_id=sample_id,
                 prepare_messages=prepare_messages,
                 reward_functions=reward_functions,
-                environment=environment,
+                environment=env,
                 endpoint=endpoint,
                 run_config=run_config,
                 max_turns=max_turns,
@@ -300,17 +306,18 @@ async def evaluate(
             )
             results.append(result)
     else:
-        # Parallel evaluation with semaphore
+        # Parallel evaluation with semaphore - create fresh environment for each sample
         semaphore = asyncio.Semaphore(max_concurrent)
-        
+
         async def eval_with_semaphore(sample_id: str, sample_data: Dict[str, Any]) -> EvalSample:
             async with semaphore:
+                env = environment_factory()
                 return await evaluate_sample(
                     sample_data=sample_data,
                     sample_id=sample_id,
                     prepare_messages=prepare_messages,
                     reward_functions=reward_functions,
-                    environment=environment,
+                    environment=env,
                     endpoint=endpoint,
                     run_config=run_config,
                     max_turns=max_turns,
@@ -423,16 +430,24 @@ async def simple_evaluate(
     dataset_path: Path,
     prepare_messages: Callable[[Dict[str, Any]], List[Message]],
     reward_functions: List[Tuple[str, RewardFunction]],
-    environment: Environment,
+    environment_factory: Callable[[], Environment],
     endpoint: Endpoint,
     **kwargs
 ) -> EvalReport:
     """
     Simple evaluation interface for common cases.
-    
+
     Auto-detects dataset format and provides sensible defaults.
+
+    Args:
+        dataset_path: Path to dataset file (.jsonl or .csv)
+        prepare_messages: Function to create initial messages from sample
+        reward_functions: List of (name, function) pairs for computing metrics
+        environment_factory: Factory function returning fresh Environment instances
+        endpoint: LLM endpoint configuration
+        **kwargs: Additional arguments passed to evaluate()
     """
-    
+
     # Auto-detect dataset format
     if dataset_path.suffix == ".jsonl":
         dataset = load_jsonl(dataset_path)
@@ -440,15 +455,15 @@ async def simple_evaluate(
         dataset = load_csv(dataset_path)
     else:
         raise ValueError(f"Unsupported format: {dataset_path.suffix}")
-    
+
     # Default eval name from dataset
     eval_name = kwargs.pop("eval_name", dataset_path.stem)
-    
+
     return await evaluate(
         dataset=dataset,
         prepare_messages=prepare_messages,
         reward_functions=reward_functions,
-        environment=environment,
+        environment_factory=environment_factory,
         endpoint=endpoint,
         eval_name=eval_name,
         dataset_path=str(dataset_path),

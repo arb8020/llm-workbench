@@ -34,8 +34,8 @@ async def serialize_agent_state(state: AgentState) -> Dict[str, Any]:
 
 
 async def deserialize_agent_state(
-        data: Dict[str, Any], 
-        environment_registry: Dict[str, Environment] = {},
+        data: Dict[str, Any],
+        environment_registry: Dict[str, type[Environment]],
     ) -> AgentState:
     """Reconstruct AgentState from JSON-serializable dict"""
     # Handle environment separately
@@ -54,15 +54,16 @@ async def deserialize_agent_state(
 
 class FileCheckpointStore:
     """File-based checkpoint storage for agent states"""
-    
-    def __init__(self, directory: str = "/tmp/rollouts-agent-checkpoints"):
+
+    def __init__(
+        self,
+        environment_registry: Dict[str, type[Environment]],
+        directory: str = "/tmp/rollouts-agent-checkpoints",
+    ):
         self.directory = Path(directory)
         self.directory.mkdir(exist_ok=True, parents=True)
         # Registry of environment classes for deserialization
-        self.environment_registry = {
-            # Register environment classes here as needed
-            # "CalculatorEnvironment": CalculatorEnvironment,
-        }
+        self.environment_registry = environment_registry
     
     async def save(self, checkpoint_id: str, state: AgentState) -> None:
         """Save state to JSON file"""

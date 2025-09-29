@@ -97,7 +97,13 @@ async def main():
     args = parser.parse_args()
     
     # Create checkpoint store (might not use it)
-    checkpoint_store = FileCheckpointStore(args.checkpoint_dir) if not args.no_checkpoint else None
+    environment_registry = {
+        "BinarySearchEnvironment": BinarySearchEnvironment,
+    }
+    checkpoint_store = FileCheckpointStore(
+        environment_registry=environment_registry,
+        directory=args.checkpoint_dir
+    ) if not args.no_checkpoint else None
     
     # Create run config (same for both paths)
     run_config = RunConfig(

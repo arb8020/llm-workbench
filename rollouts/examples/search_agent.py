@@ -680,8 +680,15 @@ Be systematic and verify your answers."""
         max_turns=25
     )
     
-    # Set up run config
-    checkpoint_store = FileCheckpointStore("/tmp/search-demo-checkpoints")
+    # Set up run config with environment registry for checkpoints
+    environment_registry = {
+        "CalculatorEnvironment": CalculatorEnvironment,
+        "SearchEnvironment": SearchEnvironment,
+    }
+    checkpoint_store = FileCheckpointStore(
+        environment_registry=environment_registry,
+        directory="/tmp/search-demo-checkpoints"
+    )
     run_config = RunConfig(
         on_chunk=stdout_handler,
         confirm_tool=confirm_tool_with_feedback,
