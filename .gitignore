@@ -90,3 +90,9 @@ server_*.log
 # OS
 .DS_Store
 Thumbs.db
+
+# Test artifacts
+gsm8k_test.log
+integration_test_results.txt
+output*.txt
+deploy_and_evaluate.log
