@@ -118,6 +118,26 @@ examples_gsm8k_remote_nnsight = [
     "plotext>=5.2.8"
 ]
 
+# Alias (deployment scripts use this variation)
+examples_gsm8k_nnsight_remote = [
+    "rollouts",
+    "broker",
+    "bifrost",
+    "fastapi>=0.110.0",
+    "uvicorn>=0.23.0",
+    "pydantic>=2.0.0",
+    "nnsight>=0.4",
+    "transformers>=4.40.0",
+    "torch>=2.4.0,<=2.7.1",
+    "triton>=3.0.0,<=3.3.1; sys_platform == 'linux'",
+    "accelerate>=0.20.0",
+    "datasets>=4.0.0",
+    "huggingface-hub>=0.34.4",
+    "numpy<2.0.0",
+    "requests>=2.28.0",
+    "plotext>=5.2.8"
+]
+
 # Emotion prefix GSM8K experiment (rollouts + NNsight server copy)
 examples_emotion_prefix_gsm8k = [
     "rollouts",
