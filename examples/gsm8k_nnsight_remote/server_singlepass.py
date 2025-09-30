@@ -323,15 +323,17 @@ def chat(req: ChatRequest):
             # Multi-token activation capture using correct NNsight pattern
             try:
                 print("DEBUG: Using multi-token activation capture pattern")
-                
-                # Initialize NNsight list to accumulate activations across all generated tokens
-                logits_list = nnsight.list().save()
-                
+
+                # Use modern nnsight pattern (v0.5.0+): regular Python list for accumulation
+                logits_list = []
+
                 # Use tracer.all() to capture activations across ALL generated tokens
                 with mm.lm.generate(prompt_text, max_new_tokens=req.max_tokens) as tracer:
                     with tracer.all():
-                        logits_list.append(mm.lm.lm_head.output)
-                
+                        # Save each token's logits
+                        saved_logits = mm.lm.lm_head.output.save()
+                        logits_list.append(saved_logits)
+
                 activation_proxies["_logits"] = logits_list
                 generated_output = tracer.output  # Capture generated output from tracer
                 print(f"DEBUG: SUCCESS! Multi-token logits captured: {len(logits_list)} tokens")
